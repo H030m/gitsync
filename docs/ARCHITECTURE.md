@@ -91,8 +91,10 @@ apps/gitsync/
 │   ├── name: string
 │   ├── email: string
 │   ├── avatarUrl: string
-│   ├── githubLogin: string                     # GitHub username
+│   ├── githubLogin: string                     # GitHub username (e.g. "john-developer")
 │   ├── githubAccessToken: string (encrypted)   # 用來呼叫 GitHub API
+│   ├── discordUserId: string?                  # ★ Discord 18-digit snowflake (e.g. "123456789012345678")
+│   │                                           #   讓 RAG 把 discordMessages.authorId 對應回此 user
 │   ├── fcmToken: string
 │   ├── expertiseTags: string[]                 # ["frontend", "ml"] 自動學習
 │   ├── createdAt: Timestamp
@@ -106,8 +108,11 @@ apps/gitsync/
 │   ├── defaultBranch: string
 │   ├── webhookId: number                       # GitHub webhook ID (供刪除用)
 │   ├── webhookSecret: string                   # HMAC 驗證
-│   ├── discordChannelId: string?               # 綁定的 Discord channel
+│   ├── discordWebhookUrl: string?              # 用戶設定的 Discord channel webhook (outbound 通知)
+│   ├── discordChannelIds: string[]             # 監聽的 Discord channel IDs (給 forwarder bot 對照用)
 │   ├── memberIds: string[]                     # 鏡像 subcollection 方便 array-contains query
+│   ├── isBreakingDown: boolean                 # 分散式鎖：AI 拆解任務進行中
+│   ├── breakdownStartedAt: Timestamp?          # 配 isBreakingDown 用；> 5min 視為卡住可強制解鎖
 │   ├── createdAt: Timestamp
 │   ├── createdBy: userId
 │   │
@@ -302,11 +307,12 @@ service cloud.firestore {
 |---|---|---|---|
 | `addRepo` | `{ githubUrl: string }` | `{ repoId }` | 解析 URL → 呼叫 GitHub API 驗證 → 註冊 webhook → 寫 Firestore |
 | `removeRepo` | `{ repoId }` | `{}` | 刪除 webhook + Firestore docs |
-| `breakdownTask` | `{ repoId, goal: string }` | `{ subtasks: [...] }` | AI Flow — 任務拆解 |
+| `breakdownTask` | `{ repoId, goal: string }` | `{ subtasks: [...] }` | AI Flow — 任務拆解（自帶 `isBreakingDown` 鎖）|
+| `forceUnlockBreakdown` | `{ repoId }` | `{}` | 強制解 `isBreakingDown` 鎖（卡 > 5min 時前端顯示「重置」按鈕呼叫）|
 | `assignTask` | `{ repoId, taskId }` | `{ assigneeId, reason }` | AI Flow — 動態分派 |
 | `generateHandoff` | `{ repoId, taskId }` | `{ handoffMarkdown }` | AI Flow — 交接文件 |
 | `summarizeDay` | `{ repoId, date: string }` | `{ summary }` | AI Flow — 日報生成 |
-| `linkDiscordChannel` | `{ repoId, channelId }` | `{}` | 綁定 Discord channel |
+| `setDiscordWebhook` | `{ repoId, webhookUrl, channelIds[] }` | `{}` | 設定 Discord outbound webhook + 監聽頻道 |
 | `subscribeToTopic` | `{ token, topic }` | `{}` | FCM web push（同課程） |
 
 ### 4.2 HTTP Webhook Functions（外部呼叫）
@@ -314,20 +320,53 @@ service cloud.firestore {
 | Function | 來源 | 處理 |
 |---|---|---|
 | `githubWebhook` | GitHub | 驗證 HMAC → 依 event 類型分派 (`push`/`pull_request`/`issues`) → 寫 Firestore |
-| `discordInteractions` | Discord | 驗證簽章 → 處理 slash command (`/check`, `/assign`, `/daily`) |
+| `discordMessageIngest` | 使用者自架的 forwarder bot | 驗共享密鑰 → 寫 `discordMessages/{messageId}`；詳見 §7.2 |
 
 ### 4.3 Firestore Triggers（事件驅動）
+
+> **職責切分原則**：HTTP webhook 只做「驗證 + 把外部 raw payload 標準化後寫入 Firestore 文件」；所有「解析業務語意 / 呼叫 OpenAI / 跨文件更新」一律下沉到 Firestore Trigger。這樣才能：
+> 1. webhook 在 3 秒內回完外部（GitHub / Discord 不會 retry / 不會 timeout）
+> 2. AI 重邏輯都有 idempotency key 保護（trigger 內統一加），不會被外部重送搞壞
 
 | Trigger | 事件 | 動作 |
 |---|---|---|
 | `onTaskCreated` | tasks/{taskId} create | 若 `source == "manual"`，可選擇呼叫 AI 自動分派；建 GitHub issue |
-| `onTaskUpdated` | tasks/{taskId} update | 若 `status` 變 "done"：發 FCM 給下游 (`dependsOn` 反向查) + 寫 Discord + 觸發 `generateHandoff` |
-| `onCommitCreated` | commits/{sha} create | 解析 message 連結 task → AI 生成 `aiSummary` → 算 `messageEmbedding` |
-| `onPRMerged` | pullRequests/{n} update where state→"merged" | 把 linkedTaskIds 標 done |
-| `onDiscordMessageCreated` | discordMessages/{id} create | AI 推斷 `linkedTaskIds` 並補回去 |
-| `scheduledDailyReport` | Pub/Sub schedule 18:00 daily | 對每個 repo 觸發 `summarizeDay` |
+| `onTaskUpdated` | tasks/{taskId} update | 若 `status` 變 "done"：發 FCM 給下游 (`dependsOn` 反向查) + 推 Discord webhook + 觸發 `generateHandoff` |
+| `onCommitCreated` | commits/{sha} create | 1. idempotency check → 2. `shouldSkipEmbedding(message)` 過濾 → 3. 解析 `#N`/`fixes #N` 找對應 task 寫 `linkedTaskIds` → 4. 算 `messageEmbedding` → 5. 生成 `aiSummary` |
+| `onPRMerged` | pullRequests/{n} update where state→"merged" | idempotency check → transaction 內把 `linkedTaskIds` 對應 tasks 標 done + 加計 member counter |
+| `onDiscordMessageCreated` | discordMessages/{id} create | idempotency check → 過濾規則複查 → 算 embedding → AI 推斷 `linkedTaskIds` 並補回去 |
+| `scheduledDailyReport` | Pub/Sub schedule 18:00 daily | 扇出（見 §5.4）→ 每 repo 一個 `dailyReportWorker` instance |
+| `scheduledUnstickBreakdown` | Pub/Sub schedule 每 10 分鐘 | 掃 `repos` where `isBreakingDown == true AND breakdownStartedAt < now - 5min` → 強制解鎖（兜底 §5.1）|
 
 **所有 trigger 都要做 idempotency key check**（見 [COURSE_METHODS § 6.2](./COURSE_METHODS.md#62-必學idempotency-key-模式)）。
+
+### 4.4 併發 (Race Condition) 防禦守則
+
+Webhook / trigger 會併發執行（GitHub 一次 push 10 個 commits → 10 個 `onCommitCreated` 同時跑）。違反以下任一規則 → 計數會錯、狀態會被互蓋。實作細節照 [`COURSE_METHODS.md §6.2`](./COURSE_METHODS.md#62-必學idempotency-key-模式)。
+
+**規則 A — 數值欄位禁止「先讀後寫」**
+
+任何 counter（`members.activeIssueCount`、`members.completedTaskCount`、未來任何累加欄位）都必須用 Firestore 的 atomic 操作（`FieldValue.increment(±1)`），不可以先 `get` 拿舊值再算 `+1` 寫回。原因：10 個 trigger 併發時，每個讀到的舊值都相同，最後互蓋變成只 +1 而非 +10。
+
+**規則 B — 跨欄位 / 跨文件狀態變更必用 transaction**
+
+例如 `onPRMerged` 要同時把 task 標 done 並加計 member counter，必須包在 `runTransaction` 裡。transaction 內先 read 確認 task 還沒被標 done（idempotent guard），再做 update。否則兩個 trigger 同時觸發會雙重加計。
+
+**規則 C（最重要）— Firestore Trigger 是 at-least-once 交付，必須做 idempotency**
+
+Firebase 不保證 trigger 正好一次。底層網路抖動、retry 機制都會讓同一個 event 觸發多次。`FieldValue.increment(1)` 是原子操作能避免併發互蓋，但**擋不住「同一事件被送兩次 → 加兩次」**。
+
+標準寫法：每個 trigger 開頭跑一個 transaction：(a) get `apps/gitsync/idempotencyKeys/{event.id}` → (b) 若已存在 return → (c) 否則 set 已處理戳記 → 跳出 transaction 後再跑業務邏輯。範例見 [`COURSE_METHODS.md §6.2`](./COURSE_METHODS.md#62-必學idempotency-key-模式)。
+
+**規則 D — idempotency mark 與慢速副作用不可放同一 transaction**
+
+一旦 idempotency transaction commit，event 就被標記成「已處理」；若隨後的 OpenAI / GitHub API 呼叫失敗，整個 event 不會 retry — 資料就缺了。
+
+正確順序是：先 transaction 標記 idempotency key、退出 transaction 後才呼叫 OpenAI embed / summary、最後再把結果寫回原文件。
+
+若擔心外部呼叫失敗導致欄位永遠為 null：兩種選擇——
+1. 嚴格模式：標記前先把 event 留在 `pendingEvents/{eventId}` queue，做完才從 queue 刪
+2. 寬鬆模式（建議 MVP）：接受偶爾的 `aiSummary` / `embedding` 為 null（這只是錦上添花，不影響正確性），UI 上提供「重新生成」按鈕讓使用者手動補。
 
 ---
 
@@ -344,6 +383,15 @@ service cloud.firestore {
 **Input**: `{ repoId: string, goal: string }`
 **Output**: `{ subtasks: [{ title, description, dependsOn: number[], estimatedHours }] }`
 
+**dependsOn 型別約定（解決 LLM 生不出 taskId 的問題）**：
+
+| 階段 | dependsOn 型別 | 內容 |
+|---|---|---|
+| AI output (Zod schema) | `number[]` | **0-based 陣列索引**（指向同一輪輸出的其他 subtask 位置）|
+| Flutter / Firestore | `string[]` | **真實的 taskId**（Firestore doc id）|
+
+中間的「索引 → taskId」翻譯由 Step 4-6 後端處理，**Flutter 端永遠只看到 taskId**。
+
 **Steps**:
 
 ```
@@ -357,19 +405,49 @@ Step 2 — openai.chat.completions.parse(...)    [structured output via zod]
   ├─ system: breakdownTaskSystem
   ├─ user: projectContext + goal
   ├─ response_format: zodResponseFormat(BreakdownOutputSchema)
-  └─ output: validated JSON { subtasks: [...] }
+  └─ output: [{ title, description, dependsOn: number[], estimatedHours }, ...]
+                                       ↑ 0-based 索引
 
-Step 3 — detectCycles(subtasks)                [純 TS DFS]
+Step 3 — detectCycles(subtasks)                [純 TS DFS on index graph]
   └─ if cycle found ─→ Step 3b
 
 Step 3b — re-prompt with cycle info            [agentic 自我修正]
   ├─ Append previous response + error message
   └─ output: fixed subtasks
+
+Step 4 — pre-generate taskIds                  [純 TS]
+  ├─ const ids = subtasks.map(_ => tasksCollection.doc().id)   // Firestore auto-id
+  └─ output: ids: string[]
+
+Step 5 — translate index → taskId              [純 TS]
+  └─ const docs = subtasks.map((s, i) => ({
+       id: ids[i],
+       ...s,
+       dependsOn: s.dependsOn.map(idx => ids[idx]),  // index → real taskId
+     }));
+
+Step 6 — batch write Firestore                  [transaction]
+  ├─ for each doc: tx.set(tasksCollection.doc(doc.id), doc)
+  └─ also set repos/{repoId}.isBreakingDown = false（解鎖）
 ```
 
 **Prompt**: `functions/src/prompts/breakdownTask.ts`（純字串）
-**Schema**: `functions/src/types.ts`（zod）
+**Schema**: `functions/src/types.ts`（zod；dependsOn 在這層必須是 `number[]`）
 **Flow**: `functions/src/flows/breakdownTask.ts`
+
+**併發鎖（重要）— 防止重複拆解**
+
+兩個成員同時點「AI 拆解」、或同一人連點兩下，會跑兩遍 flow → 同 goal 拆出兩套任務 + 兩倍 GitHub Issue。Callable Function 不自帶併發鎖，必須自己加。
+
+**雙層防護**：
+
+1. **前端**：按下按鈕後立刻把該 button 設成 disabled、顯示 `CircularProgressIndicator`，callable 回傳前不准再按。用 StatefulWidget 的 `_isBreakingDown` flag 控制。
+
+2. **後端**：`breakdownTaskFlow` 開頭跑一個 transaction：讀 `repos/{repoId}.isBreakingDown` → 若已是 `true`，throw `HttpsError('already-exists', ...)` 提示「拆解進行中」；否則 set 為 `true` 並記 `breakdownStartedAt: serverTimestamp()`。後續所有業務邏輯包在 `try ... finally`，無論成功失敗都在 `finally` 把 flag set 回 `false`（用 `.catch(() => {})` 吞錯避免影響主流程）。
+
+**自動解鎖兜底**：若 function 半途 crash 沒走到 finally，flag 會永遠卡 `true`：
+- 後端：`scheduledUnstickBreakdown` 排程每 10 分鐘掃所有 repo，找 `isBreakingDown == true AND breakdownStartedAt < now - 5min` → 強制解鎖
+- 前端：APP 偵測到 `breakdownStartedAt` 超過 5 分鐘前還在鎖，顯示「拆解卡住？點此重置」按鈕，呼叫 `forceUnlockBreakdown` callable
 
 ### 5.2 Flow 2 — `assignTaskFlow`（動態任務分派）
 
@@ -382,7 +460,10 @@ Step 3b — re-prompt with cycle info            [agentic 自我修正]
 
 ```
 Setup — 註冊 4 個 tools:
-  • readTeamState(repoId)                → 全員 activeIssueCount / expertiseTags / lastActiveAt
+  • readTeamState(repoId)                → 每位 member 的 { userId, name, githubLogin, discordUserId,
+                                            activeIssueCount, expertiseTags, lastActiveAt }
+                                            ← 含三組身份對照，下游 RAG 才能把 Discord 對話與 Commit
+                                              作者對齊
   • searchMemberCommits(memberId, query) → Firestore vector search on commits
   • getTaskDependents(repoId, taskId)    → 下游有誰會被擋
   • finalizeAssignment(assigneeId, reason) → 最終決定（呼叫即結束 loop）
@@ -407,10 +488,15 @@ Agent 會根據任務內容決定要不要做 vector search、要不要查依賴
 
 ```
 Setup — 註冊 tools:
+  • readTeamRoster(repoId)                      → 同 §5.2 readTeamState；回三組身份對照
+                                                  (userId / githubLogin / discordUserId)
+                                                  ← Agent 在 draft 時把 Discord/Git author 翻回真實姓名
   • findDownstreamTask(repoId, completedTaskId)
   • listRelatedCommits(repoId, taskId)
   • getCommitDiff(repoId, sha)                  → 經 GitHub API
-  • searchDiscordMessages(repoId, query)        → Firestore vector search
+  • searchDiscordMessages(repoId, query)        → Firestore vector search；每筆會回 authorId
+                                                  (Discord snowflake)，Agent 自行用 readTeamRoster
+                                                  做姓名對齊
   • searchPastCommits(repoId, query)            → Firestore vector search
   • draftHandoff(markdown)                      → 提交草稿，trigger 自我審查
   • finalizeHandoff(markdown)                   → 通過審查，結束 loop
@@ -433,7 +519,23 @@ Phase 2 — Self Review (1 round):
 **Input**: `{ repoId: string, date: string }`
 **Output**: `{ summary: string, memberContributions: {...} }`
 
-由 Pub/Sub 排程每日 18:00 觸發；查當日 commits + completed tasks + discord 討論 → 寫成兩三句的人話日報。
+查當日 commits + completed tasks + discord 討論 → 寫成兩三句的人話日報。
+
+**排程觸發 — 用 Cloud Tasks 扇出，不要 for-loop**
+
+Cloud Functions 單次執行上限 540 秒（9 分鐘）。若每日 18:00 用一個 function 順序跑 50 個 repo 的 `summarizeDayFlow`（每個約 5–10 秒）→ 直接 timeout 崩潰。
+
+採用兩階段架構：
+
+- **`scheduledDailyReport`** — `onSchedule` Cloud Function，每日台北時間 18:00 觸發。**只做扇出**：掃 `apps/gitsync/repos` 所有文件 ID，為每個 repoId 在 `daily-report-queue` 上建一個 Cloud Task，task 內容包含 repoId + 今日日期（ISO 字串），target 指向 `dailyReportWorker` 的 HTTPS URL。本身回 200 後立即結束。
+
+- **`dailyReportWorker`** — `onRequest` Cloud Function，由 Cloud Tasks 觸發。每個 instance 只處理一個 repoId，呼叫 `summarizeDayFlow({ repoId, date })`。Cloud Tasks 自動水平擴展，多個 worker 平行跑，互不影響。
+
+部署前需手動建立 queue（**使用者親自跑**，AI 不可）：
+
+```bash
+gcloud tasks queues create daily-report-queue --location=us-west1
+```
 
 ### 5.5 Prompt Caching 與成本控制
 
@@ -490,20 +592,39 @@ gcloud firestore indexes composite create \
 }
 ```
 
-**查詢時必須帶 `where` 預過濾**（否則會 across 所有 repo）：
+**寫入前必須過濾自動產生的 commit message**
 
-```ts
-const queryEmbedding = await embed(searchText);
-const snapshot = await db.collectionGroup('commits')
-  .where('repoId', '==', repoId)               // ← 必加，否則跨 repo 洩漏
-  .findNearest({
-    vectorField: 'messageEmbedding',
-    queryVector: FieldValue.vector(queryEmbedding),
-    limit: 5,
-    distanceMeasure: 'COSINE',
-  })
-  .get();
+不過濾的話，向量庫會被 `Merge branch ...` / `Bump version 1.2.3` / `Update README.md` 等沒語義價值的訊息污染，且白燒 embedding token。在 `functions/src/tools/commitFilter.ts` 寫一個 `shouldSkipEmbedding(message)` 函式，用 regex 黑名單判斷第一行是否屬於以下類別：
+
+- `Merge branch` / `Merge pull request` / `Merge remote-tracking branch` 開頭
+- `Revert "..."` 開頭
+- `chore(release|deps|version): bump/update/upgrade ...` 等版本管理 commit
+- 純版本號開頭（如 `v1.2.3`、`1.2.3`）
+- 預設模板訊息（`Initial commit`、`Update README.md`、`Update .gitignore`）
+- 機器人標記（`Auto-merge`、`Automated commit`、`[bot]` 開頭）
+- 第一行去除空白後長度 < 5 字元（資訊量太低）
+
+命中任一條 → `onCommitCreated` trigger 直接把 `messageEmbedding` 與 `aiSummary` 設為 null 跳過 OpenAI 呼叫。
+
+**反向依賴查詢的非向量索引（同樣別忘）**
+
+`onTaskUpdated` trigger 在 task 變 done 時要查「誰在等我」，會用到 `where('dependsOn', 'array-contains', completedTaskId)` 結合 `where('status', '==', 'todo')` 的複合查詢。**沒建索引 trigger 會直接 crash**，下游卡片永遠不會被喚醒（demo 當場露餡）。
+
+建立索引（**使用者親跑**，AI 不可）：
+
+```bash
+gcloud firestore indexes composite create \
+  --collection-group=tasks \
+  --query-scope=COLLECTION_GROUP \
+  --field-config field-path=dependsOn,array-config=CONTAINS \
+  --field-config field-path=status,order=ASCENDING
 ```
+
+或直接寫入 `firestore.indexes.json`，內容是一個 `indexes` 陣列項目，`collectionGroup: "tasks"`、`queryScope: "COLLECTION_GROUP"`、`fields` 包含兩欄：`dependsOn`（arrayConfig: CONTAINS）與 `status`（order: ASCENDING），然後執行 `firebase deploy --only firestore:indexes`。
+
+**Vector search 查詢時必須帶 `where('repoId', '==', repoId)` 預過濾**
+
+`findNearest` 對 collection group 查詢時，若不加 repoId filter 會 across 所有 repo（跨 repo 洩漏）。寫法是：`db.collectionGroup('commits').where('repoId', '==', repoId).findNearest({ vectorField, queryVector, limit, distanceMeasure: 'COSINE' })`。`queryVector` 用 `FieldValue.vector(embedding)` 包裝。
 
 ---
 
@@ -535,190 +656,118 @@ read:user       # 讀 user info
 
 ### 6.3 Webhook 處理 (`githubWebhook` HTTPS)
 
-```typescript
-export const githubWebhook = onRequest(async (req, res) => {
-  const sig = req.headers['x-hub-signature-256'];
-  const event = req.headers['x-github-event'];
-  const delivery = req.headers['x-github-delivery'];   // 用於 idempotency
+`githubWebhook` Cloud Function 收到 GitHub 推來的 POST 後依序處理：
 
-  // 1. 從 payload 拿 repoId → 查 webhookSecret → 驗 HMAC
-  const repoId = `${payload.repository.owner.login}_${payload.repository.name}`;
-  if (!verifyHmac(sig, secret, rawBody)) return res.status(401).send('bad sig');
+1. **驗 HMAC 簽章** — 從 `x-hub-signature-256` header 取簽章，從 payload 的 `repository.owner.login` + `name` 組出 `repoId` 並去 Firestore 查 `repos/{repoId}.webhookSecret`，以 HMAC-SHA256 驗 raw body。失敗回 401。
+2. **Idempotency** — 取 `x-github-delivery` header（GitHub 為每次推送配發的唯一 ID）當 idempotency key，已處理過直接回 200 `dup`。
+3. **依 event 類型派發** — 看 `x-github-event` header，分派到 `handlePush` / `handlePR` / `handleIssue`。
+4. **回 200** — GitHub 對 webhook 有 10 秒 timeout，逾期會 retry，因此 handler 必須極快回應。
 
-  // 2. Idempotency
-  if (await alreadyProcessed(delivery)) return res.status(200).send('dup');
+**重要原則**：webhook handler **只負責「raw payload → 標準化 → 寫入 Firestore」**，不解析業務語意、不呼叫 OpenAI、不跨文件更新。所有後續邏輯下沉給 §4.3 對應的 Firestore Trigger（trigger 才有 idempotency key 保護）。這樣 webhook 永遠在毫秒級回應 GitHub（避免 retry 風暴），重邏輯 / 重 retry 集中在 trigger 層。
 
-  // 3. Dispatch
-  switch (event) {
-    case 'push':         await handlePush(repoId, payload); break;
-    case 'pull_request': await handlePR(repoId, payload); break;
-    case 'issues':       await handleIssue(repoId, payload); break;
-  }
+**`handlePush`** — 只做寫入：對 payload 中每個 commit，set `repos/{repoId}/commits/{sha}`，欄位含 `repoId`（冗餘）、`message`、`author`、`url`、`filesChanged`、`additions`、`deletions`、`committedAt`。**不解析** commit message 的 `#N`、**不算 embedding**、**不寫 `linkedTaskIds`** — 由 `onCommitCreated` trigger 統一處理。
 
-  res.status(200).send('ok');
-});
-```
+**`handlePR`**（只在 `action == "closed"` 且 `merged == true` 時處理）— 只做寫入：set `pullRequests/{n}`，欄位含 `repoId`（冗餘）、`title`、`state: "merged"`、`commitShas`、`headBranch`、`baseBranch`、`mergedAt`。**不更新** 對應 tasks 的 status — 由 `onPRMerged` trigger 用 transaction 處理。
 
-**`handlePush`**：
-- 對每個 commit 寫 `repos/{repoId}/commits/{sha}`
-- 解析 message 找 `#N` / `fixes #N` → 找對應 task → 寫 `linkedTaskIds`
-- 由 `onCommitCreated` trigger 算 embedding + AI 摘要
-
-**`handlePR` (action = "closed" && merged)**：
-- 寫 `pullRequests/{n}`
-- 把 `linkedTaskIds` 標為 done（觸發 `generateHandoffFlow`）
+**`handleIssue`** — 只做寫入：若 issue 對應系統建立的 task，同步該 task 的 `githubIssueNumber` / `state`；其餘交給 trigger。
 
 ### 6.4 GitHub API client 包裝
 
-```typescript
-// functions/src/services/githubClient.ts
-import { Octokit } from '@octokit/rest';
+把 Octokit 包成 `functions/src/services/githubClient.ts`，對外暴露兩個函式：
 
-export function getOctokit(userAccessToken: string) {
-  return new Octokit({ auth: userAccessToken });
-}
+- `getOctokit(userAccessToken)` — 用使用者的 GitHub OAuth token 建立一個 Octokit 實例。
+- `getRecentCommits(owner, repo, accessToken)` — 呼叫 Octokit 的 `repos.listCommits`，回最近 20 個 commit（給 `breakdownTaskFlow` 拉專案上下文用）。
 
-export async function getRecentCommits(owner: string, repo: string, accessToken: string) {
-  const octokit = getOctokit(accessToken);
-  const { data } = await octokit.repos.listCommits({ owner, repo, per_page: 20 });
-  return data;
-}
-```
+之後需要新增其他 GitHub 操作（如建 issue、查 PR diff）就加到同一個檔案，保持「所有 GitHub API 呼叫只走這層」的紀律。
 
 ---
 
-## 7. Discord Bot 整合
+## 7. Discord 整合（簡化版）
 
-> 用 Discord Interactions API（webhook-based），**不用 gateway/bot 常駐連線**，完全符合 Cloud Functions 模型。
+> **設計取捨**：原本規劃 slash command + interactions endpoint + Cloud Tasks worker 的完整 bot 架構（3 秒回應限制 + Deferred Response + Cloud Tasks 解耦）整套都不做。改用更簡單的「**訊息直接寫 Firestore，App 端負責整理**」模型。
+>
+> 換言之：Discord 不是「指令介面」，而是**單向資料源**——成員在 Discord 自然聊天，所有訊息存進 Firestore，APP 端在需要時（如生成交接文件、組日報）才去 RAG 搜尋這些訊息。
 
-### 7.1 Bot 設置
+### 7.1 兩條資料流
 
-1. Discord Developer Portal 建 Application
-2. 啟用 **Interactions Endpoint URL**: `https://<region>-<project>.cloudfunctions.net/discordInteractions`
-3. 註冊 slash commands（一次性）:
-
-```typescript
-// scripts/registerDiscordCommands.ts (本機跑一次)
-await fetch(`https://discord.com/api/v10/applications/${APP_ID}/commands`, {
-  method: 'PUT',
-  headers: { Authorization: `Bot ${BOT_TOKEN}` },
-  body: JSON.stringify([
-    { name: 'gitsync-link', description: '把這個頻道綁到 GitSync repo' },
-    { name: 'gitsync-check', description: '查看某人的任務', options: [{ name: 'user', type: 6, required: true }] },
-    { name: 'gitsync-daily', description: '取得今天的日報' },
-    { name: 'gitsync-assign', description: 'AI 自動分派指定任務' },
-  ]),
-});
+```
+┌─────────────────────────────┐                ┌──────────────────────────────┐
+│  Discord (團隊聊天頻道)       │                │  Discord Channel (notify 用) │
+└──────────────┬──────────────┘                └──────────────▲───────────────┘
+               │                                              │
+   (Inbound: 訊息進來)                          (Outbound: 任務完成通知)
+               │                                              │
+               ▼                                              │
+  ┌──────────────────────────────┐         ┌─────────────────┴──────────────┐
+  │ discordMessageIngest         │         │ onTaskUpdated (Firestore Trigger)│
+  │ HTTPS Cloud Function         │         │                                  │
+  │ 由使用者另外設置的 forwarder │         │ 任務 status → "done" 時觸發       │
+  │ 把 message POST 過來         │         │ POST Discord channel webhook URL │
+  └──────────────┬──────────────┘         └──────────────────────────────────┘
+                 │
+                 ▼
+       apps/gitsync/repos/{repoId}/discordMessages/{messageId}
 ```
 
-### 7.2 `discordInteractions` Function — **3 秒回應限制 + Deferred Response**
+### 7.2 Inbound — 訊息怎麼進 Firestore
 
-**關鍵限制**：Discord Interactions Webhook 必須在 **3 秒內** 回應，否則使用者會看到「應用程式沒有回應」。但 `gitsync-assign`（呼 AI flow loop）或 `gitsync-daily`（生成日報）動輒 5–15 秒。
+**重點**：Cloud Functions 是 stateless 的，**不能維持常駐 Discord bot 連線**。所以「捕捉 Discord 所有訊息」這件事必須由 Cloud Functions **以外** 的東西做。三種選項（任選其一）：
 
-**解法**：兩段式回應
-1. 立刻回 `type: 5`（DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE）→ Discord 顯示「正在處理中...」
-2. 真正處理完，用 `interaction.token` PATCH `@original` 訊息，把結果補上去
+| 選項 | 怎麼做 | 適合場景 |
+|---|---|---|
+| **A. 本機 / VPS 跑 discord.js bot** | 寫一個小 bot，`messageCreate` event → POST 到 `discordMessageIngest` Cloud Function | 開發期 / Demo 期最簡單，使用者自己跑 |
+| **B. Discord Channel Outbound Webhook + 中繼** | 設定 channel 的 webhook，但 Discord 沒有原生「訊息送出時轉發到我的 URL」功能——須搭配 [Zapier / IFTTT / n8n] 或 Discord-MCP 之類中繼 | 不想自己跑 bot |
+| **C. Cloud Run 跑常駐 discord.js** | discord.js bot 部署到 Cloud Run（min-instance=1） | 正式上線；非 MVP |
 
-```typescript
-import nacl from 'tweetnacl';
+**Demo 選 A**（使用者自己在本機 / 一台 VPS 跑 forwarder bot）。
 
-export const discordInteractions = onRequest(
-  { region: 'us-west1', secrets: [discordPublicKey, discordBotToken, openaiKey] },
-  async (req, res) => {
-    // 1. 驗證 Ed25519 簽章 (Discord 要求)
-    const sig = req.headers['x-signature-ed25519'] as string;
-    const ts = req.headers['x-signature-timestamp'] as string;
-    if (!nacl.sign.detached.verify(
-          Buffer.from(ts + req.rawBody),
-          Buffer.from(sig, 'hex'),
-          Buffer.from(discordPublicKey.value(), 'hex'))) {
-      return res.status(401).send('invalid signature');
-    }
+**Cloud Function `discordMessageIngest`** 是 `onRequest` HTTP 端點，行為：
 
-    // 2. PING (Discord 驗證 endpoint 用)
-    if (req.body.type === 1) return res.json({ type: 1 });
+1. **驗共享密鑰** — header `x-ingest-secret` 比對 `DISCORD_INGEST_SECRET`（不是 Discord 自家簽章——這個 endpoint 不直接面向 Discord）。不符回 401。
+2. **驗 payload 結構** — body 期望含 `repoId`、`messageId`、`channelId`、`authorId`、`authorName`、`content`、`mentionedUserIds`、`timestamp`。任一缺漏回 400。
+3. **Idempotency** — `messageId` 是 Discord 端的全域唯一 ID，直接當文件 ID。先 `get` 看是否存在，存在直接回 200 `dup`。
+4. **寫入** — `repos/{repoId}/discordMessages/{messageId}`，欄位含 `repoId`（冗餘，供 vector 預過濾）、`channelId`、`authorId`、`authorName`、`content`、`mentionedUserIds`、`linkedTaskIds: []`（留空，等 `onDiscordMessageCreated` trigger 用 AI 推斷後補上）、`timestamp`（轉成 Firestore Timestamp）、`ingestedAt: serverTimestamp()`。
+5. **不算 embedding** — 那是 trigger 的事，這層不做（職責切分原則）。
 
-    // 3. APPLICATION_COMMAND
-    if (req.body.type === 2) {
-      const cmd = req.body.data.name;
-      const token = req.body.token;
-      const applicationId = req.body.application_id;
+**Forwarder bot**（使用者另外跑，**不在 functions repo 內**）需具備以下能力：
 
-      // 3a. 短指令（< 1s）— 直接同步回
-      if (cmd === 'gitsync-link') {
-        return handleLinkSync(req, res);
-      }
+- **連線** — 用 `discord.js`，啟用 `Guilds` / `GuildMessages` / `MessageContent` 三個 intents
+- **頻道對照** — 維護一份 `channelId → repoId` 的對應表（手動設定）；收到訊息先查表，不在表內的頻道直接忽略
+- **過濾雜訊**（**重要**，在 forwarder 端就過，不要把噪聲送到 ingest endpoint，省 invocation + token）。`shouldKeepMessage(msg)` 規則：
+  - bot 發的訊息一律忽略
+  - 純附件 / 純貼圖（無文字內容）忽略
+  - 第一行 trim 後長度 < 5 字元忽略
+  - 命中以下任一 regex 忽略：純表情字（`haha`/`哈+`/`呵+`/`lol`/`gg` 等）、純應答詞（`ok`/`好`/`收到`/`了解`/`謝謝` 等）、純 `+1` / `-1`、純 emoji 字串、純連結
+- **指數退避重試**（`sendWithRetry`，**重要**，對抗冷啟動 + 429）：
+  - 上限 4 次重試，base delay 1 秒，指數退避（1s → 2s → 4s → 8s），加 0–500ms jitter 避免同時打
+  - 單次 timeout 8 秒（用 `AbortController` 包，覆蓋冷啟動的 1.5–3 秒）
+  - 4xx 非 429（如 401、400）直接放棄不重試；5xx 與 429 才重試
+  - 4 次全失敗 → log critical 後丟包（不無限重試卡死）
+- **不阻塞主執行緒** — `messageCreate` 事件 handler 內**不 await** `sendWithRetry`，讓它在背景跑，否則一個訊息卡住會擋住 discord.js 後續事件
 
-      // 3b. 長指令 — 立刻回 DEFERRED，把實際工作丟到背景
-      // 必要：必須先 res.json 才能跑長工作，否則 Discord 會 timeout
-      res.json({ type: 5 });  // DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE
+**為什麼必須要 retry**：Cloud Functions 在閒置後啟動需 1.5–3 秒；Discord 一個 channel 突然多人發言時，瞬間多個並發請求會同時撞冷啟動（後續實例還在 spin up）+ 429。沒 retry → 對話直接 drop → RAG 缺資料。指數退避加 jitter 能把重試打散，等到 Functions 暖機完成。
 
-      // 背景處理（注意：onRequest 的 process 不會等 res 之後的 async，
-      // 所以高頻場景請改投 Cloud Tasks / Pub/Sub）
-      try {
-        let resultContent = '';
-        switch (cmd) {
-          case 'gitsync-check':  resultContent = await runCheck(req.body); break;
-          case 'gitsync-daily':  resultContent = await runDaily(req.body); break;
-          case 'gitsync-assign': resultContent = await runAssign(req.body); break;
-        }
-        await editOriginalInteraction(applicationId, token, resultContent);
-      } catch (err) {
-        await editOriginalInteraction(applicationId, token, `❌ Failed: ${err.message}`);
-      }
-      return;
-    }
-  }
-);
+**第二層防護**：`discordMessageIngest` Cloud Function 端也再過一次相同的雜訊規則（防止 forwarder 規則有漏 / 多個 forwarder 不一致 / 或之後有人改 forwarder 沒改 server）。把規則邏輯抽到 `functions/src/tools/discordFilter.ts`，與 forwarder 規則同步維護。
 
-// PATCH @original：把 deferred 訊息更新成真實內容
-async function editOriginalInteraction(appId: string, token: string, content: string) {
-  await fetch(
-    `https://discord.com/api/v10/webhooks/${appId}/${token}/messages/@original`,
-    {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
-    }
-  );
-}
-```
+### 7.3 Outbound — 任務完成時通知 Discord
 
-**為何不用 Cloud Tasks**：MVP 階段 onRequest 的「res.json 後繼續跑 async」在 Functions v2 是可行的（process 生命週期延續到所有 promise 完成）；若日後遇到 cold start / timeout 再升級成 Cloud Tasks。
+用 Discord channel webhook URL（不需要 bot token，不需要 Cloud Tasks——這是純單向 POST，沒有 3 秒回應問題）。
 
-**為何 `gitsync-assign` 不直接呼 `assignTask` callable**：Discord 端的 `interaction.token` 只在 Discord 環境有效，必須由 `discordInteractions` 親自處理回填；不能把工作丟給 callable 後讓它「自己回覆 Discord」（會丟失 token 上下文）。實作上 `runAssign` 內部會直接 import 並呼叫 `assignTaskFlow`（不走 callable wrapper）。
+`repos/{repoId}` 已有 `discordWebhookUrl: string?` 欄位（使用者建立 channel webhook 後填入）。
 
-### 7.3 Bot 主動發訊 (從 Firestore Trigger)
+實作放在 `functions/src/tools/discordNotify.ts`，提供 `notifyDiscord(webhookUrl, content)`：若 webhookUrl 為空就直接 return；否則 POST 一個 JSON `{ content }` 到 webhook URL，失敗用 `.catch()` 吞錯記 log 即可——通知不到不該影響主流程（Firestore 寫入應已完成）。
 
-```typescript
-// 當任務狀態變 done，通知下游
-async function notifyDiscordOnTaskDone(repoId: string, task: Task) {
-  const repo = await getRepo(repoId);
-  if (!repo.discordChannelId) return;
+`onTaskUpdated` trigger 內呼叫情境：當 `before.status !== 'done' && after.status === 'done'`，讀 repo 取 webhook URL，組訊息「✅ \`<task.title>\` 已完成。下一步：\`<nextTask.title>\`」推送即可。
 
-  await fetch(`https://discord.com/api/v10/channels/${repo.discordChannelId}/messages`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bot ${BOT_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      content: `✅ \`${task.title}\` 已完成！\n下一步：<@${nextAssigneeDiscordId}> 可以開始 \`${nextTask.title}\` 了。`,
-    }),
-  });
-}
-```
+### 7.4 不做的部分（從原規劃移除）
 
-### 7.4 抓 Discord 訊息（被動模式）
+- ❌ `discordInteractions` Cloud Function（接 slash command）
+- ❌ Cloud Tasks queue (`discord-tasks`) + `discordAsyncWorker`
+- ❌ Discord Ed25519 簽章驗證（不需要，因為不接 Discord interactions）
+- ❌ Slash commands (`/gitsync-check`, `/gitsync-daily`, `/gitsync-assign`, `/gitsync-link`)
+- ❌ `DISCORD_PUBLIC_KEY` secret
 
-不用常駐 bot，**改用 Discord 的 Message Webhook**：
-1. 用戶在 Discord Server 設定 webhook → 訊息 forward 到我們的 `discordMessageReceiver` Cloud Function
-2. 或更實際：在 bot 上加 `messageCreate` event（需要常駐連線）—> 太重，不採用
-3. **方案**：bot 只回應 slash command，**訊息抓取改成「使用者按按鈕主動 import」**：
-   - Discord 訊息上加 [Add to GitSync] context menu command
-   - 點了之後 webhook 送過來，存到 `discordMessages`
-
-> 這比常駐 bot 簡單十倍，且足以滿足核心功能（讓 AI 在生成 handoff 時能搜尋到相關討論）。
+替代：所有「主動查詢 / 觸發」的動作都改在 **GitSync APP 內** 做（按鈕 + Firebase Callable）。Discord 端只負責「聊天就好」。
 
 ---
 
@@ -818,8 +867,9 @@ final darkTheme = ThemeData(
 
 ### Sprint 4（1 週）— GitHub + Discord 整合
 - [ ] E: GitHub webhook 處理 push/PR/issue
-- [ ] C: `onCommitCreated` trigger + AI summary
-- [ ] E: Discord slash commands + bot 主動推播
+- [ ] C: `onCommitCreated` trigger + AI summary（含 idempotency + commit filter）
+- [ ] E: 部署獨立 forwarder bot 至本機/VPS + `discordMessageIngest` Cloud Function
+- [ ] E: 設定 `repos.discordWebhookUrl` 並驗證 outbound 通知（任務完成時推播）
 - [ ] A: DailyView 三個 Tab
 
 ### Sprint 5（1 週）— 統計 + 拋光
@@ -834,38 +884,38 @@ final darkTheme = ThemeData(
 
 | 風險 | 緩解 |
 |---|---|
-| OpenAI 費用超支 | 用 prompt caching；非必要功能（每日報、commit summary）做成手動觸發 |
+| OpenAI 費用超支 | Prompt caching；commit summary 用 gpt-4o-mini；commit / discord 雙層雜訊過濾；非必要功能（每日報）可改成手動觸發 |
 | Firestore 查詢慢（依賴圖跨節點） | 不用 graph DB；`dependsOn` 直接存陣列，UI 端組圖；最多 50 個 task 沒問題 |
-| GitHub webhook 重送 | `x-github-delivery` 當 idempotency key |
-| Discord 不能常駐連線 | 不抓所有訊息；改成「用戶按按鈕主動 import」 |
+| GitHub webhook 重送 | `x-github-delivery` 當 webhook 層 idempotency；Trigger 層另用 `event.id` (§4.4 規則 C) |
+| **GitHub webhook 高併發爭用** | webhook handler 只寫入 raw doc，全部業務邏輯下沉到 trigger（§6.3 / §4.3 職責切分） |
+| **Discord forwarder 丟包（冷啟動 / 429）** | forwarder 內建指數退避重試 + jitter (§7.2 `sendWithRetry`)；4xx 非 429 直接 drop 不再 retry |
+| Discord 不能常駐連線 (Cloud Functions 限制) | 由使用者自架 forwarder bot（本機/VPS）即時轉發；正式版可遷至 Cloud Run min-instance=1 |
+| **重複拆解任務** (兩人同時點 / 連點) | 前端 button disable + 後端 `isBreakingDown` 分散式鎖 + 5min 排程兜底解鎖 (§5.1) |
 | Firebase Auth GitHub provider 拿不到 long-lived token | 第一次拿到的 token 存好；過期再 silent refresh |
-| Function cold start | 高頻函式 (`githubWebhook`) 加 `minInstances: 1`（會多算錢，期末再加） |
+| Function cold start（一般） | 高頻函式 (`githubWebhook`、`discordMessageIngest`) 在期末 demo 前加 `minInstances: 1`（會多算錢） |
 
 ---
 
 ## 12. 環境變數 / Secret 管理
 
-用 Firebase Functions `defineSecret`：
+統一用 Firebase Functions 的 `defineSecret`（`firebase-functions/params`）。所有 secret 在 `functions/src/config.ts` 集中宣告，需要該 secret 的 function 在註冊時把它列在 options 的 `secrets` 陣列裡，function 內以 `secret.value()` 讀取。
 
-```typescript
-import { defineSecret } from 'firebase-functions/params';
-import { onCall } from 'firebase-functions/v2/https';
+需要的 secrets：
 
-const openaiKey = defineSecret('OPENAI_API_KEY');
-const discordBotToken = defineSecret('DISCORD_BOT_TOKEN');
-const discordPublicKey = defineSecret('DISCORD_PUBLIC_KEY');
-const githubAppPrivateKey = defineSecret('GITHUB_APP_PRIVATE_KEY');  // 若用 GitHub App，個人 OAuth 不用
+| Secret 名稱 | 用途 | 誰需要 |
+|---|---|---|
+| `OPENAI_API_KEY` | 呼叫 OpenAI API | 所有 AI flow / trigger |
+| `DISCORD_INGEST_SECRET` | forwarder bot ↔ `discordMessageIngest` 共享密鑰 | `discordMessageIngest` |
+| `GITHUB_APP_PRIVATE_KEY` | 若改用 GitHub App 模式；個人 OAuth 模式不用 | `githubWebhook` / `addRepo` |
 
-export const breakdownTask = onCall(
-  { region: 'us-west1', secrets: [openaiKey] },
-  async (request) => { /* ... */ }
-);
-```
+設定指令（**使用者親跑**，AI 不可）：
 
-設定：
 ```bash
 firebase functions:secrets:set OPENAI_API_KEY
+firebase functions:secrets:set DISCORD_INGEST_SECRET
 ```
+
+設定後 Firebase Console 會把 secret 加密存進 Google Secret Manager。Functions 啟動時自動以環境變數注入，本機 emulator 跑時用 `.secret.local` 檔（不入 git，加進 `.gitignore`）。
 
 ---
 
