@@ -441,7 +441,7 @@ exports.subscribeToTopic = https.onCall(async (request) => {
 
 // (2) Firestore trigger — 對寫入事件反應
 exports.onTaskCreated = onDocumentCreated(
-  { document: "apps/gitsync/repos/{repoId}/tasks/{taskId}", region: "us-west1" },
+  { document: "apps/gitsync/repos/{repoId}/tasks/{taskId}", region: "asia-east1" },
   async (event) => { /* ... */ }
 );
 
@@ -456,7 +456,7 @@ exports.githubWebhook = onRequest(async (req, res) => { /* ... */ });
 
 ```js
 exports.onTaskCreated = onDocumentCreated(
-  { document: "apps/gitsync/repos/{repoId}/tasks/{taskId}", region: "us-west1" },
+  { document: "apps/gitsync/repos/{repoId}/tasks/{taskId}", region: "asia-east1" },
   async (event) => {
     const idempotencyRef = db.doc(`apps/gitsync/idempotencyKeys/${event.id}`);
 
@@ -477,7 +477,9 @@ exports.onTaskCreated = onDocumentCreated(
 );
 ```
 
-### 6.3 Region 一律 `us-west1`（課程範例都是這個）
+### 6.3 Region 一律 `asia-east1`
+
+> 課程範例用 `us-west1`，本專案改成 `asia-east1` 因為團隊與 demo 在台灣、Firestore 也建在 `asia-east1`，跨區 trigger latency 從 ~150ms 降到 ~10ms。見 [MEMORY.md 2026-05-27](./MEMORY.md#2026-05-27--cloud-functions-region-改成-asia-east1取代-us-west1)。
 
 ---
 
@@ -760,7 +762,7 @@ import { openaiKey } from './config';
 import { breakdownTaskFlow } from './flows/breakdownTask';
 
 export const breakdownTask = onCall(
-  { region: 'us-west1', secrets: [openaiKey] },
+  { region: 'asia-east1', secrets: [openaiKey] },
   async (request) => {
     if (!request.auth) throw new HttpsError('failed-precondition', 'Please log in first.');
     const { repoId, goal } = request.data;
@@ -775,7 +777,7 @@ export const breakdownTask = onCall(
 import 'package:cloud_functions/cloud_functions.dart';
 
 Future<List<Subtask>> breakdownTask(String repoId, String goal) async {
-  final callable = FirebaseFunctions.instanceFor(region: 'us-west1')
+  final callable = FirebaseFunctions.instanceFor(region: 'asia-east1')
       .httpsCallable('breakdownTask');
   final response = await callable.call({'repoId': repoId, 'goal': goal});
   final data = Map<String, dynamic>.from(response.data as Map);

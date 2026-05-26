@@ -22,6 +22,6 @@ export const scheduledDailyReport = onSchedule(
     //  - For each repoId, enqueue a Cloud Task on `daily-report-queue` with
     //    body { repoId, date: today }, target = dailyReportWorker URL
     //  - The Cloud Tasks queue must be created by a human:
-    //      gcloud tasks queues create daily-report-queue --location=us-west1
+    //      gcloud tasks queues create daily-report-queue --location=asia-east1
   },
 );

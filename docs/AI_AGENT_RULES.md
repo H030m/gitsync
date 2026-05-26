@@ -213,8 +213,8 @@ docs/journal/
 所有 collection 開頭都是 `apps/gitsync/...`，沿用課程 group-todo-list 範例的命名。
 不要寫成根目錄 `users/`、`repos/`。
 
-## 2026-05-15 — Region 固定 us-west1
-所有 Cloud Functions 都用 us-west1，跟課程範例一致。**不要混用** region，混了 callable 會找不到。
+## 2026-05-27 — Region 固定 asia-east1
+所有 Cloud Functions 都用 asia-east1（與 Firestore database 同 region，台灣）。**不要混用** region，混了 callable 會找不到。
 ```
 
 什麼時候要寫 MEMORY 而非 journal：當決策**影響到別人怎麼寫程式**。
@@ -320,7 +320,7 @@ Future<void> addTask(Task task) async {
 ### 3.6 Cloud Functions 寫法守則
 
 - 一律用 `firebase-functions/v2`（不要混 v1）
-- Region 一律 `us-west1`
+- Region 一律 `asia-east1`（與 Firestore database 同 region）
 - 任何 `onDocumentCreated/Updated/Deleted` trigger **必加 idempotency key** check
 - 任何 `onCall` 開頭先檢查 `request.auth`，未登入 throw `HttpsError('failed-precondition', ...)`
 - 任何 HTTP webhook 開頭先驗簽章（GitHub HMAC / Discord Ed25519）
@@ -370,7 +370,7 @@ Future<void> addTask(Task task) async {
 ### 4.3 ARCHITECTURE 合規（依 ARCHITECTURE.md）
 
 - [ ] Firestore 路徑開頭是 `apps/gitsync/`
-- [ ] Cloud Function region 是 `us-west1`
+- [ ] Cloud Function region 是 `asia-east1`
 - [ ] 所有 Firestore trigger 有 idempotency key
 - [ ] 所有 `onCall` 開頭有 auth check
 - [ ] 沒有發明新 collection / field（如需新增，先在 MEMORY.md 提議再做）
@@ -393,13 +393,14 @@ Future<void> addTask(Task task) async {
 
 ### 4.6 給使用者的回報
 
-收尾的訊息**必須包含**這四項，**禁止只寫「已完成」**：
+收尾的訊息**必須包含**這五項，**禁止只寫「已完成」**：
 
 ```
 ✅ 做了：<具體做了什麼>
 📁 動了：<檔案清單>
 ⚠️ 沒做：<明確不在這次範圍的東西>
 🧪 驗證：<跑了什麼測試，什麼通過、什麼還沒驗證>
+💬 建議 commit message：<一行 ≤72 字英文 subject；必要時下方再加一段 body 多行說明>
 ```
 
 範例：
@@ -413,6 +414,32 @@ Future<void> addTask(Task task) async {
   ✅ flutter analyze pass
   ✅ iOS Simulator 點刪除正常
   ❌ Android 未測（沒裝 emulator）
+💬 建議 commit message：
+  Add delete button to TaskTile
+```
+
+#### 4.6.1 Commit message 格式守則
+
+- **語言**：英文（與 repo 既有 commit 一致；隊員之間對話用中文沒問題，但 git history 用英文方便 diff search / GitHub 顯示）
+- **語氣**：imperative mood — `Add` / `Fix` / `Refactor` / `Wire up` / `Stub out`，**不要** 用 `added` / `fixes` / `working on`
+- **Subject 行**：≤72 字、結尾不加句點、不寫機械化前綴（這個 repo 既有歷史不用 conventional commits 那套 `feat:` / `fix:` 標頭，跟著現況走）
+- **單 commit 一個邏輯變更**：如果這次工作跨了多個不相關範圍（例如同時補了 ViewModel 又改了 Cloud Function），**列多條建議 commit**，順便提醒使用者該拆 commit 而不是混合在一起
+- **複雜變更**：subject 一行抓不下時，下方加 body — 用一行空白行隔開，body 解釋「為何這樣做 / 影響到哪些既有行為 / 哪些東西**沒**動」
+- **AI 只生成字串**：不論建議內容多完整，AI **絕對不可** 自己跑 `git commit`，必須讓使用者複製貼上（[§R1](#r1-ai-不可自己-commit--push--任何寫-git-歷史的動作)）
+
+範例：跨多範圍時拆 commit 建議
+```
+💬 建議 commit message（建議拆 2 個 commit）：
+  1. functions: implement breakdownTask flow with cycle detection
+
+     Wire up the OpenAI structured-output call, add detectCycles DFS, and
+     translate LLM 0-based indices to real Firestore taskIds before the
+     batch write. Lock release moved to handler's finally block.
+
+  2. lib: expose breakdownTask in AddTodoPage step 2
+
+     Hook the AddTodoPage AI step into FunctionsService.breakdownTask;
+     render returned subtasks in a confirm-step ListView.
 ```
 
 ---
@@ -477,7 +504,7 @@ Future<void> addTask(Task task) async {
 3. **只寫被要求的，不加料**
 4. **寫完跑 [§4 自我檢查](#4-完整自我檢查清單)**
 5. **寫完寫一則 journal**
-6. **跟使用者回報用 ✅📁⚠️🧪 四欄格式**
+6. **跟使用者回報用 ✅📁⚠️🧪💬 五欄格式**（含建議 commit message — AI 只生成字串，不執行 `git commit`）
 
 違反任一條 → code review 不過。
 

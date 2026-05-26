@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../config/app_config.dart';
 import '../view_models/commits_vm.dart';
 import '../view_models/daily_report_vm.dart';
 import '../view_models/discord_messages_vm.dart';
@@ -28,6 +29,18 @@ import '../views/tasks/tasks_board_page.dart';
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
   debugLogDiagnostics: true,
+  // In fake-backend mode the demo user is auto-signed-in at startup
+  // (see [FakeAuthenticationService]), so we skip the sign-in screen and
+  // land directly on the repo list. Live-mode sign-in is handled inside
+  // [SignInPage] which calls `NavigationService.goRepos()` after success.
+  redirect: (ctx, state) {
+    if (AppConfig.useFakeBackend &&
+        AppConfig.autoSignInDemoUser &&
+        state.uri.path == '/') {
+      return '/repos';
+    }
+    return null;
+  },
   routes: <RouteBase>[
     GoRoute(
       path: '/',

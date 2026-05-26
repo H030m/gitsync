@@ -56,7 +56,15 @@ app.*.map.json
 /ui-debug.log
 /.firebase/
 /serviceAccountKey.json
-firebase_options.dart        # flutterfire configure 產出，含 apiKey
+
+# flutterfire configure 產出的 platform config（含 web apiKey；每位隊員自己跑 flutterfire configure 重生）
+lib/firebase_options.dart
+android/app/google-services.json
+android/app/google-services-*.json
+ios/Runner/GoogleService-Info.plist
+ios/Runner/GoogleService-Info-*.plist
+macos/Runner/GoogleService-Info.plist
+macos/Runner/GoogleService-Info-*.plist
 
 # Cloud Functions (Node.js)
 /functions/node_modules/

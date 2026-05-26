@@ -6,6 +6,12 @@
 
 ---
 
+## 2026-05-26 — AI 收尾回報多加一欄「建議 commit message」（五欄格式）
+
+[`AI_AGENT_RULES.md §4.6`](./AI_AGENT_RULES.md#46-給使用者的回報) 從 ✅📁⚠️🧪 四欄擴成 **✅📁⚠️🧪💬 五欄**——多了 💬 建議 commit message。詳細格式守則見新增的 §4.6.1：英文、imperative mood、subject ≤72 字、跨範圍時拆多條 commit、AI 只生成字串不執行 `git commit`（仍受 [§R1](./AI_AGENT_RULES.md#r1-ai-不可自己-commit--push--任何寫-git-歷史的動作) 約束）。
+
+理由：嘉駿開工時要求「寫完更改要附上 commit name 建議幫助其他人看懂」。AI 反正都有完整脈絡（剛改過什麼、為何改），順便產一行 git history 用的訊息成本是 0，但能讓人類隊員 review PR 與 commit log 時看懂。
+
 ## 2026-05-26 — 所有程式碼與註解一律用英文，APP 字串也是
 
 包括 Dart (`lib/`) 與 TypeScript (`functions/`) 兩邊，所有：
@@ -156,7 +162,7 @@ GitHub push 10 個 commit 會引發 10 個 `onCommitCreated` 併發。read-modif
 
 `scheduledDailyReport` 不可 for-loop 跑所有 repo（500 秒 timeout）。排程器只做「掃 repoId 列表 → 投 Cloud Tasks」；每個 repo 由獨立 worker function 處理。
 
-需建立 queue：`gcloud tasks queues create daily-report-queue --location=us-west1`。
+需建立 queue：`gcloud tasks queues create daily-report-queue --location=asia-east1`。
 
 ## 2026-05-26 — Commit message embedding 前必過濾
 
@@ -177,9 +183,59 @@ GitHub push 10 個 commit 會引發 10 個 `onCommitCreated` 併發。read-modif
 
 所有 collection 開頭都是 `apps/gitsync/...`，沿用課程 `group-todo-list` 範例的命名慣例。**不要寫成根目錄 `users/`、`repos/`**。
 
-## 2026-05-26 — Cloud Functions region 固定 `us-west1`
+## 2026-05-27 — Fake backend 模式（`AppConfig.useFakeBackend`）
 
-所有 Functions 都用 `us-west1`，跟課程範例一致。**不要混用 region**——混了 callable 在 Flutter 端會找不到。
+App 預設用 in-memory dummy data 跑，不打 Firebase / OpenAI / GitHub / Discord。讓五人團隊任何隊員 clone repo 後 `flutter run` 就能看 UI、開發各自模組，**不需先 setup 任何 API**。
+
+### 切換方式
+
+```powershell
+flutter run --dart-define=BACKEND=live   # 真實 Firebase（需先 flutterfire configure + 啟 GitHub OAuth provider）
+flutter run --dart-define=BACKEND=fake   # in-memory dummy data
+flutter run                              # 用 AppConfig.defaultBackend（目前是 fake）
+```
+
+### 設計
+
+每個 Repository / Service 都重構成 `abstract class XxxRepository` + `_LiveXxxRepository implements XxxRepository` (Firestore-backed) + `FakeXxxRepository implements XxxRepository` (in-memory)。`UserRepository()` factory 依 `AppConfig.useFakeBackend` 選 impl。
+
+Dummy data 在 [`lib/data/dummy_data.dart`](../lib/data/dummy_data.dart)：3 個 user、1 個 repo、8 個 task、3 個 commit、1 個 PR、3 個 Discord 訊息、1 份今日 daily report。
+
+### Fresh clone 後的 setup
+
+`lib/firebase_options.dart` 是 gitignored（保護 apiKey），fresh clone 後此檔不存在會編譯失敗。**clone 後第一步**：
+
+```powershell
+Copy-Item lib/firebase_options.example.dart lib/firebase_options.dart
+```
+
+之後：
+- **想用 fake mode** → 不用再做任何事，`flutter run` 直接跑（fake mode 不會去 call `DefaultFirebaseOptions.currentPlatform`）
+- **想用 live mode** → 跑 `flutterfire configure` 把 placeholder 換成真實值
+
+### 留給隊員的 TODO
+
+兩個服務的 abstract 上方都標了 `TODO(handoff to X module)`：
+- [`lib/services/authentication.dart`](../lib/services/authentication.dart) → E 模組接手 GitHub OAuth 設定後刪除 TODO
+- [`lib/services/functions_service.dart`](../lib/services/functions_service.dart) → D 模組把 `functions/src/flows/*.ts` 從 stub 補完後刪除 TODO
+
+切換到 live 模式前必須完成這兩件事，否則 UI 會看到 `HttpsError unimplemented`。
+
+詳見 [113062210_chiajun.md 2026-05-27](./journal/113062210_chiajun.md) 那篇。
+
+## 2026-05-27 — Cloud Functions region 改成 `asia-east1`（取代 `us-west1`）
+
+Firestore database 開在 `asia-east1`（台灣），Cloud Functions region 跟著對齊：所有 `onCall` / `onRequest` / Firestore trigger / 排程一律 `asia-east1`。**不要混用 region**——混了 callable 在 Flutter 端會找不到，trigger 跨區也會增加 latency。
+
+理由：團隊與 demo 觀眾都在台灣，課程範例用 `us-west1` 主要是因為 region 不重要、能跑就好；對齊 Firestore region 比沿用課程預設更實際（同 region trigger 寫入 ~10ms，跨太平洋 ~150ms）。
+
+更動範圍（已實作）：
+- `functions/src/admin.ts`：`REGION = 'asia-east1'`
+- `lib/services/functions_service.dart`：`FirebaseFunctions.instanceFor(region: 'asia-east1')`
+- `docs/ARCHITECTURE.md` §0 / §4 / §5（含 Cloud Tasks queue `--location=asia-east1`）
+- `functions/src/triggers/scheduledDailyReport.ts`、`functions/README.md` 的指令字串
+
+舊規矩留作歷史檔案：[`docs/journal/_index.md`](./journal/_index.md) 2026-05-26 那條「region 固定 us-west1」已不適用。
 
 ## 2026-05-26 — `commits` / `discordMessages` / `pullRequests` 必須冗餘存 `repoId`
 

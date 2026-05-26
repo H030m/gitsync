@@ -5,6 +5,21 @@
 
 ---
 
+## 0. Fresh clone 必做的一步
+
+`lib/firebase_options.dart` 是 gitignored（避免 web apiKey 入 git）。`flutter analyze` / `flutter run` 需要這個檔存在，所以 clone 完先做：
+
+```powershell
+Copy-Item lib/firebase_options.example.dart lib/firebase_options.dart
+```
+
+之後分兩條路：
+
+- **Fake backend mode（預設、不用設定 Firebase）** → 不用再做任何事，直接 `flutter run` 就能用 dummy data 跑 — 詳見 [`docs/MEMORY.md` 2026-05-27 Fake backend 模式](../docs/MEMORY.md)
+- **Live backend mode（要連真的 Firebase）** → 跑 `flutterfire configure` 它會用真實值覆寫上一行那個 placeholder，然後 `flutter run --dart-define=BACKEND=live`
+
+---
+
 ## 1. 為什麼有這個資料夾
 
 GitSync 有三條路線會用到 secret：

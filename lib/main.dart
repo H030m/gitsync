@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'config/app_config.dart';
 import 'firebase_options.dart';
 import 'services/authentication.dart';
 import 'services/functions_service.dart';
@@ -13,9 +14,19 @@ import 'view_models/auth_vm.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  // Fake-backend mode skips Firebase entirely so the app boots on a fresh
+  // clone with no `flutterfire configure` run yet.
+  if (!AppConfig.useFakeBackend) {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } else {
+    debugPrint(
+      '[GitSync] Running in FAKE backend mode '
+      '(AppConfig.backend = ${AppConfig.backend.name}). '
+      'No Firebase / OpenAI / GitHub calls will be made.',
+    );
+  }
   runApp(const GitSyncApp());
 }
 
@@ -30,9 +41,7 @@ class GitSyncApp extends StatelessWidget {
         Provider<AuthenticationService>(create: (_) => AuthenticationService()),
         Provider<NavigationService>(create: (_) => NavigationService()),
         Provider<FunctionsService>(create: (_) => FunctionsService()),
-        Provider<PushMessagingService>(
-          create: (_) => PushMessagingService(),
-        ),
+        Provider<PushMessagingService>(create: (_) => PushMessagingService()),
         // Global ChangeNotifiers.
         ChangeNotifierProvider<ThemeModeNotifier>(
           create: (_) => ThemeModeNotifier(),

@@ -1,6 +1,6 @@
 # GitSync Cloud Functions
 
-TypeScript Cloud Functions for the GitSync project. Region pinned to `us-west1`.
+TypeScript Cloud Functions for the GitSync project. Region pinned to `asia-east1`.
 
 ## Layout
 

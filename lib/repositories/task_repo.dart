@@ -1,12 +1,29 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../config/app_config.dart';
 import '../models/task.dart';
+import 'fake/fake_task_repo.dart';
 import 'firestore_paths.dart';
 
-class TaskRepository {
+abstract class TaskRepository {
+  factory TaskRepository() => AppConfig.useFakeBackend
+      ? FakeTaskRepository()
+      : _LiveTaskRepository();
+
+  Stream<List<Task>> streamTasks(String repoId);
+  Stream<Task?> streamTask(String repoId, String taskId);
+  Future<String> addTask(String repoId, Task task);
+  Future<void> updateStatus(String repoId, String taskId, TaskStatus status);
+  Future<void> assignTo(String repoId, String taskId, String? assigneeId);
+  Future<void> deleteTask(String repoId, String taskId);
+  Future<List<Task>> getDependentsOf(String repoId, String taskId);
+}
+
+class _LiveTaskRepository implements TaskRepository {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   static const _timeout = Duration(seconds: 10);
 
+  @override
   Stream<List<Task>> streamTasks(String repoId) {
     return _db
         .collection(FirestorePaths.tasks(repoId))
@@ -17,6 +34,7 @@ class TaskRepository {
             .toList());
   }
 
+  @override
   Stream<Task?> streamTask(String repoId, String taskId) {
     return _db
         .doc('${FirestorePaths.tasks(repoId)}/$taskId')
@@ -28,6 +46,7 @@ class TaskRepository {
     });
   }
 
+  @override
   Future<String> addTask(String repoId, Task task) async {
     final map = task.toMap()
       ..['createdAt'] = FieldValue.serverTimestamp()
@@ -39,6 +58,7 @@ class TaskRepository {
     return ref.id;
   }
 
+  @override
   Future<void> updateStatus(
     String repoId,
     String taskId,
@@ -50,6 +70,7 @@ class TaskRepository {
     }).timeout(_timeout);
   }
 
+  @override
   Future<void> assignTo(
     String repoId,
     String taskId,
@@ -61,6 +82,7 @@ class TaskRepository {
     }).timeout(_timeout);
   }
 
+  @override
   Future<void> deleteTask(String repoId, String taskId) async {
     await _db
         .doc('${FirestorePaths.tasks(repoId)}/$taskId')
@@ -68,8 +90,7 @@ class TaskRepository {
         .timeout(_timeout);
   }
 
-  // Find downstream tasks: who depends on me. Uses `array-contains`; requires
-  // the composite index defined in ARCHITECTURE.md §5.6.
+  @override
   Future<List<Task>> getDependentsOf(String repoId, String taskId) async {
     final snap = await _db
         .collection(FirestorePaths.tasks(repoId))

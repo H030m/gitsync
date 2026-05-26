@@ -1,13 +1,26 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../config/app_config.dart';
 import '../models/repo.dart';
+import 'fake/fake_repo_repo.dart';
 import 'firestore_paths.dart';
 
-class RepoRepository {
+abstract class RepoRepository {
+  factory RepoRepository() => AppConfig.useFakeBackend
+      ? FakeRepoRepository()
+      : _LiveRepoRepository();
+
+  Stream<List<Repo>> streamReposOfUser(String userId);
+  Stream<Repo?> streamRepo(String repoId);
+  Future<Repo?> getRepo(String repoId);
+  Future<void> updateMetadata(String repoId, Map<String, dynamic> patch);
+}
+
+class _LiveRepoRepository implements RepoRepository {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   static const _timeout = Duration(seconds: 10);
 
-  // Lists every repo the user is a member of (uses memberIds array-contains).
+  @override
   Stream<List<Repo>> streamReposOfUser(String userId) {
     return _db
         .collection(FirestorePaths.repos)
@@ -18,6 +31,7 @@ class RepoRepository {
             .toList());
   }
 
+  @override
   Stream<Repo?> streamRepo(String repoId) {
     return _db.doc(FirestorePaths.repo(repoId)).snapshots().map((snap) {
       final data = snap.data();
@@ -26,6 +40,7 @@ class RepoRepository {
     });
   }
 
+  @override
   Future<Repo?> getRepo(String repoId) async {
     final snap = await _db
         .doc(FirestorePaths.repo(repoId))
@@ -36,10 +51,9 @@ class RepoRepository {
     return Repo.fromMap(data, snap.id);
   }
 
-  // Direct Firestore writes are insufficient for adding a repo (we need to
-  // verify the GitHub repo and register a webhook). Use the `addRepo`
-  // callable instead. This method is kept for admin metadata edits.
-  Future<void> updateMetadata(String repoId, Map<String, dynamic> patch) async {
+  @override
+  Future<void> updateMetadata(
+      String repoId, Map<String, dynamic> patch) async {
     await _db.doc(FirestorePaths.repo(repoId)).update(patch).timeout(_timeout);
   }
 }

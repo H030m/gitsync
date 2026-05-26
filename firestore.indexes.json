@@ -1,7 +1,6 @@
 {
   "indexes": [
     {
-      "_comment": "tasks.dependsOn array-contains + status — onTaskUpdated downstream lookup (ARCHITECTURE.md §5.6)",
       "collectionGroup": "tasks",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
@@ -10,7 +9,6 @@
       ]
     },
     {
-      "_comment": "commits vector index — semantic search across commit messages, pre-filtered by repoId",
       "collectionGroup": "commits",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
@@ -22,7 +20,6 @@
       ]
     },
     {
-      "_comment": "discordMessages vector index — semantic search across Discord history, pre-filtered by repoId",
       "collectionGroup": "discordMessages",
       "queryScope": "COLLECTION_GROUP",
       "fields": [

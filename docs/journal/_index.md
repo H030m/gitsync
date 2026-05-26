@@ -16,7 +16,11 @@
 
 ---
 
-## 2026-05-26（今天）
+## 2026-05-27
+
+- **嘉駿 — Fake backend 模式上線**：`--dart-define=BACKEND=fake` 切換；Repository / AuthService / FunctionsService 全部 abstract + Live + Fake；UI 不需要 Firebase / OpenAI / GitHub 就能跑。Region 同步從 us-west1 改 asia-east1（對齊 Firestore 台灣 region）。詳見 [113062210_chiajun.md](./113062210_chiajun.md) 2026-05-27 那篇。
+
+## 2026-05-26
 
 - **嘉駿 (113062210) — Sprint 1 骨架完工**：lib/ 五層 MVVM (theme/models×9/repositories×9/services×5/view_models×8/router/views×11/main.dart) + functions/ TS (handlers×12, triggers×7, flows×4, prompts×4, tools×5, services×1, config/types/admin/index) + secrets/ 中央倉 (含 README + *.env.example) + firestore.rules / indexes / firebase.json。`flutter analyze` 0 warn、`tsc --noEmit` 0 error。**所有 flow 是 stub**（`throw new Error('not implemented yet')`），各模組隊員只要往對應檔案補 OpenAI 呼叫即可。詳見 [113062210_chiajun.md](./113062210_chiajun.md) 2026-05-26 16:50 那篇。
 - 初始化專案文件結構，建立 `docs/journal/` 與五人 journal 初始檔。

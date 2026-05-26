@@ -1,16 +1,27 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../config/app_config.dart';
 import '../models/commit.dart';
+import 'fake/fake_commit_repo.dart';
 import 'firestore_paths.dart';
+
+abstract class CommitRepository {
+  factory CommitRepository() => AppConfig.useFakeBackend
+      ? FakeCommitRepository()
+      : _LiveCommitRepository();
+
+  Stream<List<Commit>> streamRecent(String repoId, {int limit = 50});
+  Stream<List<Commit>> streamCommitsForDay(String repoId, DateTime day);
+  Future<Commit?> getCommit(String repoId, String sha);
+}
 
 // NOTE: The `commits` collection is write-blocked for clients (Firestore
 // Rules set `allow write: if false`); only Cloud Functions may write to it.
-// This repository is read-only. See MEMORY.md 2026-05-26 "clients cannot
-// write to commits/PRs/discordMessages/dailyReports/members".
-class CommitRepository {
+class _LiveCommitRepository implements CommitRepository {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   static const _timeout = Duration(seconds: 10);
 
+  @override
   Stream<List<Commit>> streamRecent(String repoId, {int limit = 50}) {
     return _db
         .collection(FirestorePaths.commits(repoId))
@@ -21,7 +32,7 @@ class CommitRepository {
             snap.docs.map((d) => Commit.fromMap(d.data(), d.id)).toList());
   }
 
-  // Today's commits (used by the daily-report and DailyView screens).
+  @override
   Stream<List<Commit>> streamCommitsForDay(String repoId, DateTime day) {
     final start = DateTime(day.year, day.month, day.day);
     final end = start.add(const Duration(days: 1));
@@ -36,6 +47,7 @@ class CommitRepository {
             snap.docs.map((d) => Commit.fromMap(d.data(), d.id)).toList());
   }
 
+  @override
   Future<Commit?> getCommit(String repoId, String sha) async {
     final snap = await _db
         .doc('${FirestorePaths.commits(repoId)}/$sha')
