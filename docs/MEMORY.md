@@ -6,6 +6,34 @@
 
 ---
 
+## 2026-05-26 — 所有程式碼與註解一律用英文，APP 字串也是
+
+包括 Dart (`lib/`) 與 TypeScript (`functions/`) 兩邊，所有：
+- identifier / variable / function 名（本來就 English）
+- inline comment / docstring / TODO
+- UI 字串（button text、page title、error message）
+
+例外：`docs/` 下的 Markdown（journal / MEMORY / ARCHITECTURE / COURSE_METHODS）**維持中文**——這是文件，給人讀的，不是程式碼。
+
+理由：嘉駿開工時使用者明確要求「請用英文寫程式，包含 APP 的內容以及註解」。統一英文方便五個 AI 接力時 prompt 不會因為語言切換錯亂，也讓未來 demo / 課堂展示時 UI 字串不用再翻譯一次。
+
+## 2026-05-26 — Secrets 兩層儲存：root `secrets/` + `functions/.secret.local`
+
+依使用者指示，所有 API key / OAuth token 集中放在 `gitsync/secrets/`（已 gitignore）：
+- `secrets/openai.env`、`secrets/discord.env`、`secrets/github.env`（含真實值）
+- `secrets/*.example`（範本，**入 git**，教大家如何填）
+- `secrets/README.md`（setup 教學、漏 key 應急流程）
+
+同時依 Firebase emulator 慣例保留 `functions/.secret.local` 給本機 emulator 使用——值必須與 `secrets/openai.env` 等同步。
+
+**正式部署仍走 Google Secret Manager**（`firebase functions:secrets:set ...`，由人類親跑——AI 禁止），不讀本地檔。
+
+## 2026-05-26 — `analysis_options.yaml` 關閉 `prefer_initializing_formals`
+
+此 lint 跟 [課程 model pattern](./COURSE_METHODS.md#41-model--null-safe--firestore-timestamp)（私有 `_createdAt` 欄位 + 公開 getter fallback `Timestamp.now()`）以及 ViewModel 在 ctor body 內掛 stream subscription 的寫法衝突。改用 initializing formal 反而會破壞那兩個 pattern。整個 project 直接把這 rule 設成 `false`。
+
+如果之後新加的純資料 class 想用 initializing formal，自己加 `this._field` 寫法即可，rule 沒開就不會抱怨。
+
 ## 2026-05-26 — ARCHITECTURE.md 文體規範：實作改寫為敘述
 
 ARCHITECTURE.md 是「給人看 + AI 看」的設計文件，不是 reference implementation。所有 TS / Dart 實作 code 一律改寫為敘述（行為條列、責任清單、輸入輸出 contract）。

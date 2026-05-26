@@ -43,3 +43,29 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Secrets (跨服務共用) — 整個資料夾不入 git，但 *.example 範本要入
+/secrets/*
+!/secrets/README.md
+!/secrets/*.example
+!/secrets/.gitkeep
+
+# Firebase 自動產生的 service account / runtime config
+/firebase-debug.log
+/firestore-debug.log
+/ui-debug.log
+/.firebase/
+/serviceAccountKey.json
+firebase_options.dart        # flutterfire configure 產出，含 apiKey
+
+# Cloud Functions (Node.js)
+/functions/node_modules/
+/functions/lib/
+/functions/.secret.local
+/functions/.runtimeconfig.json
+/functions/coverage/
+
+# OS / Editor
+Thumbs.db
+.vscode/launch.json
+.vscode/settings.json

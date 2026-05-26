@@ -1,0 +1,125 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+
+import '../view_models/commits_vm.dart';
+import '../view_models/daily_report_vm.dart';
+import '../view_models/discord_messages_vm.dart';
+import '../view_models/members_vm.dart';
+import '../view_models/tasks_board_vm.dart';
+import '../views/daily/daily_view_page.dart';
+import '../views/notify/notify_screen.dart';
+import '../views/repos/add_repo_page.dart';
+import '../views/repos/repo_list_page.dart';
+import '../views/settings/settings_page.dart';
+import '../views/shell/repo_shell.dart';
+import '../views/sign_in/sign_in_page.dart';
+import '../views/stats/stats_view_page.dart';
+import '../views/tasks/add_todo_page.dart';
+import '../views/tasks/task_details_page.dart';
+import '../views/tasks/tasks_board_page.dart';
+
+// Top-level GoRouter configuration. Matches ARCHITECTURE.md §3.
+//
+// `/repos/:repoId/...` lives under a ShellRoute that scopes the per-repo
+// ViewModels (Tasks / Members / Commits / Discord / DailyReport) so child
+// routes share the same stream subscriptions without re-creating them on
+// every navigation.
+final GoRouter appRouter = GoRouter(
+  initialLocation: '/',
+  debugLogDiagnostics: true,
+  routes: <RouteBase>[
+    GoRoute(
+      path: '/',
+      builder: (_, _) => const SignInPage(),
+    ),
+    GoRoute(
+      path: '/repos',
+      builder: (_, _) => const RepoListPage(),
+      routes: [
+        GoRoute(
+          path: 'add',
+          builder: (_, _) => const AddRepoPage(),
+        ),
+      ],
+    ),
+    ShellRoute(
+      builder: (ctx, state, child) {
+        final repoId = state.pathParameters['repoId'];
+        if (repoId == null) {
+          return Scaffold(
+            body: Center(child: Text('Missing repoId in route ${state.uri}')),
+          );
+        }
+        return MultiProvider(
+          providers: [
+            ChangeNotifierProvider(
+              create: (_) => TasksBoardViewModel(repoId: repoId),
+            ),
+            ChangeNotifierProvider(
+              create: (_) => MembersViewModel(repoId: repoId),
+            ),
+            ChangeNotifierProvider(
+              create: (_) => CommitsViewModel(repoId: repoId),
+            ),
+            ChangeNotifierProvider(
+              create: (_) => DiscordMessagesViewModel(repoId: repoId),
+            ),
+            ChangeNotifierProvider(
+              create: (_) => DailyReportViewModel(repoId: repoId),
+            ),
+          ],
+          child: RepoShell(repoId: repoId, child: child),
+        );
+      },
+      routes: [
+        GoRoute(
+          path: '/repos/:repoId/tasks',
+          builder: (_, state) => TasksBoardPage(
+            repoId: state.pathParameters['repoId']!,
+          ),
+          routes: [
+            GoRoute(
+              path: 'add',
+              builder: (_, state) => AddTodoPage(
+                repoId: state.pathParameters['repoId']!,
+              ),
+            ),
+            GoRoute(
+              path: ':taskId',
+              builder: (_, state) => TaskDetailsPage(
+                repoId: state.pathParameters['repoId']!,
+                taskId: state.pathParameters['taskId']!,
+              ),
+            ),
+          ],
+        ),
+        GoRoute(
+          path: '/repos/:repoId/daily',
+          builder: (_, state) => DailyViewPage(
+            repoId: state.pathParameters['repoId']!,
+          ),
+        ),
+        GoRoute(
+          path: '/repos/:repoId/stats',
+          builder: (_, state) => StatsViewPage(
+            repoId: state.pathParameters['repoId']!,
+          ),
+        ),
+        GoRoute(
+          path: '/repos/:repoId/settings',
+          builder: (_, state) => SettingsPage(
+            repoId: state.pathParameters['repoId']!,
+          ),
+        ),
+      ],
+    ),
+    GoRoute(
+      path: '/notify',
+      builder: (_, _) => const NotifyScreen(),
+    ),
+  ],
+  errorBuilder: (_, state) => Scaffold(
+    body: Center(child: Text('Not found: ${state.uri.path}')),
+  ),
+);

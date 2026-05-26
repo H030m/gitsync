@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "867004928263",
+    "project_id": "gitsync-645b3",
+    "storage_bucket": "gitsync-645b3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:867004928263:android:640a3c49797c0d559275a2",
+        "android_client_info": {
+          "package_name": "com.example.gitsync"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCeK8yDlHiEx3WHAdHee-L3gasGJlm0LAc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

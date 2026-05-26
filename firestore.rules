@@ -1,0 +1,78 @@
+rules_version = '2';
+
+// GitSync Firestore Security Rules — see ARCHITECTURE.md §2.2.
+//
+// Design points:
+//   1. Avoid `match /{document=**}` wildcard + `get()` per subcollection,
+//      which costs an extra RTT per read.
+//   2. `allow write: if false` on collections that only Cloud Functions
+//      should write to (commits / pullRequests / discordMessages /
+//      dailyReports / members). The admin SDK bypasses rules; clients
+//      cannot.
+//   3. Only `tasks` (clients write) gets the `get()` membership check —
+//      Firestore caches that get within a single request so streaming a
+//      whole page costs ONE membership lookup.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. User document — only the owner reads/writes.
+    match /apps/gitsync/users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      match /repos/{repoId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // 2. Repo document — members can read + update; any signed-in user
+    //    can create (via the `addRepo` callable). Deletion is owner-only
+    //    via the `removeRepo` callable.
+    match /apps/gitsync/repos/{repoId} {
+      allow read, update: if request.auth != null
+                          && request.auth.uid in resource.data.memberIds;
+      allow create: if request.auth != null;
+      allow delete: if false;
+
+      // 2a. members — read-only for members; writes are Functions-only.
+      match /members/{memberId} {
+        allow read: if request.auth != null
+                    && request.auth.uid in get(/databases/$(database)/documents/apps/gitsync/repos/$(repoId)).data.memberIds;
+        allow write: if false;
+      }
+
+      // 2b. tasks — full read/write for members.
+      match /tasks/{taskId} {
+        allow read, write: if request.auth != null
+                           && request.auth.uid in get(/databases/$(database)/documents/apps/gitsync/repos/$(repoId)).data.memberIds;
+      }
+
+      // 2c. commits / pullRequests / discordMessages / dailyReports —
+      //     read-only for members; writes are Functions-only.
+      match /commits/{commitSha} {
+        allow read: if request.auth != null
+                    && request.auth.uid in get(/databases/$(database)/documents/apps/gitsync/repos/$(repoId)).data.memberIds;
+        allow write: if false;
+      }
+      match /pullRequests/{prNumber} {
+        allow read: if request.auth != null
+                    && request.auth.uid in get(/databases/$(database)/documents/apps/gitsync/repos/$(repoId)).data.memberIds;
+        allow write: if false;
+      }
+      match /discordMessages/{messageId} {
+        allow read: if request.auth != null
+                    && request.auth.uid in get(/databases/$(database)/documents/apps/gitsync/repos/$(repoId)).data.memberIds;
+        allow write: if false;
+      }
+      match /dailyReports/{date} {
+        allow read: if request.auth != null
+                    && request.auth.uid in get(/databases/$(database)/documents/apps/gitsync/repos/$(repoId)).data.memberIds;
+        allow write: if false;
+      }
+    }
+
+    // 3. Idempotency keys — Functions only.
+    match /apps/gitsync/idempotencyKeys/{eventId} {
+      allow read, write: if false;
+    }
+  }
+}

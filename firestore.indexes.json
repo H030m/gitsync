@@ -1,0 +1,38 @@
+{
+  "indexes": [
+    {
+      "_comment": "tasks.dependsOn array-contains + status — onTaskUpdated downstream lookup (ARCHITECTURE.md §5.6)",
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "dependsOn", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "_comment": "commits vector index — semantic search across commit messages, pre-filtered by repoId",
+      "collectionGroup": "commits",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "repoId", "order": "ASCENDING" },
+        {
+          "fieldPath": "messageEmbedding",
+          "vectorConfig": { "dimension": 1536, "flat": {} }
+        }
+      ]
+    },
+    {
+      "_comment": "discordMessages vector index — semantic search across Discord history, pre-filtered by repoId",
+      "collectionGroup": "discordMessages",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "repoId", "order": "ASCENDING" },
+        {
+          "fieldPath": "embedding",
+          "vectorConfig": { "dimension": 1536, "flat": {} }
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

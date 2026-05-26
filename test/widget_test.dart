@@ -1,30 +1,15 @@
-// This is a basic Flutter widget test.
+// Placeholder smoke test. The skeleton's root widget needs Firebase to be
+// initialized before mounting, which the default `flutter test` harness does
+// not do — so we only assert that the entry-point file imports cleanly.
 //
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
+// Replace this with feature-specific tests as views/view-models get filled in.
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:gitsync/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
-
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+  test('GitSyncApp is importable', () {
+    // ignore: unnecessary_type_check
+    expect(GitSyncApp, isNotNull);
   });
 }
