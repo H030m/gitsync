@@ -41,3 +41,72 @@ export async function getRecentCommits(
     committedAt: c.commit.author?.date ?? '',
   }));
 }
+
+export interface RepoAccess {
+  githubRepoId: number;
+  defaultBranch: string;
+  // GitHub permission flags on the repo for the authenticated user.
+  // The caller decides whether push/admin is sufficient.
+  permissions: {
+    admin: boolean;
+    push: boolean;
+    pull: boolean;
+  };
+}
+
+/**
+ * Verifies the repo exists and is visible to the token holder, returning its
+ * id, default branch, and the caller's permission flags. Throws (via Octokit)
+ * with `status === 404` when the repo doesn't exist or isn't visible.
+ */
+export async function verifyRepoAccess(
+  owner: string,
+  repo: string,
+  accessToken: string,
+): Promise<RepoAccess> {
+  const octokit = getOctokit(accessToken);
+  const res = await octokit.repos.get({ owner, repo });
+  const perms = res.data.permissions;
+  return {
+    githubRepoId: res.data.id,
+    defaultBranch: res.data.default_branch,
+    permissions: {
+      admin: perms?.admin ?? false,
+      push: perms?.push ?? false,
+      pull: perms?.pull ?? false,
+    },
+  };
+}
+
+export interface RegisterWebhookOptions {
+  url: string;
+  secret: string;
+  events: string[];
+}
+
+/**
+ * Registers a `web` webhook on the repo (POST /repos/{owner}/{repo}/hooks) and
+ * returns the created hook id. All GitHub API access stays in this file
+ * (ARCHITECTURE.md §6.4).
+ */
+export async function registerWebhook(
+  owner: string,
+  repo: string,
+  accessToken: string,
+  options: RegisterWebhookOptions,
+): Promise<number> {
+  const octokit = getOctokit(accessToken);
+  const res = await octokit.repos.createWebhook({
+    owner,
+    repo,
+    name: 'web',
+    active: true,
+    events: options.events,
+    config: {
+      url: options.url,
+      secret: options.secret,
+      content_type: 'json',
+    },
+  });
+  return res.data.id;
+}
