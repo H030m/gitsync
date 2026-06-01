@@ -110,3 +110,18 @@ export async function registerWebhook(
   });
   return res.data.id;
 }
+
+/**
+ * Deletes a webhook on the repo (DELETE /repos/{owner}/{repo}/hooks/{hook_id}).
+ * The inverse of {@link registerWebhook}; requires admin/push permission, same
+ * as registration. All GitHub API access stays in this file (ARCHITECTURE.md §6.4).
+ */
+export async function deleteWebhook(
+  owner: string,
+  repo: string,
+  accessToken: string,
+  hookId: number,
+): Promise<void> {
+  const octokit = getOctokit(accessToken);
+  await octokit.repos.deleteWebhook({ owner, repo, hook_id: hookId });
+}

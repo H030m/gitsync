@@ -80,3 +80,39 @@ Finished GitHub OAuth (module E): fixed createdAt-reset bug via transaction, add
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Implement removeRepo (backend + delete UI)
+
+**Date**: 2026-06-02
+**Task**: Implement removeRepo (backend + delete UI)
+**Branch**: `feature/remove-repo`
+
+### Summary
+
+Implemented removeRepo callable (owner check, best-effort deleteWebhook, member-pointer cleanup + recursiveDelete of repo + subcollections) with 7 unit tests. Added minimal delete UI: RepoListViewModel.removeRepo + per-row delete button with confirm dialog, list auto-updates via stream. Captured recursiveDelete cleanup-ordering in backend spec. All lint/typecheck/tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ee9dc29` | (see git log) |
+| `070bbf8` | (see git log) |
+| `aeb980a` | (see git log) |
+| `4e99e38` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
