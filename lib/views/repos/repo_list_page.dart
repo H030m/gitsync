@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/repo.dart';
 import '../../services/authentication.dart';
 import '../../services/navigation.dart';
 import '../../view_models/repo_list_vm.dart';
@@ -44,17 +45,76 @@ class RepoListPage extends StatelessWidget {
               separatorBuilder: (_, _) => const Divider(height: 1),
               itemBuilder: (_, i) {
                 final repo = vm.repos[i];
+                final removing = vm.isRemoving(repo.id);
                 return ListTile(
                   title: Text(repo.name),
                   subtitle: Text(repo.url),
-                  onTap: () =>
-                      Provider.of<NavigationService>(ctx, listen: false)
+                  onTap: removing
+                      ? null
+                      : () => Provider.of<NavigationService>(ctx, listen: false)
                           .goTasks(repo.id),
+                  trailing: removing
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : IconButton(
+                          icon: const Icon(Icons.delete_outline),
+                          tooltip: 'Remove repo',
+                          onPressed: () => _confirmRemove(ctx, vm, repo),
+                        ),
                 );
               },
             );
           },
         ),
+      ),
+    );
+  }
+
+  Future<void> _confirmRemove(
+    BuildContext context,
+    RepoListViewModel vm,
+    Repo repo,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Remove repo?'),
+        content: Text(
+          'Remove ${repo.name}? This deletes the repo and all its '
+          'tasks/data. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            child: Text(
+              'Remove',
+              style: TextStyle(
+                color: Theme.of(dialogCtx).colorScheme.error,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    if (!context.mounted) return;
+
+    final ok = await vm.removeRepo(repo.id);
+    if (ok) return;
+    if (!context.mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(vm.lastError ?? 'Failed to remove repo'),
+        backgroundColor: Theme.of(context).colorScheme.error,
       ),
     );
   }
