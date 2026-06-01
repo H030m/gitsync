@@ -308,6 +308,38 @@ git update-index --no-skip-worktree lib/firebase_options.dart
 ### 5.8 `flutter run --dart-define=BACKEND=live` 開到 task 看到 `unimplemented` 錯誤
 這是預期。`functions/src/flows/*.ts` 目前都還是 stub（`throw new Error('not implemented yet')`），等 D 模組（AI Agent owner）補完才會回真實資料。在此之前用 fake mode 就好。
 
+### 5.9 首次部署 Cloud Functions 的三連坑（2026-06-02 實戰記錄）
+
+第一次 `firebase deploy --only functions:...` 到一個全新專案會連環撞到三個非程式問題，依序排掉即可：
+
+**(a) deploy 一直跳 `Enter a value for OPENAI_API_KEY`（即使只 target addRepo）**
+CLI 載入整包 code 時看到 `config.ts` 宣告了 `defineSecret`，Secret Manager 裡卻沒值就會問。先把 secret 設好就不再問（測非 AI 函式可填佔位值）：
+```bash
+firebase functions:secrets:set OPENAI_API_KEY        # 沒有真 key 就填 placeholder-replace-later
+firebase functions:secrets:set DISCORD_INGEST_SECRET # 同上
+```
+> `addRepo` / `githubWebhook` 不讀這些 secret；之後部署 AI 函式前再換真值。
+
+**(b) `Build failed: missing permission on the build service account`**
+新專案的預設 compute 服務帳戶沒有 build 權限（Google 政策改動）。給它角色（`<專案號>` 看錯誤訊息裡的 `project=...`）：
+```bash
+gcloud projects add-iam-policy-binding <PROJECT_ID> \
+  --member="serviceAccount:<PROJECT_NUMBER>-compute@developer.gserviceaccount.com" \
+  --role="roles/cloudbuild.builds.builder"
+# 仍失敗再補 roles/artifactregistry.writer、roles/logging.logWriter
+```
+角色名在 Console 顯示為「Cloud Build Service Account」；**對象要選 `-compute@developer` 那個帳戶**，不是 `@cloudbuild` 的。
+
+**(c) app 呼叫 callable 回 `[firebase_functions/internal] internal`，log 顯示 `Empty Authorization header`**
+Gen2 callable 需要 Cloud Run 服務「允許未驗證呼叫」（真正的登入檢查在函式內做）。新部署沒自動授權就全被擋。修：Console → Cloud Run → 點該服務（名稱小寫如 `addrepo`）→ 安全性 → 選**「允許公開存取」**；或：
+```bash
+gcloud run services add-iam-policy-binding <service-name> \
+  --region=asia-east1 --member=allUsers --role=roles/run.invoker
+```
+安全性不受影響——函式第一行 `if (!request.auth)` 仍擋未登入者。
+
+> 用 `firebase functions:log --only <name>` 看雲端錯誤。`internal` 多半是「呼叫被擋在函式外」(c) 或「函式內丟非 HttpsError 例外」。
+
 ---
 
 ## 6. Setup 完成檢查清單
