@@ -69,6 +69,29 @@ From [`ARCHITECTURE.md §4.4`](../../../docs/ARCHITECTURE.md) — violating thes
 
 ---
 
+## Deleting a repo (aggregate root) + its subcollections
+
+Deleting a doc does **not** delete its subcollections — they orphan. To remove a `repos/{repoId}`
+and everything under it (`members/tasks/commits/pullRequests/discordMessages/dailyReports`), use
+the admin SDK's `db.recursiveDelete(repoRef)` (single call, handles all subcollections).
+
+**Order matters** — delete cross-collection pointers (e.g. each member's
+`users/{memberUid}/repos/{repoId}`, which live under `users/`, NOT under the repo) *before*
+`recursiveDelete`:
+
+```ts
+await Promise.all(memberIds.map((m) =>
+  db.doc(`apps/gitsync/users/${m}/repos/${repoId}`).delete()));
+await db.recursiveDelete(db.doc(`apps/gitsync/repos/${repoId}`));
+```
+
+Pointers-first means a failure leaves the repo doc intact, so a retry is well-defined (and a
+later read still returns the repo → no spurious `not-found`). The reverse order would orphan the
+pointers permanently. Pair external cleanup (e.g. best-effort `deleteWebhook`) with this — see
+`handlers/removeRepo.ts` and the best-effort pattern in [`error-handling.md`](./error-handling.md).
+
+---
+
 ## Timestamps
 
 - Server-authored times use `FieldValue.serverTimestamp()` on write (`createdAt`, `updatedAt`,

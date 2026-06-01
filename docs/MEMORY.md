@@ -6,6 +6,26 @@
 
 ---
 
+## 2026-06-02 — 首次 live 部署成功 + Cloud Functions 部署三連坑
+
+`gitsync-645b3` 完成第一次 Cloud Functions 部署（`addRepo` + `githubWebhook`），並用真實 GitHub OAuth 登入 + 加 repo 端到端驗證通過。過程踩到三個**一次性**設定坑，已寫進 [`SETUP.md §5.9`](./SETUP.md)：
+
+1. **deploy 跳 secret prompt**（即使 targeted）→ 先 `firebase functions:secrets:set OPENAI_API_KEY / DISCORD_INGEST_SECRET`（測非 AI 函式可填 placeholder）。
+2. **Build failed: missing permission on build service account** → 給 `<專案號>-compute@developer.gserviceaccount.com` 角色 `roles/cloudbuild.builds.builder`。
+3. **callable 回 `[firebase_functions/internal]`、log 出現 `Empty Authorization header`** → Cloud Run 服務設「允許公開存取」(allUsers `run.invoker`)；auth 仍在函式內檢查。
+
+這些是**每個新 Firebase 專案各做一次**的 infra 設定，不是 code 問題。部署/IAM/secret 指令一律由人親跑（AI 禁止，§R1/§R2）。
+
+## 2026-06-02 — 課程約束：Final Demo 僅能用 Flutter + Firebase
+
+課程公告：Final Demo 的開發工具**嚴格限定僅能使用課堂教學的 Flutter 與 Firebase**。**禁止**使用其他後端語言或框架（Python / Go / Node.js 等）**自行搭建外部伺服器**。核心要求是整合 Flutter + Firebase 的各項功能。
+
+**Cloud Functions 允許**（2026-06-02 向課程確認：上課教過，屬「允許的 Firebase 整合」）。所以本專案後端 `functions/`（TypeScript Cloud Functions）可續用——公告括號的「Node.js」指「自架 Node 伺服器」，不含 Firebase 託管的 Functions runtime。
+
+**判準**：只要是 Firebase 第一方產品（Firestore / Auth / Cloud Functions / FCM / Storage / Extensions…）即可；禁止的是在 Firebase 之外另起一個自管 server（VPS / 自架 Cloud Run 上的 Express / Flask / Go service 等）。`functions/` 的 jest / ts-jest / eslint 是本機開發工具、非伺服器，允許保留。
+
+理由：違反此限制可能影響 Final Demo 成績；屬硬性約束，不是偏好。所有架構建議都要卡這條。
+
 ## 2026-05-26 — AI 收尾回報多加一欄「建議 commit message」（五欄格式）
 
 [`AI_AGENT_RULES.md §4.6`](./AI_AGENT_RULES.md#46-給使用者的回報) 從 ✅📁⚠️🧪 四欄擴成 **✅📁⚠️🧪💬 五欄**——多了 💬 建議 commit message。詳細格式守則見新增的 §4.6.1：英文、imperative mood、subject ≤72 字、跨範圍時拆多條 commit、AI 只生成字串不執行 `git commit`（仍受 [§R1](./AI_AGENT_RULES.md#r1-ai-不可自己-commit--push--任何寫-git-歷史的動作) 約束）。

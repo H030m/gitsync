@@ -23,6 +23,7 @@ These guides help you **ask the right questions before coding**.
 |-------|---------|-------------|
 | [Code Reuse Thinking Guide](./code-reuse-thinking-guide.md) | Identify patterns and reduce duplication | When you notice repeated patterns |
 | [Cross-Layer Thinking Guide](./cross-layer-thinking-guide.md) | Think through data flow across layers | Features spanning multiple layers |
+| [Git Workflow Convention](./git-workflow.md) | **Binding** branch / commit / merge rules (develop-based git-flow) | **Before creating a branch or committing (Phase 3.4)** |
 
 ---
 

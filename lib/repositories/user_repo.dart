@@ -61,15 +61,21 @@ class _LiveUserRepository implements UserRepository {
     String? githubAccessToken,
   }) async {
     final ref = _db.doc(FirestorePaths.user(userId));
-    final map = <String, dynamic>{
-      'name': name,
-      'email': email,
-      'avatarUrl': avatarUrl,
-      'githubLogin': githubLogin,
-      if (githubAccessToken != null) 'githubAccessToken': githubAccessToken,
-      'createdAt': FieldValue.serverTimestamp(),
-    };
-    await ref.set(map, SetOptions(merge: true)).timeout(_timeout);
+    // Read-then-write in a transaction so `createdAt` is only stamped when the
+    // user doc does not yet exist. A returning user keeps their original
+    // `createdAt`; every other field still merge-updates on each sign-in.
+    await _db.runTransaction((txn) async {
+      final snap = await txn.get(ref);
+      final map = <String, dynamic>{
+        'name': name,
+        'email': email,
+        'avatarUrl': avatarUrl,
+        'githubLogin': githubLogin,
+        if (githubAccessToken != null) 'githubAccessToken': githubAccessToken,
+        if (!snap.exists) 'createdAt': FieldValue.serverTimestamp(),
+      };
+      txn.set(ref, map, SetOptions(merge: true));
+    }).timeout(_timeout);
   }
 
   @override

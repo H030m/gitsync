@@ -44,18 +44,21 @@ python ./.trellis/scripts/get_developer.py    # 印出你的名字 = OK
 
 ## 2. 一個工作項目的完整生命週期
 
-我們約定 **1 task = 1 git branch = 1 PR**，讓 task 的 `prd.md` 跟 code 一起進同一個 PR，review 時需求與實作對得起來。
+我們採 **git-flow 風格分支**：`main`（穩定可 demo）← `develop`（整合）← `feature/*`（單一功能 / 單一 task）。完整規則見 [`.trellis/spec/guides/git-workflow.md`](../.trellis/spec/guides/git-workflow.md)（這是 Trellis spec，AI 在 commit 階段會自動遵守）。
 
 ```bash
-# 0) 先同步別人的 task / spec
+# 0) 切到 develop 並同步
+git checkout develop
 git pull --rebase
 
-# 1) 開 branch
-git checkout -b feat/some-feature
+# 1) 從 develop 開 feature 分支（slug 對齊 task）
+git checkout -b feature/some-feature
 
 # 2) 建 task（進入「規劃」階段；先別跑 start）
 python ./.trellis/scripts/task.py create "做某某功能" --slug some-feature
 ```
+
+> **永遠不要直接在 `main` / `develop` 上寫功能 code。** 功能做完、check 過 → `git merge --no-ff` 回 `develop`；`develop` 累積到可 demo → 才合併進 `main`。
 
 接著照三階段走：
 
@@ -87,7 +90,7 @@ python ./.trellis/scripts/task.py create "做某某功能" --slug some-feature
 | 主題 | 約定 | 為什麼 |
 |---|---|---|
 | **身份命名** | 每人 `init_developer` 用團隊內唯一名字 | journal / workspace 才不會混 |
-| **分支策略** | 1 task = 1 branch = 1 PR | task 文件跟 code 綁在一起 review |
+| **分支策略** | `feature/*` ← `develop` ← `main`；1 task = 1 feature 分支 | 見 [git-workflow.md](../.trellis/spec/guides/git-workflow.md)；develop 當整合區，main 保持可 demo |
 | **避免撞 task** | 開 task 前 `git pull --rebase`，看 `.trellis/tasks/` 有沒有人在做同領域 | tasks 是共享目錄，避免兩人改同一塊 |
 | **push 紀律** | push 前 `git pull --rebase` | journal 自動 commit（見 §4），rebase 可避免衝突 |
 | **spec 更新** | 每個 PR 都問「這次學到什麼該寫進 spec？」 | spec 是團隊唯一不會流失的記憶 |
