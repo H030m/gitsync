@@ -18,6 +18,7 @@ no Firebase needed).
 ## 📚 Project docs
 
 - [`docs/SETUP.md`](./docs/SETUP.md) — local environment setup (Fake / Live modes)
+- [`docs/TRELLIS_WORKFLOW.md`](./docs/TRELLIS_WORKFLOW.md) — how the team develops with Trellis (per-dev setup, task lifecycle, conventions)
 - [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — system design (Firestore schema, Cloud Functions, AI flows, Discord/GitHub integration)
 - [`docs/AI_AGENT_RULES.md`](./docs/AI_AGENT_RULES.md) — required reading for any AI assistant before writing code
 - [`docs/COURSE_METHODS.md`](./docs/COURSE_METHODS.md) — course-prescribed Flutter + Firebase patterns
