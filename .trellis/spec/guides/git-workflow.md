@@ -99,4 +99,8 @@ git push
 
 ### 已累積的注意事項
 
-- _(目前無；之後新增的 git/流程注意事項追加在這裡，每條一行並註明日期)_
+- **2026-06-02** — 後端首次有測試框架：`functions/` 用 jest + ts-jest，測試放
+  `functions/src/__tests__/`，跑 `npm --prefix functions test`。詳見
+  [`backend/testing-guidelines.md`](../backend/testing-guidelines.md)。
+- **2026-06-02** — 課程約束：Final Demo 僅能用 Flutter + Firebase，禁止自架外部伺服器。
+  Firebase **Cloud Functions 允許**（上課教過）；不可在 Firebase 之外另起自管 server。

@@ -1,11 +1,57 @@
 // addRepo (callable) — parses a GitHub URL, verifies the user's access via
-// GitHub API, registers a webhook on the repo, and creates the matching
-// Firestore docs (`repos/{repoId}` + `users/{uid}/repos/{repoId}`).
+// GitHub API, best-effort registers a webhook on the repo, and creates the
+// matching Firestore docs (`repos/{repoId}` + `users/{uid}/repos/{repoId}` +
+// `repos/{repoId}/members/{uid}`).
 //
 // See ARCHITECTURE.md §6.2 for the full flow.
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { randomBytes } from 'node:crypto';
 
-import { REGION } from '../admin';
+import { logger } from 'firebase-functions/v2';
+import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { FieldValue } from 'firebase-admin/firestore';
+
+import { db, REGION } from '../admin';
+import { registerWebhook, verifyRepoAccess } from '../services/githubClient';
+
+const WEBHOOK_EVENTS = ['push', 'pull_request', 'issues', 'issue_comment'];
+
+interface ParsedRepo {
+  owner: string;
+  repo: string;
+}
+
+/**
+ * Parses common GitHub URL / slug formats into `{ owner, repo }`:
+ *   - https://github.com/owner/repo
+ *   - https://github.com/owner/repo.git
+ *   - git@github.com:owner/repo.git
+ *   - owner/repo
+ * Returns null when the input can't be resolved to owner/repo.
+ */
+export function parseGithubUrl(input: string): ParsedRepo | null {
+  let s = input.trim();
+  if (!s) return null;
+
+  // Strip protocol / host so we can match a trailing owner/repo for both URL
+  // and SSH forms.
+  s = s
+    .replace(/^git@github\.com:/i, '')
+    .replace(/^https?:\/\/(www\.)?github\.com\//i, '')
+    .replace(/^github\.com\//i, '');
+
+  // Drop trailing slash and a trailing .git suffix.
+  s = s.replace(/\/+$/, '').replace(/\.git$/i, '');
+
+  const parts = s.split('/').filter((p) => p.length > 0);
+  if (parts.length !== 2) return null;
+
+  const [owner, repo] = parts;
+  // Reject obviously invalid path segments.
+  const valid = /^[A-Za-z0-9._-]+$/;
+  if (!valid.test(owner) || !valid.test(repo)) return null;
+
+  return { owner, repo };
+}
 
 export const addRepo = onCall(
   { region: REGION },
@@ -13,17 +59,118 @@ export const addRepo = onCall(
     if (!request.auth) {
       throw new HttpsError('failed-precondition', 'Please log in first.');
     }
+    const uid = request.auth.uid;
+
     const { githubUrl } = request.data as { githubUrl?: string };
-    if (!githubUrl) {
+    if (!githubUrl || typeof githubUrl !== 'string') {
       throw new HttpsError('invalid-argument', 'githubUrl is required');
     }
-    // TODO Sprint 1:
-    //  1. Parse githubUrl → { owner, repo }
-    //  2. Look up the user's stored githubAccessToken
-    //  3. Verify the repo exists and the user has write access via Octokit
-    //  4. Register a webhook (POST /repos/{owner}/{repo}/hooks) with a
-    //     random secret stored on `repos/{repoId}.webhookSecret`
-    //  5. Write `apps/gitsync/repos/{repoId}` + `users/{uid}/repos/{repoId}`
-    throw new HttpsError('unimplemented', 'addRepo not implemented yet');
+
+    const parsed = parseGithubUrl(githubUrl);
+    if (!parsed) {
+      throw new HttpsError(
+        'invalid-argument',
+        'githubUrl could not be parsed into owner/repo',
+      );
+    }
+    const { owner, repo } = parsed;
+
+    // 1. Look up the caller's stored GitHub access token.
+    const userSnap = await db.doc(`apps/gitsync/users/${uid}`).get();
+    const githubAccessToken = userSnap.data()?.githubAccessToken as
+      | string
+      | undefined;
+    if (!githubAccessToken) {
+      throw new HttpsError(
+        'failed-precondition',
+        'No GitHub access token found. Please complete GitHub authorization first.',
+      );
+    }
+
+    // 2. Verify the repo exists and the caller has admin/push permission.
+    let access;
+    try {
+      access = await verifyRepoAccess(owner, repo, githubAccessToken);
+    } catch (err) {
+      const status = (err as { status?: number }).status;
+      if (status === 404) {
+        throw new HttpsError(
+          'not-found',
+          `Repository ${owner}/${repo} not found or not accessible.`,
+        );
+      }
+      logger.error('verifyRepoAccess failed', { owner, repo, status });
+      throw new HttpsError(
+        'failed-precondition',
+        `Could not verify access to ${owner}/${repo}.`,
+      );
+    }
+    if (!access.permissions.admin && !access.permissions.push) {
+      throw new HttpsError(
+        'failed-precondition',
+        `You do not have push/admin permission on ${owner}/${repo}.`,
+      );
+    }
+
+    // 3. repoId = `${owner}_${name}`; reject duplicates.
+    const repoId = `${owner}_${repo}`;
+    const repoRef = db.doc(`apps/gitsync/repos/${repoId}`);
+    const existing = await repoRef.get();
+    if (existing.exists) {
+      throw new HttpsError(
+        'already-exists',
+        `Repository ${repoId} has already been added.`,
+      );
+    }
+
+    // 4. Best-effort webhook registration. Failure (OAuth/deploy URL/perms not
+    //    ready) must not block repo creation — log and continue with null id.
+    const webhookSecret = randomBytes(32).toString('hex');
+    let webhookId: number | null = null;
+    try {
+      const webhookUrl =
+        `https://${REGION}-${process.env.GCLOUD_PROJECT}` +
+        '.cloudfunctions.net/githubWebhook';
+      webhookId = await registerWebhook(owner, repo, githubAccessToken, {
+        url: webhookUrl,
+        secret: webhookSecret,
+        events: WEBHOOK_EVENTS,
+      });
+    } catch (err) {
+      logger.warn('registerWebhook failed (best-effort), continuing', {
+        repoId,
+        status: (err as { status?: number }).status,
+      });
+      webhookId = null;
+    }
+
+    // 5. Atomically write all three docs.
+    const batch = db.batch();
+    batch.set(repoRef, {
+      // Display name is the full `owner/repo` slug (ARCHITECTURE §2.1 example
+      // "team17/gitsync"); repoId already encodes owner as `${owner}_${repo}`.
+      name: `${owner}/${repo}`,
+      url: githubUrl,
+      githubRepoId: access.githubRepoId,
+      defaultBranch: access.defaultBranch,
+      webhookId,
+      webhookSecret,
+      memberIds: [uid],
+      isBreakingDown: false,
+      createdAt: FieldValue.serverTimestamp(),
+      createdBy: uid,
+    });
+    batch.set(db.doc(`apps/gitsync/users/${uid}/repos/${repoId}`), {
+      role: 'owner',
+    });
+    batch.set(db.doc(`apps/gitsync/repos/${repoId}/members/${uid}`), {
+      role: 'owner',
+      activeIssueCount: 0,
+      completedTaskCount: 0,
+      lastActiveAt: FieldValue.serverTimestamp(),
+    });
+    await batch.commit();
+
+    return { repoId };
   },
 );

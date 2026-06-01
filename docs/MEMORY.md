@@ -6,6 +6,16 @@
 
 ---
 
+## 2026-06-02 — 課程約束：Final Demo 僅能用 Flutter + Firebase
+
+課程公告：Final Demo 的開發工具**嚴格限定僅能使用課堂教學的 Flutter 與 Firebase**。**禁止**使用其他後端語言或框架（Python / Go / Node.js 等）**自行搭建外部伺服器**。核心要求是整合 Flutter + Firebase 的各項功能。
+
+**Cloud Functions 允許**（2026-06-02 向課程確認：上課教過，屬「允許的 Firebase 整合」）。所以本專案後端 `functions/`（TypeScript Cloud Functions）可續用——公告括號的「Node.js」指「自架 Node 伺服器」，不含 Firebase 託管的 Functions runtime。
+
+**判準**：只要是 Firebase 第一方產品（Firestore / Auth / Cloud Functions / FCM / Storage / Extensions…）即可；禁止的是在 Firebase 之外另起一個自管 server（VPS / 自架 Cloud Run 上的 Express / Flask / Go service 等）。`functions/` 的 jest / ts-jest / eslint 是本機開發工具、非伺服器，允許保留。
+
+理由：違反此限制可能影響 Final Demo 成績；屬硬性約束，不是偏好。所有架構建議都要卡這條。
+
 ## 2026-05-26 — AI 收尾回報多加一欄「建議 commit message」（五欄格式）
 
 [`AI_AGENT_RULES.md §4.6`](./AI_AGENT_RULES.md#46-給使用者的回報) 從 ✅📁⚠️🧪 四欄擴成 **✅📁⚠️🧪💬 五欄**——多了 💬 建議 commit message。詳細格式守則見新增的 §4.6.1：英文、imperative mood、subject ≤72 字、跨範圍時拆多條 commit、AI 只生成字串不執行 `git commit`（仍受 [§R1](./AI_AGENT_RULES.md#r1-ai-不可自己-commit--push--任何寫-git-歷史的動作) 約束）。

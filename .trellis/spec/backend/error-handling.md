@@ -73,6 +73,22 @@ Every GitHub / OpenAI / Discord call must have a timeout; never wait forever
 (`AI_AGENT_RULES.md §3.6`). For best-effort side-effects (e.g. `notifyDiscord`), swallow the
 error with `.catch()` + a log — a failed notification must not fail the main write.
 
+**Best-effort registration pattern** (`addRepo` webhook): when an external resource can't yet be
+created end-to-end (dependency not ready / not deployed), wrap it in `try/catch`, log on failure,
+and persist a null id so a later backfill can retry — never block the primary write. Generate and
+store any secret *before* the try so it survives the failure path:
+
+```ts
+const secret = crypto.randomBytes(32).toString('hex'); // always persisted
+let webhookId: number | null = null;
+try {
+  webhookId = await registerWebhook(owner, repo, token, { url, secret, events });
+} catch (e) {
+  logger.warn('webhook registration failed; continuing (backfill later)', { repoId, err: String(e) });
+}
+// ... write repo doc with { webhookId, webhookSecret: secret } in the batch
+```
+
 ---
 
 ## Common mistakes
