@@ -26,6 +26,7 @@ codebase and the `docs/` design docs.
 | [Error Handling](./error-handling.md) | `HttpsError`, webhook verify, locks, Rule D | ✅ Filled |
 | [Quality Guidelines](./quality-guidelines.md) | v2-only, region, forbidden patterns, never-deploy | ✅ Filled |
 | [Logging Guidelines](./logging-guidelines.md) | `firebase-functions` structured logger | ✅ Filled |
+| [Testing Guidelines](./testing-guidelines.md) | jest + ts-jest, boundary mocking for `onCall`, lint config | ✅ Filled |
 
 ---
 

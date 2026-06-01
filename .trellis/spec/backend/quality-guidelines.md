@@ -46,6 +46,8 @@
 ## Verify before saying "done"
 
 - `npm --prefix functions run typecheck` passes (0 errors).
+- `npm --prefix functions run lint` passes (0 errors).
+- `npm --prefix functions test` passes (when the change is unit-testable).
 - Stubs left in place carry a `// TODO Sprint N:` list; don't fabricate behavior.
 - Mapping to the [self-check + 5-field report](../../../docs/AI_AGENT_RULES.md) (✅做了 / 📁動了 /
   ⚠️沒做 / 🧪驗證 / 💬建議 commit message) and a journal entry — see
@@ -53,5 +55,9 @@
 
 ## Testing
 
-No automated backend test suite yet (MVP). Verify via `firebase emulators:start` and report
-what was / wasn't exercised. Don't claim a path works if you only typechecked it.
+Backend uses **jest + ts-jest** for unit tests — see [`testing-guidelines.md`](./testing-guidelines.md)
+for the toolchain and the boundary-mocking pattern. Unit-test `onCall` handlers by mocking the
+three boundaries and asserting every error branch + the success writes.
+
+For integration / cross-layer behavior, additionally verify via `firebase emulators:start` and
+report what was / wasn't exercised. Don't claim a path works if you only typechecked it.
