@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 import '../config/app_config.dart';
 import '../repositories/user_repo.dart';
@@ -7,21 +8,14 @@ import 'fake/fake_authentication.dart';
 /// Sign-in / sign-out for the app.
 ///
 /// LIVE: Firebase Auth with the GitHub provider. After sign-in we grab the
-/// OAuth access token and persist it to `users/{uid}.githubAccessToken`.
+/// OAuth access token (scopes `repo` + `read:user`) and persist it to
+/// `users/{uid}.githubAccessToken`. The live flow is implemented; it only
+/// needs the one-time GitHub OAuth App + Firebase Console enablement
+/// documented in `docs/SETUP.md §B.4`.
 ///
 /// FAKE: auto-signs in as `DummyData.demoUserId`. Useful while
 /// `Authentication → Sign-in method → GitHub` has not been enabled in the
 /// Firebase Console yet.
-///
-/// TODO(handoff to E module — GitHub integration owner):
-/// before flipping `AppConfig.defaultBackend` to `Backend.live`, you must:
-///   1. Create a GitHub OAuth App at https://github.com/settings/developers
-///   2. Enable GitHub provider in Firebase Console → Authentication →
-///      Sign-in method → paste Client ID + Client Secret
-///   3. Add the Firebase callback URL to the GitHub OAuth App's
-///      Authorization callback URL field
-///   4. Confirm `logInWithGitHub()` returns the OAuth access token via
-///      `(cred.credential as OAuthCredential?)?.accessToken`
 abstract class AuthenticationService {
   factory AuthenticationService() => AppConfig.useFakeBackend
       ? FakeAuthenticationService()
@@ -53,7 +47,15 @@ class _LiveAuthenticationService implements AuthenticationService {
       ..addScope('repo')
       ..addScope('read:user');
 
-    final cred = await _firebaseAuth.signInWithProvider(provider);
+    // On web, firebase_auth surfaces the provider OAuth access token reliably
+    // through the popup flow (`signInWithPopup`); `signInWithProvider` is the
+    // mobile/desktop path. Both return a `UserCredential` whose `.credential`
+    // is the `OAuthCredential` carrying `accessToken`.
+    // NOTE: end-to-end web token retrieval needs a manual e2e run once the
+    // GitHub provider is enabled (docs/SETUP.md §B.4).
+    final cred = kIsWeb
+        ? await _firebaseAuth.signInWithPopup(provider)
+        : await _firebaseAuth.signInWithProvider(provider);
     final user = cred.user;
     if (user == null) return null;
 
