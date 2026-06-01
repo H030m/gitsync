@@ -15,6 +15,12 @@
 - Repository writes carry `.timeout(const Duration(seconds: 10))`.
 - Colors/text via `Theme.of(ctx).colorScheme` / `.textTheme` — no hardcoded colors.
 - New repository/service methods are added to the Fake implementation too.
+- **Upsert preserves `createdAt`**: an "upsert from auth/login" write must only stamp
+  `createdAt: FieldValue.serverTimestamp()` when the doc does not yet exist — otherwise a
+  returning user's `createdAt` is reset on every login. Use `runTransaction` (read → set only
+  the new fields, conditionally include `createdAt` on `!snap.exists`) rather than an
+  unconditional `set(..., merge:true)`. (Fixed in `user_repo.upsertUserFromAuth`,
+  task `06-02-github-oauth`.)
 
 ---
 
@@ -50,5 +56,17 @@
 
 ## Testing
 
-No broad widget-test suite yet (MVP). Minimum bar: `flutter analyze` clean + manual golden-path
-run in fake mode. State clearly what was not verified (e.g. Android, live Firestore).
+Minimum bar: `flutter analyze` clean + manual golden-path run in fake mode. State clearly what
+was not verified (e.g. Android, live Firestore, live OAuth).
+
+**ViewModel unit tests** (pattern established in `test/auth_vm_test.dart`, task `06-02-github-oauth`):
+test a VM by injecting a **hand-rolled fake** of its service/repository — the same
+fake-implementation pattern used in `lib/repositories/fake/`. Do **not** add `mockito` / `mocktail`
+(no new deps). Cover the VM's state transitions (success, failure→`lastError`, re-entrancy guard).
+Run with `flutter test`.
+
+> **Gotcha — federated sign-in on web**: `firebase_auth` GitHub login must branch on `kIsWeb`
+> (`package:flutter/foundation.dart`): use `signInWithPopup(provider)` on web,
+> `signInWithProvider(provider)` on mobile/desktop. Both yield a `UserCredential` whose
+> `.credential as OAuthCredential?` carries `.accessToken`. Live web token retrieval can only be
+> confirmed by a manual e2e run once the provider is enabled in the Firebase Console.

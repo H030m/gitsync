@@ -6,6 +6,16 @@
 
 ---
 
+## 2026-06-02 — 首次 live 部署成功 + Cloud Functions 部署三連坑
+
+`gitsync-645b3` 完成第一次 Cloud Functions 部署（`addRepo` + `githubWebhook`），並用真實 GitHub OAuth 登入 + 加 repo 端到端驗證通過。過程踩到三個**一次性**設定坑，已寫進 [`SETUP.md §5.9`](./SETUP.md)：
+
+1. **deploy 跳 secret prompt**（即使 targeted）→ 先 `firebase functions:secrets:set OPENAI_API_KEY / DISCORD_INGEST_SECRET`（測非 AI 函式可填 placeholder）。
+2. **Build failed: missing permission on build service account** → 給 `<專案號>-compute@developer.gserviceaccount.com` 角色 `roles/cloudbuild.builds.builder`。
+3. **callable 回 `[firebase_functions/internal]`、log 出現 `Empty Authorization header`** → Cloud Run 服務設「允許公開存取」(allUsers `run.invoker`)；auth 仍在函式內檢查。
+
+這些是**每個新 Firebase 專案各做一次**的 infra 設定，不是 code 問題。部署/IAM/secret 指令一律由人親跑（AI 禁止，§R1/§R2）。
+
 ## 2026-06-02 — 課程約束：Final Demo 僅能用 Flutter + Firebase
 
 課程公告：Final Demo 的開發工具**嚴格限定僅能使用課堂教學的 Flutter 與 Firebase**。**禁止**使用其他後端語言或框架（Python / Go / Node.js 等）**自行搭建外部伺服器**。核心要求是整合 Flutter + Firebase 的各項功能。
