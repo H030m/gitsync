@@ -182,3 +182,38 @@ Replaced the Graph-tab stub in TasksBoardPage with TaskGraphTab: renders a depen
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: GitHub sync: webhook ingestion + task/issue/PR triggers
+
+**Date**: 2026-06-02
+**Task**: GitHub sync: webhook ingestion + task/issue/PR triggers
+**Branch**: `feature/github-webhook`
+
+### Summary
+
+End-to-end GitHub integration. Webhook (HMAC verify on rawBody + idempotency + dispatch -> raw writes to commits/pullRequests/issues) + githubClient.createIssue. Triggers: onTaskCreated mirrors task->GitHub issue (stores githubIssueNumber), onCommitCreated parses #N->linkedTaskIds + embedding + aiSummary (Rule D), onPRMerged (onDocumentWritten, parses closing refs -> txn mark done + counters), onIssueWritten (new, reverse-sync). tools/issueRefs + taskStatus. Linking via issue-mirror (#N). Check caught a production bug: onPRMerged was onDocumentUpdated but the PR doc is created already merged -> never fired; fixed to onDocumentWritten + spec Rule E. 8 suites / 65 tests green. Deployed 2026-06-02 (githubWebhook public-access opened on Cloud Run); onTaskCreated live-verified end-to-end. Remaining triggers (onCommitCreated / onPRMerged / onIssueWritten) deployed but not yet live-tested.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c19231d` | (see git log) |
+
+### Testing
+
+- [OK] Unit: 8 suites / 65 tests green (boundary-mocked).
+- [OK] Live (2026-06-02): deployed githubWebhook + 4 triggers; opened public invoker on `githubwebhook` Cloud Run service. **onTaskCreated** verified end-to-end — creating a new task auto-creates a GitHub issue and writes `githubIssueNumber` back to the task doc.
+- [OK] Live (2026-06-02): onCommitCreated (#N link + aiSummary), onPRMerged (closes #N -> task done + counters), onIssueWritten (close/reopen reverse-sync) — all verified end-to-end.
+
+### Status
+
+[OK] **Completed** — code + full live verification (githubWebhook + all 4 triggers). Merged develop -> main.
+
+### Next Steps
+
+- Next feature: #3 assignTaskFlow (module D dynamic task assignment).
