@@ -52,3 +52,37 @@ Finished the on-demand Discord ingest feature. Verified PR2 (discord-bot: remove
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: Unified TARGET switch + cloud deployment runbook + live-deploy fixes
+
+**Date**: 2026-06-03
+**Task**: Unified TARGET switch + cloud deployment runbook + live-deploy fixes
+**Branch**: `feature/target-switch-deploy-docs`
+
+### Summary
+
+Added --dart-define=TARGET (cloud|emulator) wiring so the app and Discord bot switch backends together; wrote DEPLOYMENT.md cloud runbook. Completed PR3 wiring missed by
+  two partial commits. Live-deploy debugging: fixed secret mismatch and traced claimDiscordFetch 500 to the undeployed fetchRequests composite index.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6fb4fd8` | docs: add cloud deployment runbook + journal entry (+ TARGET switch) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

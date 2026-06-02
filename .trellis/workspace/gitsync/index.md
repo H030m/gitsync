@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 1
-- **Last Active**: 2026-06-02
+- **Total Sessions**: 2
+- **Last Active**: 2026-06-03
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~54 | Active |
+| `journal-1.md` | ~89 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 2 | 2026-06-03 | Unified TARGET switch + cloud deployment runbook + live-deploy fixes | `6fb4fd8` | `feature/target-switch-deploy-docs` |
 | 1 | 2026-06-02 | Discord on-demand ingest: complete PR2/PR3 + docs, fix partial merge | `17b50c8`, `818ed5e`, `664562a`, `e1aee7b` | `develop` |
 <!-- @@@/auto:session-history -->
 
