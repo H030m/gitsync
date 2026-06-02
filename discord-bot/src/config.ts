@@ -1,11 +1,21 @@
-// Loads + validates environment config for the forwarder bot.
+// Loads + validates environment config for the GitSync bot.
+//
+// The bot has no Firestore credentials — it only talks to Cloud Functions over
+// HTTP with the shared `x-ingest-secret`. Channel→repo mapping now lives in
+// Firestore (set via /gitsync-listen → setRepoChannel) and is fetched at
+// backfill time via claimDiscordFetch, so there is no static CHANNEL_REPO_MAP.
 import 'dotenv/config';
 
 export interface BotConfig {
   botToken: string;
   ingestSecret: string;
-  ingestUrl: string;
-  channelRepoMap: Map<string, string>; // channelId -> repoId
+  // Cloud Function endpoints (all secret-auth onRequest, same asia-east1 base).
+  ingestUrl: string; // discordMessageIngest
+  claimUrl: string; // claimDiscordFetch
+  completeUrl: string; // completeDiscordFetch
+  setRepoChannelUrl: string; // setRepoChannel
+  // Backfill poll interval in milliseconds.
+  pollIntervalMs: number;
 }
 
 function required(name: string): string {
@@ -16,31 +26,28 @@ function required(name: string): string {
   return value;
 }
 
-// Parses "id1:repo1,id2:repo2" into a Map. Malformed entries are skipped.
-function parseChannelRepoMap(raw: string): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const pair of raw.split(',')) {
-    const trimmed = pair.trim();
-    if (!trimmed) continue;
-    const idx = trimmed.indexOf(':');
-    if (idx <= 0 || idx === trimmed.length - 1) {
-      console.warn(`[config] ignoring malformed CHANNEL_REPO_MAP entry: "${trimmed}"`);
-      continue;
-    }
-    map.set(trimmed.slice(0, idx).trim(), trimmed.slice(idx + 1).trim());
-  }
-  return map;
-}
+const DEFAULT_POLL_INTERVAL_MS = 5000;
 
 export function loadConfig(): BotConfig {
-  const channelRepoMap = parseChannelRepoMap(required('CHANNEL_REPO_MAP'));
-  if (channelRepoMap.size === 0) {
-    throw new Error('CHANNEL_REPO_MAP has no valid channelId:repoId entries');
-  }
+  // FUNCTIONS_BASE_URL is the deployment base; per-endpoint URLs are derived by
+  // appending the function name (matches the asia-east1 onRequest URL layout).
+  const baseUrl = required('FUNCTIONS_BASE_URL').replace(/\/+$/, '');
+  const endpoint = (name: string) => `${baseUrl}/${name}`;
+
+  const rawInterval = process.env.POLL_INTERVAL_MS;
+  const parsedInterval = rawInterval ? Number(rawInterval) : NaN;
+  const pollIntervalMs =
+    Number.isFinite(parsedInterval) && parsedInterval > 0
+      ? parsedInterval
+      : DEFAULT_POLL_INTERVAL_MS;
+
   return {
     botToken: required('DISCORD_BOT_TOKEN'),
     ingestSecret: required('DISCORD_INGEST_SECRET'),
-    ingestUrl: required('INGEST_URL'),
-    channelRepoMap,
+    ingestUrl: endpoint('discordMessageIngest'),
+    claimUrl: endpoint('claimDiscordFetch'),
+    completeUrl: endpoint('completeDiscordFetch'),
+    setRepoChannelUrl: endpoint('setRepoChannel'),
+    pollIntervalMs,
   };
 }
