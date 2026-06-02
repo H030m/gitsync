@@ -58,6 +58,14 @@ abstract class FunctionsService {
     required List<String> channelIds,
   });
 
+  /// Enqueues an on-demand Discord backfill for [date] (YYYY-MM-DD). The
+  /// always-on bot later claims the request, backfills the day's messages, and
+  /// the backend produces a `discordDigests/{date}` doc. Returns the request id.
+  Future<String> requestDiscordFetch({
+    required String repoId,
+    required String date,
+  });
+
   // ---- FCM ---------------------------------------------------------------
 
   Future<void> subscribeToTopic({
@@ -159,6 +167,19 @@ class _LiveFunctionsService implements FunctionsService {
       'webhookUrl': webhookUrl,
       'channelIds': channelIds,
     });
+  }
+
+  @override
+  Future<String> requestDiscordFetch({
+    required String repoId,
+    required String date,
+  }) async {
+    final res = await _callable('requestDiscordFetch').call({
+      'repoId': repoId,
+      'date': date,
+    });
+    final data = Map<String, dynamic>.from(res.data as Map);
+    return data['requestId'] as String;
   }
 
   @override
