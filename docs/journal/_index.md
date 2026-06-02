@@ -16,6 +16,10 @@
 
 ---
 
+## 2026-06-03
+
+- **嘉駿 — Discord on-demand ingest 收尾 + 部署/環境開關**：補完 PR3（Daily→Discord refresh 按鈕、AI digest 卡片、`requestDiscordFetch` 串接；修兩次 partial commit 讓 develop 重新可編譯）。新增統一 `TARGET=cloud|emulator` 開關，讓 app（`--dart-define=TARGET`）與 bot（`.env` `TARGET`）一起切後端（main.dart 導向 emulator；bot 由 `TARGET`+`FIREBASE_PROJECT_ID` 自動推 URL）。新增 [`docs/DEPLOYMENT.md`](../DEPLOYMENT.md) 雲端部署 runbook（含錯誤對照表）。實機 live 排錯：`bad secret`（Secret Manager 值與 bot 不符 → 修並 redeploy）；`claimDiscordFetch` 500 = `fetchRequests` 複合索引未部署（`firebase deploy --only firestore:indexes` 後 Enabled 即解）。三 gate 全綠。詳見 [`ARCHITECTURE §7`](../ARCHITECTURE.md) / [`DEPLOYMENT.md`](../DEPLOYMENT.md)。
+
 ## 2026-06-02
 
 - **嘉駿 — Discord bot 上線 + 接收 probe**：建好 Discord application（Guild Install、唯讀權限、開 Message Content Intent）並邀請進伺服器；新增 `discord-bot/src/probe.ts`（只需 token 的連通性探針，`npm run probe`）。實測 probe 登入成功並收到 DC 訊息印在 terminal（`#幹話`/`#會議記錄` 中文內容正確）。端到端 ingest（bot→Function→Firestore）尚未測，trellis 工作 `06-02-discord-bot-live-setup` 仍 in_progress。詳見 [113062210_chiajun.md](./113062210_chiajun.md)。

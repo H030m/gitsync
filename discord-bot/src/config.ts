@@ -27,11 +27,31 @@ function required(name: string): string {
 }
 
 const DEFAULT_POLL_INTERVAL_MS = 5000;
+const DEFAULT_PROJECT_ID = 'gitsync-645b3';
+const REGION = 'asia-east1';
+
+// Resolves the Cloud Functions base URL from a single `TARGET` switch, so the
+// bot and the Flutter app (AppConfig.TARGET) flip between cloud and emulator
+// together. An explicit FUNCTIONS_BASE_URL overrides everything (escape hatch).
+//   TARGET=cloud     (default) → https://<region>-<projectId>.cloudfunctions.net
+//   TARGET=emulator            → http://127.0.0.1:5001/<projectId>/<region>
+function resolveBaseUrl(): string {
+  const explicit = process.env.FUNCTIONS_BASE_URL;
+  if (explicit && explicit !== 'REPLACE_ME') {
+    return explicit.replace(/\/+$/, '');
+  }
+  const projectId = process.env.FIREBASE_PROJECT_ID || DEFAULT_PROJECT_ID;
+  const target = (process.env.TARGET || 'cloud').toLowerCase();
+  if (target === 'emulator') {
+    return `http://127.0.0.1:5001/${projectId}/${REGION}`;
+  }
+  return `https://${REGION}-${projectId}.cloudfunctions.net`;
+}
 
 export function loadConfig(): BotConfig {
-  // FUNCTIONS_BASE_URL is the deployment base; per-endpoint URLs are derived by
+  // Single TARGET switch (cloud | emulator); per-endpoint URLs are derived by
   // appending the function name (matches the asia-east1 onRequest URL layout).
-  const baseUrl = required('FUNCTIONS_BASE_URL').replace(/\/+$/, '');
+  const baseUrl = resolveBaseUrl();
   const endpoint = (name: string) => `${baseUrl}/${name}`;
 
   const rawInterval = process.env.POLL_INTERVAL_MS;

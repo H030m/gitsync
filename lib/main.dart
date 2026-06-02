@@ -1,3 +1,6 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -20,6 +23,9 @@ Future<void> main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+    if (AppConfig.useEmulator) {
+      _useEmulators();
+    }
   } else {
     debugPrint(
       '[GitSync] Running in FAKE backend mode '
@@ -28,6 +34,22 @@ Future<void> main() async {
     );
   }
   runApp(const GitSyncApp());
+}
+
+// Routes Firestore / Auth / Functions to the local Firebase Emulator Suite.
+// Ports match firebase.json (firestore 8080, auth 9099, functions 5001). The
+// Functions instance must be the same region [FunctionsService] talks to
+// (asia-east1), or the override won't apply to the app's callables.
+void _useEmulators() {
+  final host = AppConfig.emulatorHost;
+  FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);
+  FirebaseAuth.instance.useAuthEmulator(host, 9099);
+  FirebaseFunctions.instanceFor(region: 'asia-east1')
+      .useFunctionsEmulator(host, 5001);
+  debugPrint(
+    '[GitSync] Using Firebase emulators at $host '
+    '(firestore:8080, auth:9099, functions:5001)',
+  );
 }
 
 class GitSyncApp extends StatelessWidget {
