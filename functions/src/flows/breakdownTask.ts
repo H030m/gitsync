@@ -6,6 +6,8 @@
 // Detailed contract: ARCHITECTURE.md §5.1 + MEMORY.md 2026-05-26
 // "dependsOn type contract".
 import { logger } from 'firebase-functions/v2';
+import { HttpsError } from 'firebase-functions/v2/https';
+import { FieldValue } from 'firebase-admin/firestore';
 import { zodResponseFormat } from 'openai/helpers/zod';
 
 import { db } from '../admin';
@@ -32,16 +34,133 @@ export interface BreakdownTaskResult {
 }
 
 export async function breakdownTaskFlow(
-  _input: BreakdownTaskInput,
+  input: BreakdownTaskInput,
 ): Promise<BreakdownTaskResult> {
-  // TODO: implement Sprint 2 (see ARCHITECTURE.md §5.1 Step 1-6).
-  //  - Step 1: fetchProjectContext (Firestore + GitHub recent commits)
-  //  - Step 2: openai.chat.completions.parse with zodResponseFormat
-  //  - Step 3: detectCycles (pure TS DFS), Step 3b: re-prompt on cycle
-  //  - Step 4: pre-generate Firestore doc IDs
-  //  - Step 5: translate `dependsOn` indices → taskIds
-  //  - Step 6: transactional batch write + unlock `isBreakingDown`
-  throw new Error('breakdownTaskFlow not implemented yet');
+  const { repoId, goal, requestedBy } = input;
+
+  // ---- Step 1: fetchProjectContext (Firestore only, NO GitHub) -------------
+  // Context = the pasted SPEC.md (`goal`) + light repo info (name/desc).
+  logger.info('Step 1: fetch project context', { repoId });
+  const repoRef = db.doc(`apps/gitsync/repos/${repoId}`);
+  const repoSnap = await repoRef.get();
+  if (!repoSnap.exists) {
+    throw new HttpsError('not-found', `repo ${repoId} not found`);
+  }
+  const repo = repoSnap.data() ?? {};
+  const projectContext = [
+    `Repository: ${repo.name ?? repoId}`,
+    repo.description ? `Description: ${repo.description}` : undefined,
+    'This is a newly imported project — there are no existing tasks yet.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  // ---- Step 2: structured-output breakdown via OpenAI ----------------------
+  logger.info('Step 2: call OpenAI for breakdown', { repoId });
+  const openai = getOpenAI();
+  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+    { role: 'system', content: breakdownTaskSystem },
+    { role: 'user', content: breakdownTaskUser({ projectContext, goal }) },
+  ];
+
+  const completion = await openai.beta.chat.completions.parse({
+    model: MODELS.reasoning,
+    messages,
+    response_format: zodResponseFormat(BreakdownOutputSchema, 'breakdown'),
+  });
+  let parsed: BreakdownOutput | null =
+    (completion.choices[0]?.message?.parsed as BreakdownOutput | null) ?? null;
+  if (!parsed) {
+    throw new HttpsError(
+      'internal',
+      'AI did not return a valid breakdown (refused or empty).',
+    );
+  }
+
+  // ---- Step 3 / 3b: cycle detection + single re-prompt ---------------------
+  let cycles = detectCycles(parsed.subtasks);
+  if (cycles.length > 0) {
+    logger.warn('Step 3: cycle detected, re-prompting once', { repoId, cycles });
+    messages.push({
+      role: 'assistant',
+      content: JSON.stringify(parsed),
+    });
+    messages.push({
+      role: 'user',
+      content:
+        'Your previous response contained circular dependencies among these ' +
+        `subtask indices: ${JSON.stringify(cycles)}. ` +
+        'Regenerate the breakdown so that dependsOn forms a directed acyclic ' +
+        'graph (no cycles). Return JSON matching the schema.',
+    });
+
+    const retry = await openai.beta.chat.completions.parse({
+      model: MODELS.reasoning,
+      messages,
+      response_format: zodResponseFormat(BreakdownOutputSchema, 'breakdown'),
+    });
+    parsed = (retry.choices[0]?.message?.parsed as BreakdownOutput | null) ?? null;
+    if (!parsed) {
+      throw new HttpsError(
+        'internal',
+        'AI did not return a valid breakdown on re-prompt.',
+      );
+    }
+    cycles = detectCycles(parsed.subtasks);
+    if (cycles.length > 0) {
+      throw new HttpsError('internal', 'AI produced cyclic dependencies twice');
+    }
+  }
+
+  const subtasks = parsed.subtasks;
+
+  // ---- Step 4: pre-generate Firestore doc IDs ------------------------------
+  const tasksCol = db.collection(`apps/gitsync/repos/${repoId}/tasks`);
+  const ids = subtasks.map(() => tasksCol.doc().id);
+
+  // ---- Step 5: translate dependsOn 0-based indices → real taskIds ----------
+  const dependsOnIds: string[][] = subtasks.map((s) =>
+    s.dependsOn
+      .filter((idx) => idx >= 0 && idx < ids.length)
+      .map((idx) => ids[idx]),
+  );
+
+  // ---- Step 6: transactional batch write -----------------------------------
+  // NOTE: the flow does NOT touch `isBreakingDown` — the handler owns that lock
+  // and releases it in `finally`.
+  logger.info('Step 6: writing task docs', { repoId, count: subtasks.length });
+  const now = FieldValue.serverTimestamp();
+  const batch = db.batch();
+  subtasks.forEach((s, i) => {
+    batch.set(tasksCol.doc(ids[i]), {
+      title: s.title,
+      description: s.description,
+      status: 'todo',
+      assigneeId: null,
+      dependsOn: dependsOnIds[i],
+      githubIssueNumber: null,
+      linkedPRNumbers: [],
+      acceptanceCriteria: [],
+      handoffDoc: null,
+      source: 'ai_breakdown',
+      parentTaskId: null,
+      createdBy: requestedBy,
+      createdAt: now,
+      updatedAt: now,
+      estimatedHours: s.estimatedHours,
+    });
+  });
+  await batch.commit();
+
+  return {
+    subtasks: subtasks.map((s, i) => ({
+      id: ids[i],
+      title: s.title,
+      description: s.description,
+      dependsOn: dependsOnIds[i],
+      estimatedHours: s.estimatedHours,
+    })),
+  };
 }
 
 // ---- Helpers (exported so tests can unit-test them in isolation) -----------

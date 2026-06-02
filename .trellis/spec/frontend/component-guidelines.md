@@ -66,6 +66,27 @@ Future<void> _submit() async {
 
 ---
 
+## Graph / DAG visualization (graphview)
+
+Task dependency graphs render with the **`graphview`** package + a layered Sugiyama
+layout (`lib/views/tasks/widgets/task_graph_tab.dart`). Conventions learned:
+
+- Use the **plain `GraphView(...)` constructor wrapped in your own
+  `InteractiveViewer(constrained: false, ...)`** for pan/zoom. Do **not** use
+  `GraphView.builder` — it injects its *own* internal `InteractiveViewer` (fixed
+  `boundaryMargin: infinity`, `minScale: 0.01`), so combining it with a custom one
+  double-nests them and you lose control of the zoom bounds.
+- `addNode(Node.Id(id))` for **every** task first, then `addEdge` — otherwise
+  dependency-less tasks vanish (edges alone only create their endpoints).
+- Edge direction = **prerequisite → dependent** (`addEdge(Node.Id(depId), Node.Id(taskId))`).
+  Guard against dangling edges: skip a `depId` not present in the current task set.
+- `Node.Id(x)` stores `key = ValueKey(x)`; read it back in the builder via
+  `node.key!.value`. Map id → model object for the node widget.
+- Node colors come from `Theme.of(ctx).colorScheme` keyed on the status enum with an
+  exhaustive `switch` (no `default`, so a new status is a compile error), per Styling above.
+
+---
+
 ## Scope discipline (`AI_AGENT_RULES.md §3.2`)
 
 Implement only what was asked. Don't add confirmation dialogs, undo snackbars, analytics, extra

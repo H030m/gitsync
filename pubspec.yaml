@@ -30,6 +30,9 @@ dependencies:
   # Stats 圓餅圖 / 長條圖（Sprint 5 用；先加上方便骨架展示）
   fl_chart: ^0.66.0
 
+  # Task dependency DAG (TasksBoard Graph tab)
+  graphview: ^1.2.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
