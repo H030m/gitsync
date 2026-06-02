@@ -45,6 +45,15 @@ try {
 
 A crash before `finally` is recovered by the `scheduledUnstickBreakdown` trigger (>5 min stale).
 
+**Handler owns the lock — the flow must not touch it.** The `onCall` *handler*
+(`handlers/breakdownTask.ts`) is the sole owner of `isBreakingDown`: it acquires the lock in a
+transaction and releases it in `finally`. The *flow* (`flows/breakdownTask.ts`) only does
+business logic (fetch context → OpenAI → write task docs) and must **never** read or write
+`isBreakingDown`. (ARCHITECTURE §5.1 Step 6 mentions the flow unlocking — that is superseded by
+this division: if the flow also unlocked, an early flow `return` would release the lock before
+the handler's `finally`, defeating the guard.) Same split applies to every future AI flow:
+handler = guard/lock/auth, flow = pure work + writes.
+
 ---
 
 ## Webhooks (`onRequest`) — verify first, respond fast

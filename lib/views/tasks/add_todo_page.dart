@@ -36,6 +36,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
         _step = 1;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -57,14 +58,22 @@ class _AddTodoPageState extends State<AddTodoPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        TextField(
-          decoration: const InputDecoration(
-            labelText: 'Goal',
-            hintText: 'e.g. Build the user profile page',
-            border: OutlineInputBorder(),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 360),
+          child: TextField(
+            decoration: const InputDecoration(
+              labelText: 'Project spec',
+              hintText:
+                  'Paste your SPEC.md (Markdown) here — the AI breaks it '
+                  'into a high-level TODO list.',
+              border: OutlineInputBorder(),
+              alignLabelWithHint: true,
+            ),
+            maxLines: null,
+            minLines: 10,
+            keyboardType: TextInputType.multiline,
+            onChanged: (v) => setState(() => _goal = v),
           ),
-          maxLines: 4,
-          onChanged: (v) => _goal = v,
         ),
         const SizedBox(height: 16),
         FilledButton.icon(

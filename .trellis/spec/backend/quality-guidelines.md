@@ -17,8 +17,32 @@
   [`database-guidelines.md`](./database-guidelines.md) Rules A–D).
 - External calls (OpenAI/GitHub/Discord) bounded by a timeout.
 - AI flows use the OpenAI SDK with **structured outputs (zod)** — no Genkit
-  ([`MEMORY.md 2026-05-20`](../../../docs/MEMORY.md)).
+  ([`MEMORY.md 2026-05-20`](../../../docs/MEMORY.md)). See the SDK-path convention below.
 - `index.ts` is re-exports only; one function per `handlers/` or `triggers/` file.
+
+---
+
+## Convention: OpenAI structured outputs (SDK path)
+
+**What**: With `openai@4.x` (pinned `4.104.0`), the zod-parsing helper lives at
+`openai.beta.chat.completions.parse(...)` — **not** the top-level
+`openai.chat.completions.parse` shown in newer docs (that overload only exists in later
+majors and does **not** typecheck here).
+
+```ts
+import { zodResponseFormat } from 'openai/helpers/zod';
+
+const completion = await getOpenAI().beta.chat.completions.parse({
+  model: MODELS.reasoning,
+  messages: [ { role: 'system', content: sys }, { role: 'user', content: usr } ],
+  response_format: zodResponseFormat(BreakdownOutputSchema, 'breakdown'),
+});
+const parsed = completion.choices[0].message.parsed;
+if (!parsed) throw new HttpsError('internal', 'OpenAI returned no parsed output');
+```
+
+**Why**: a refusal/empty response makes `.parsed === null`; always guard it before use.
+On an SDK major bump, re-check whether the top-level `.parse` path is now available.
 
 ---
 
