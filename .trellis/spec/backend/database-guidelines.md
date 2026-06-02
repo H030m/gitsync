@@ -85,6 +85,25 @@ From [`ARCHITECTURE.md §4.4`](../../../docs/ARCHITECTURE.md) — violating thes
 
 ---
 
+## Rule F — producer must persist the field name the consumer prefilters on
+
+When a doc is written by one function (producer) and a `findNearest` / `where` prefilter in
+another (consumer) reads it, the **stored field name is a contract** — a mismatch fails
+*silently* (query returns `[]`, no error). The schema in `ARCHITECTURE.md §2.1` is the single
+source of truth for the key; the inbound payload's key is irrelevant and often differs.
+
+Concrete incident (2026-06): GitHub's `push` webhook payload delivers the author handle as
+`commits[].author.username`, but the canonical schema is `commits.author.login` and
+`searchMemberCommits` prefilters `.where('author.login','==',githubLogin)`. `handlePush` had
+persisted it under `author.username`, so the vector search always returned nothing. Fix: map
+on write (`login: payload.author.username`), not on read.
+
+Before writing a doc that something else queries: open `ARCHITECTURE.md §2.1`, copy the exact
+field name, and (if the payload key differs) translate at the write site. Unit tests that mock
+the consumer's Firestore won't catch this — trace the **actual producer** (as in Rule E).
+
+---
+
 ## Deleting a repo (aggregate root) + its subcollections
 
 Deleting a doc does **not** delete its subcollections — they orphan. To remove a `repos/{repoId}`

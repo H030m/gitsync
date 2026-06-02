@@ -217,3 +217,36 @@ End-to-end GitHub integration. Webhook (HMAC verify on rawBody + idempotency + d
 ### Next Steps
 
 - Next feature: #3 assignTaskFlow (module D dynamic task assignment).
+
+
+## Session 7: assignTaskFlow — agentic dynamic task assignment
+
+**Date**: 2026-06-02
+**Task**: assignTaskFlow — agentic dynamic task assignment
+**Branch**: `feature/assign-task-flow`
+
+### Summary
+
+Implemented assignTaskFlow: OpenAI function-calling agentic loop (max 5 rounds, 4 tools: readTeamState=members+users join, searchMemberCommits=findNearest repoId+author.login prefilter, getTaskDependents, finalizeAssignment) picks best assignee by load/expertise/commit-history/dependents. Auto-apply: writes tasks/{taskId}.assigneeId + rebalances activeIssueCount in a transaction (reassign old-1/new+1, atomic). Pre-checks (task-done/no-member throw, single-member shortcut skips OpenAI) + lowest-load fallback. trellis-check caught a latent prod bug in the already-shipped handlePush: commit author handle persisted as author.username but schema+consumer use author.login -> vector search silently returned []; fixed + captured as database-guidelines Rule F. Discord-chat RAG deferred to future TODO (readTeamState already returns discordUserId for it). 9 suites/73 tests green. Not yet deployed; needs new commits vector index.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7533790` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
