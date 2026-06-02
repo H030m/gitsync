@@ -80,6 +80,13 @@ class _FakeFunctionsService implements FunctionsService {
       throw UnimplementedError();
 
   @override
+  Future<String> requestDiscordFetch({
+    required String repoId,
+    required String date,
+  }) =>
+      throw UnimplementedError();
+
+  @override
   Future<void> subscribeToTopic({
     required String token,
     required String topic,

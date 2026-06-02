@@ -156,39 +156,117 @@ class _DiscordTab extends StatelessWidget {
         if (vm.loading) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (vm.messages.isEmpty) {
-          return const EmptyState(
-            icon: Icons.forum_outlined,
-            title: 'No Discord messages yet',
-            message: 'Ingested Discord activity will appear here.',
-          );
-        }
-        final scheme = Theme.of(ctx).colorScheme;
-        return ListView.builder(
-          padding: const EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
-          itemCount: vm.messages.length,
-          itemBuilder: (_, i) {
-            final m = vm.messages[i];
-            return Card(
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: scheme.secondaryContainer,
-                  foregroundColor: scheme.onSecondaryContainer,
-                  child: Text(
-                    m.authorName.isEmpty
-                        ? '?'
-                        : m.authorName.substring(0, 1).toUpperCase(),
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-                title: Text(
-                  m.authorName,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                subtitle: Text(m.content),
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppDimens.spacingMd,
+                AppDimens.spacingMd,
+                AppDimens.spacingMd,
+                AppDimens.spacingSm,
               ),
-            );
-          },
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (vm.digest != null) ...[
+                    _DigestCard(markdown: vm.digest!.markdown),
+                    const SizedBox(height: AppDimens.spacingMd),
+                  ],
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton.icon(
+                      onPressed: vm.refreshing ? null : vm.refresh,
+                      icon: vm.refreshing
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.refresh),
+                      label: Text(vm.refreshing ? 'Fetching…' : 'Refresh'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(child: _MessageList(vm: vm)),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _DigestCard extends StatelessWidget {
+  const _DigestCard({required this.markdown});
+  final String markdown;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(AppDimens.spacingMd),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.auto_awesome_outlined,
+                    size: 20, color: theme.colorScheme.primary),
+                const SizedBox(width: AppDimens.spacingSm),
+                Text('Discord digest',
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w600)),
+              ],
+            ),
+            const SizedBox(height: AppDimens.spacingSm),
+            Text(markdown, style: theme.textTheme.bodyMedium),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MessageList extends StatelessWidget {
+  const _MessageList({required this.vm});
+  final DiscordMessagesViewModel vm;
+
+  @override
+  Widget build(BuildContext context) {
+    if (vm.messages.isEmpty) {
+      return const EmptyState(
+        icon: Icons.forum_outlined,
+        title: 'No Discord messages yet',
+        message: 'Tap Refresh to pull the day\'s chat from Discord.',
+      );
+    }
+    final scheme = Theme.of(context).colorScheme;
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
+      itemCount: vm.messages.length,
+      itemBuilder: (_, i) {
+        final m = vm.messages[i];
+        return Card(
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor: scheme.secondaryContainer,
+              foregroundColor: scheme.onSecondaryContainer,
+              child: Text(
+                m.authorName.isEmpty
+                    ? '?'
+                    : m.authorName.substring(0, 1).toUpperCase(),
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+            title: Text(
+              m.authorName,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            subtitle: Text(m.content),
+          ),
         );
       },
     );
