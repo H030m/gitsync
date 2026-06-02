@@ -112,15 +112,39 @@ export const addRepo = onCall(
       );
     }
 
-    // 3. repoId = `${owner}_${name}`; reject duplicates.
+    // 3. repoId = `${owner}_${name}`. If the repo already exists, the verified
+    //    collaborator joins it as a `member` (the repo data model is multi-user
+    //    by design); only a brand-new repo takes the create path below.
     const repoId = `${owner}_${repo}`;
     const repoRef = db.doc(`apps/gitsync/repos/${repoId}`);
     const existing = await repoRef.get();
     if (existing.exists) {
-      throw new HttpsError(
-        'already-exists',
-        `Repository ${repoId} has already been added.`,
-      );
+      // Join path — caller already passed token + push/admin checks (steps 1-2).
+      // Skip webhook registration (already done at creation) and never touch
+      // existing repo fields (webhookSecret/createdBy/name/…).
+      const memberRef = db.doc(`apps/gitsync/repos/${repoId}/members/${uid}`);
+      const memberSnap = await memberRef.get();
+      if (memberSnap.exists) {
+        // Already a member → idempotent no-op.
+        return { repoId, alreadyMember: true };
+      }
+
+      const joinBatch = db.batch();
+      joinBatch.set(memberRef, {
+        role: 'member',
+        activeIssueCount: 0,
+        completedTaskCount: 0,
+        lastActiveAt: FieldValue.serverTimestamp(),
+      });
+      joinBatch.set(db.doc(`apps/gitsync/users/${uid}/repos/${repoId}`), {
+        role: 'member',
+      });
+      joinBatch.update(repoRef, {
+        memberIds: FieldValue.arrayUnion(uid),
+      });
+      await joinBatch.commit();
+
+      return { repoId };
     }
 
     // 4. Best-effort webhook registration. Failure (OAuth/deploy URL/perms not

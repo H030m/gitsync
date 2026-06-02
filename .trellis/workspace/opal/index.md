@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 8
+- **Total Sessions**: 9
 - **Last Active**: 2026-06-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~285 | Active |
+| `journal-1.md` | ~318 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 9 | 2026-06-02 | addRepo join-as-member on duplicate | `041d19d` | `feature/add-repo-join-member` |
 | 8 | 2026-06-02 | onTaskUpdated — auto-assign downstream on done + FCM notify | `dfa13f9` | `feature/auto-assign-on-done` |
 | 7 | 2026-06-02 | assignTaskFlow — agentic dynamic task assignment | `7533790` | `feature/assign-task-flow` |
 | 6 | 2026-06-02 | GitHub sync: webhook ingestion + task/issue/PR triggers | `c19231d` | `feature/github-webhook` |
