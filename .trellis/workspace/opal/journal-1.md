@@ -250,3 +250,36 @@ Implemented assignTaskFlow: OpenAI function-calling agentic loop (max 5 rounds, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: onTaskUpdated — auto-assign downstream on done + FCM notify
+
+**Date**: 2026-06-02
+**Task**: onTaskUpdated — auto-assign downstream on done + FCM notify
+**Branch**: `feature/auto-assign-on-done`
+
+### Summary
+
+Implemented the onTaskUpdated trigger (was a stub): on a task's status transition to done, query downstream tasks (dependsOn array-contains), keep only those whose every prerequisite is now done (ready filter, in-code), auto-assign the unassigned ones by reusing assignTaskFlow (auto-apply owns its counters — trigger touches no counters), and FCM-notify each newly-ready task's assignee (new tools/notify.ts, reads users/{uid}.fcmToken, best-effort). Transition guard (before!=done && after==done) prevents recursion when assignTaskFlow writes downstream assigneeId. Per-downstream try/catch = best-effort. onTaskUpdated now declares secrets:[openaiKey] + timeoutSeconds 300. trellis-check passed clean (0 issues): recursion trace, no double-counting, ready filter, data-flow (fcmToken written by Flutter user_repo), best-effort all verified. Added database-guidelines Rule G (single array-contains + in-code filter over manual composite index). 10 suites/84 tests green. Not yet deployed/live-tested.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dfa13f9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

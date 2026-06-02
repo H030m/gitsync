@@ -104,6 +104,22 @@ the consumer's Firestore won't catch this — trace the **actual producer** (as 
 
 ---
 
+## Rule G — prefer single `array-contains` + in-code filter over a composite index
+
+A query like `where('dependsOn','array-contains', id).where('status','==','todo')` needs a
+**manually-created composite index** — and if it's missing the trigger *crashes at runtime*
+(`FAILED_PRECONDITION`), not at deploy. Since index creation is the user's job
+(`AI_AGENT_RULES §R2`), that's a live-only landmine.
+
+When the second predicate is cheap and low-cardinality (a status enum, a boolean), run the
+**single** `array-contains` query (auto-indexed, zero setup) and filter the rest in code. The
+result set here is "tasks depending on X" — always small — so the in-memory filter is free.
+`onTaskUpdated`'s downstream/ready check does exactly this. Reserve composite indexes for
+queries whose prefilter genuinely must run server-side for scale (and then add the index to
+`firestore.indexes.json` + flag the deploy command for the user).
+
+---
+
 ## Deleting a repo (aggregate root) + its subcollections
 
 Deleting a doc does **not** delete its subcollections — they orphan. To remove a `repos/{repoId}`
