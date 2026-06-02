@@ -307,6 +307,18 @@ class DummyData {
         ),
       ];
 
+  // ---- Discord Digest ---------------------------------------------------
+
+  static const discordDigestMarkdown = '''
+**Discord digest**
+
+- Alice is picking up the GitHub OAuth work tonight; asked whether anyone has
+  verified the callback URL on Windows.
+- Bob and the team confirmed `estimatedHours` can be a float — the
+  breakdownTask zod schema already allows `z.number()`.
+
+No blockers raised in chat today.''';
+
   // ---- Daily Report -----------------------------------------------------
 
   static String get _today {

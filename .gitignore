@@ -73,6 +73,14 @@ macos/Runner/GoogleService-Info-*.plist
 /functions/.runtimeconfig.json
 /functions/coverage/
 
+# Gradle build cache / artifacts (any module)
+.gradle/
+**/.gradle/
+**/local.properties
+
+# Trellis-generated Android workspace (local build scaffold, not the app's /android)
+/.trellis/android/
+
 # OS / Editor
 Thumbs.db
 .vscode/launch.json

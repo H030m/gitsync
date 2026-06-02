@@ -210,7 +210,8 @@ describe('githubWebhook', () => {
       sha: 'abc123',
       message: 'fix: something',
       filesChanged: 2,
-      author: { name: 'Octo', username: 'octocat' },
+      // Stored under canonical `login` (payload's `author.username` → `login`).
+      author: { name: 'Octo', login: 'octocat' },
     });
   });
 

@@ -217,3 +217,135 @@ End-to-end GitHub integration. Webhook (HMAC verify on rawBody + idempotency + d
 ### Next Steps
 
 - Next feature: #3 assignTaskFlow (module D dynamic task assignment).
+
+
+## Session 7: assignTaskFlow — agentic dynamic task assignment
+
+**Date**: 2026-06-02
+**Task**: assignTaskFlow — agentic dynamic task assignment
+**Branch**: `feature/assign-task-flow`
+
+### Summary
+
+Implemented assignTaskFlow: OpenAI function-calling agentic loop (max 5 rounds, 4 tools: readTeamState=members+users join, searchMemberCommits=findNearest repoId+author.login prefilter, getTaskDependents, finalizeAssignment) picks best assignee by load/expertise/commit-history/dependents. Auto-apply: writes tasks/{taskId}.assigneeId + rebalances activeIssueCount in a transaction (reassign old-1/new+1, atomic). Pre-checks (task-done/no-member throw, single-member shortcut skips OpenAI) + lowest-load fallback. trellis-check caught a latent prod bug in the already-shipped handlePush: commit author handle persisted as author.username but schema+consumer use author.login -> vector search silently returned []; fixed + captured as database-guidelines Rule F. Discord-chat RAG deferred to future TODO (readTeamState already returns discordUserId for it). 9 suites/73 tests green. Not yet deployed; needs new commits vector index.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7533790` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 8: onTaskUpdated — auto-assign downstream on done + FCM notify
+
+**Date**: 2026-06-02
+**Task**: onTaskUpdated — auto-assign downstream on done + FCM notify
+**Branch**: `feature/auto-assign-on-done`
+
+### Summary
+
+Implemented the onTaskUpdated trigger (was a stub): on a task's status transition to done, query downstream tasks (dependsOn array-contains), keep only those whose every prerequisite is now done (ready filter, in-code), auto-assign the unassigned ones by reusing assignTaskFlow (auto-apply owns its counters — trigger touches no counters), and FCM-notify each newly-ready task's assignee (new tools/notify.ts, reads users/{uid}.fcmToken, best-effort). Transition guard (before!=done && after==done) prevents recursion when assignTaskFlow writes downstream assigneeId. Per-downstream try/catch = best-effort. onTaskUpdated now declares secrets:[openaiKey] + timeoutSeconds 300. trellis-check passed clean (0 issues): recursion trace, no double-counting, ready filter, data-flow (fcmToken written by Flutter user_repo), best-effort all verified. Added database-guidelines Rule G (single array-contains + in-code filter over manual composite index). 10 suites/84 tests green. Not yet deployed/live-tested.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dfa13f9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 9: addRepo join-as-member on duplicate
+
+**Date**: 2026-06-02
+**Task**: addRepo join-as-member on duplicate
+**Branch**: `feature/add-repo-join-member`
+
+### Summary
+
+Fixed addRepo rejecting a second collaborator with already-exists. Now: permission check (push/admin via verifyRepoAccess) runs before a create-vs-join split. New repo -> owner + webhook + 3 docs (unchanged). Existing repo -> join path (skips webhook): if already a member, idempotent {repoId, alreadyMember:true} no writes; else batch set members/{uid} role member + users/{uid}/repos/{repoId} + repos/{repoId}.memberIds arrayUnion(uid), never overwriting webhookSecret/createdBy. Non-collaborator still rejected. Frontend unchanged (repo-list stream reads repos.where memberIds array-contains uid, which the join writes). trellis-check 0 issues; noted firestore.rules is still the DEFAULT OPEN ruleset (allow read/write until 2026-06-25) — security follow-up, out of scope here. 10 suites/86 tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `041d19d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 10: Fix: dynamic assignment hard-failed on missing commits vector index
+
+**Date**: 2026-06-03
+**Task**: Fix: dynamic assignment hard-failed on missing commits vector index
+**Branch**: `feature/assign-commit-search-resilient`
+
+### Summary
+
+Live debug: onTaskUpdated auto-assignment left downstream assigneeId null. Logs showed assignTaskFlow ran the agentic loop but searchMemberCommits findNearest threw 9 FAILED_PRECONDITION (missing vector index) which propagated and killed the whole assignment. Root causes: (1) optional commit-search signal was not best-effort — one throw aborted the flow; (2) firestore.indexes.json declared the commits vector indexes COLLECTION_GROUP but the query is .collection() = COLLECTION scope, so even deploying built the wrong index. Fix: wrap embed+findNearest+map in try/catch -> return [] + warn (assignment now finalizes on workload/expertise/dependents even with no index and no commits — demo no longer needs the index); changed both commits vector indexes to queryScope COLLECTION; left discordMessages COLLECTION_GROUP (no findNearest consumer). Confirmed user's remove/re-add/regenerate test flow was NOT the cause. Extended error-handling spec: optional/secondary signal tools must be best-effort + must not hard-depend on a user-deployed index + match index queryScope to query. trellis-check 0 issues; 12 suites/98 tests green. User to redeploy functions:onTaskUpdated,assignTask; index deploy optional now.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `aae8c7e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

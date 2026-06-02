@@ -1,6 +1,7 @@
 import '../../config/app_config.dart';
 import '../../data/dummy_data.dart';
 import '../../models/sub_task.dart';
+import '../../repositories/fake/fake_discord_digest_repo.dart';
 import '../functions_service.dart';
 
 /// Canned Cloud Functions responses for fake-backend mode. All methods
@@ -129,6 +130,18 @@ class FakeFunctionsService implements FunctionsService {
     required List<String> channelIds,
   }) async {
     await Future.delayed(AppConfig.simulatedLatency);
+  }
+
+  @override
+  Future<String> requestDiscordFetch({
+    required String repoId,
+    required String date,
+  }) async {
+    // Mimic the real round-trip (bot backfill + digest flow) then emit a
+    // digest so the Discord tab's refresh shows a result in fake mode.
+    await Future.delayed(AppConfig.simulatedLatency * 4);
+    FakeDiscordDigestRepository().emitDemoDigest(repoId, date);
+    return 'fake-fetch-req-001';
   }
 
   // ---- FCM ---------------------------------------------------------------

@@ -6,6 +6,23 @@
 
 ---
 
+## 2026-06-02 — Discord 改 on-demand 回補 + 頻道對照移進 Firestore（移除即時轉發）
+
+Discord ingest 從「常駐 forwarder 即時轉發每則訊息」改成 **on-demand 批次回補**：
+
+- **觸發**：App「Daily → Discord」refresh → `requestDiscordFetch` callable 寫 `fetchRequests/{id}`（`status:'pending'`）。bot 沒有對外 URL，所以走 **Firestore queue 中轉**——常駐 bot 每 ~5 秒輪詢 `claimDiscordFetch`（secret-auth）認領，REST 回補當天訊息 → `discordMessageIngest` → `completeDiscordFetch` → `discordDailyDigestFlow` 寫 `discordDigests/{date}`。
+- **頻道對照**：從 bot 靜態 `.env` `CHANNEL_REPO_MAP` 改成 Firestore `repos.discordChannelIds`，用 **`/gitsync-listen url:<repo-url>` slash command** → `setRepoChannel`（secret-auth）`arrayUnion` 綁定。
+- **bot 移除 `MessageCreate` 即時轉發**；但 **`MessageContent` intent 仍必開**（REST `messages.fetch` 才回得到 `content`）。
+- **新增 collection**：`fetchRequests`（請求佇列）、`discordDigests`（AI 每日 digest）。bot 仍無 Firestore 憑證，所有讀寫透過 secret-auth function 中轉（不發 service-account key）。
+
+理由：團隊決定不要常駐即時串流（噪音多、bot 一掉訊息就漏），改成「要看才拉、拉完 AI 整理成 digest」；頻道設定放 Discord 內比 App 內挑選器直覺。**代價**：bot 仍需 24/7 常駐（為 slash command + 輪詢）；訊息只在 refresh 時更新（非即時，可接受）。
+
+**OAuth scope 連帶變更**：bot 邀請要從 `bot` 改成 `bot` + `applications.commands`（重新邀請）；Bot Permissions 維持唯讀 `View Channels` + `Read Message History`（66560）不變。
+
+⚠️ **待辦（owner）**：`firestore.rules` 目前仍是 firebase-init 的 30 天大開放規則（到 2026-06-25），尚未套用 [§2.2](./ARCHITECTURE.md#22-firestore-security-rules) 硬化版；硬化時 `fetchRequests` / `discordDigests` 要設 `allow write: if false`（只 Cloud Functions 寫）、`discordDigests` 開放 repo member 讀。
+
+詳見 [`ARCHITECTURE.md §7`](./ARCHITECTURE.md#7-discord-整合on-demand-回補版)。取代下方 2026-05-26「Discord 簡化為訊息直接寫 Firestore」與 forwarder 即時轉發相關段落。
+
 ## 2026-06-02 — 首次 live 部署成功 + Cloud Functions 部署三連坑
 
 `gitsync-645b3` 完成第一次 Cloud Functions 部署（`addRepo` + `githubWebhook`），並用真實 GitHub OAuth 登入 + 加 repo 端到端驗證通過。過程踩到三個**一次性**設定坑，已寫進 [`SETUP.md §5.9`](./SETUP.md)：

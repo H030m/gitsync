@@ -48,7 +48,17 @@ ViewModel. The Repository adds a `.timeout(...)` and does **not** catch (see
 - **Never hardcode color strings.** Use `Theme.of(ctx).colorScheme.X` and
   `Theme.of(ctx).textTheme.X`. Brand colors live in `lib/theme/app_colors.dart` and are wired via
   `ColorScheme.fromSeed` in `app_theme.dart` (light seed `#1565C0`, dark accent `#FAB28E`).
-- Spacing/radius tokens per [`ARCHITECTURE.md §8.2`](../../../docs/ARCHITECTURE.md).
+- Spacing/radius tokens per [`ARCHITECTURE.md §8.2`](../../../docs/ARCHITECTURE.md) are codified in
+  `lib/theme/app_dimens.dart` (`AppDimens.radiusSm/Md/Lg`, `spacingXs/Sm/Md/Lg`). **Use these
+  instead of magic numbers** for padding/radius.
+- Component look (Card, AppBar, FilledButton, SegmentedButton, inputs, ListTile, Divider, TabBar,
+  FAB, SnackBar) is centralized in the `_themeFrom(...)` factory in `app_theme.dart`. **Polish
+  app-wide by editing that one factory**, not per-page — both light and dark inherit it.
+- Reuse `EmptyState(icon, title, message)` from `lib/widgets/empty_state.dart` for "nothing here
+  yet" placeholders instead of a bare centered `Text`.
+- Theme mode: `ThemeModeNotifier` defaults to `ThemeMode.system` with **no persistence**
+  (resets on reload — intentional). Settings exposes a 3-way System/Light/Dark `SegmentedButton`,
+  **not** a binary switch (a switch reading `mode == dark` contradicts the system default).
 
 ---
 

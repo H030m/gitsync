@@ -12,46 +12,12 @@ import { FieldValue } from 'firebase-admin/firestore';
 
 import { db, REGION } from '../admin';
 import { registerWebhook, verifyRepoAccess } from '../services/githubClient';
+import { parseGithubUrl } from '../tools/githubUrl';
+
+// Re-exported so existing importers (and tests) can keep importing it from here.
+export { parseGithubUrl };
 
 const WEBHOOK_EVENTS = ['push', 'pull_request', 'issues', 'issue_comment'];
-
-interface ParsedRepo {
-  owner: string;
-  repo: string;
-}
-
-/**
- * Parses common GitHub URL / slug formats into `{ owner, repo }`:
- *   - https://github.com/owner/repo
- *   - https://github.com/owner/repo.git
- *   - git@github.com:owner/repo.git
- *   - owner/repo
- * Returns null when the input can't be resolved to owner/repo.
- */
-export function parseGithubUrl(input: string): ParsedRepo | null {
-  let s = input.trim();
-  if (!s) return null;
-
-  // Strip protocol / host so we can match a trailing owner/repo for both URL
-  // and SSH forms.
-  s = s
-    .replace(/^git@github\.com:/i, '')
-    .replace(/^https?:\/\/(www\.)?github\.com\//i, '')
-    .replace(/^github\.com\//i, '');
-
-  // Drop trailing slash and a trailing .git suffix.
-  s = s.replace(/\/+$/, '').replace(/\.git$/i, '');
-
-  const parts = s.split('/').filter((p) => p.length > 0);
-  if (parts.length !== 2) return null;
-
-  const [owner, repo] = parts;
-  // Reject obviously invalid path segments.
-  const valid = /^[A-Za-z0-9._-]+$/;
-  if (!valid.test(owner) || !valid.test(repo)) return null;
-
-  return { owner, repo };
-}
 
 export const addRepo = onCall(
   { region: REGION },
@@ -112,15 +78,39 @@ export const addRepo = onCall(
       );
     }
 
-    // 3. repoId = `${owner}_${name}`; reject duplicates.
+    // 3. repoId = `${owner}_${name}`. If the repo already exists, the verified
+    //    collaborator joins it as a `member` (the repo data model is multi-user
+    //    by design); only a brand-new repo takes the create path below.
     const repoId = `${owner}_${repo}`;
     const repoRef = db.doc(`apps/gitsync/repos/${repoId}`);
     const existing = await repoRef.get();
     if (existing.exists) {
-      throw new HttpsError(
-        'already-exists',
-        `Repository ${repoId} has already been added.`,
-      );
+      // Join path — caller already passed token + push/admin checks (steps 1-2).
+      // Skip webhook registration (already done at creation) and never touch
+      // existing repo fields (webhookSecret/createdBy/name/…).
+      const memberRef = db.doc(`apps/gitsync/repos/${repoId}/members/${uid}`);
+      const memberSnap = await memberRef.get();
+      if (memberSnap.exists) {
+        // Already a member → idempotent no-op.
+        return { repoId, alreadyMember: true };
+      }
+
+      const joinBatch = db.batch();
+      joinBatch.set(memberRef, {
+        role: 'member',
+        activeIssueCount: 0,
+        completedTaskCount: 0,
+        lastActiveAt: FieldValue.serverTimestamp(),
+      });
+      joinBatch.set(db.doc(`apps/gitsync/users/${uid}/repos/${repoId}`), {
+        role: 'member',
+      });
+      joinBatch.update(repoRef, {
+        memberIds: FieldValue.arrayUnion(uid),
+      });
+      await joinBatch.commit();
+
+      return { repoId };
     }
 
     // 4. Best-effort webhook registration. Failure (OAuth/deploy URL/perms not

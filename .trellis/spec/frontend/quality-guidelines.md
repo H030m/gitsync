@@ -48,6 +48,12 @@
 ## Verify before saying "done" (`AI_AGENT_RULES.md §4`)
 
 - `flutter analyze` → 0 error / 0 warning (run it — the one info `use_null_aware_elements` is expected).
+  - **Gotcha — non-ASCII repo path**: if the clone's absolute path contains non-ASCII
+    characters (e.g. CJK like `大二下/軟體實驗設計`), `flutter analyze` crashes with
+    `Unhandled exception: FormatException: Unterminated string` (the analysis server mis-parses
+    the URL-encoded workspace URI). This is a tooling bug, not a code issue. Either clone to an
+    ASCII-only path, or use **`flutter build web --no-pub`** (or a clean `flutter run`) as the
+    compile gate instead. The IDE analyzer is unaffected.
 - Ran the golden path in fake mode (`flutter run`, default `BACKEND=fake`).
 - Report with the 5-field format: ✅做了 / 📁動了 / ⚠️沒做 / 🧪驗證 / 💬建議 commit message
   (English, imperative; AI generates the string only, never runs `git commit`).
