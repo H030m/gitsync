@@ -82,6 +82,20 @@ Every GitHub / OpenAI / Discord call must have a timeout; never wait forever
 (`AI_AGENT_RULES.md §3.6`). For best-effort side-effects (e.g. `notifyDiscord`), swallow the
 error with `.catch()` + a log — a failed notification must not fail the main write.
 
+**Optional / secondary signal tools must be best-effort, never throw into the parent flow.**
+When an agentic flow registers a *supporting* tool (one signal among several — e.g.
+`searchMemberCommits` in `assignTaskFlow`, alongside workload / expertise / dependents), that
+tool must `try/catch` its query and `return` an empty/neutral result on any failure, logging at
+`warn`. A single optional signal must not be able to abort the whole flow. Concrete incident
+(2026-06): `searchMemberCommits`'s vector `findNearest` threw `9 FAILED_PRECONDITION: Missing
+vector index configuration` (index not yet deployed) and killed every downstream assignment —
+`assigneeId` stayed null. Fix: wrap the `embed()` + `findNearest()` + result map in one
+`try/catch → return []`, so assignment finalizes on the remaining signals. Corollary: a feature
+must not hard-depend on a **user-deployed** Firestore index (indexes are the user's job per
+`AI_AGENT_RULES §R2`) — degrade gracefully when it is absent. And match the index `queryScope`
+to the query: a `.collection(...)` `findNearest` needs a `COLLECTION`-scoped index, NOT
+`COLLECTION_GROUP` (see `database-guidelines.md`), or the deployed index silently won't match.
+
 **Best-effort registration pattern** (`addRepo` webhook): when an external resource can't yet be
 created end-to-end (dependency not ready / not deployed), wrap it in `try/catch`, log on failure,
 and persist a null id so a later backfill can retry — never block the primary write. Generate and

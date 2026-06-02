@@ -10,7 +10,7 @@
     },
     {
       "collectionGroup": "commits",
-      "queryScope": "COLLECTION_GROUP",
+      "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "repoId", "order": "ASCENDING" },
         {
@@ -21,7 +21,7 @@
     },
     {
       "collectionGroup": "commits",
-      "queryScope": "COLLECTION_GROUP",
+      "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "repoId", "order": "ASCENDING" },
         { "fieldPath": "author.login", "order": "ASCENDING" },

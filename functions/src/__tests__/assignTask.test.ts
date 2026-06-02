@@ -34,6 +34,10 @@ jest.mock('firebase-admin/firestore', () => ({
 
 const store = new Map<string, Record<string, unknown>>();
 
+// When set, the fake findNearest().get() throws this (simulates a missing
+// vector index `9 FAILED_PRECONDITION` or any query failure).
+let findNearestError: Error | null = null;
+
 function childDocsOf(colPath: string): Array<[string, Record<string, unknown>]> {
   return [...store.entries()].filter(
     ([p]) =>
@@ -86,6 +90,7 @@ function makeQuery(colPath: string, clauses: WhereClause[]) {
     findNearest(_opts: unknown) {
       return {
         async get() {
+          if (findNearestError) throw findNearestError;
           return {
             docs: matches().map(([p, d]) => ({
               id: p.split('/').pop() as string,
@@ -150,6 +155,7 @@ jest.mock('../tools/embedding', () => ({
 }));
 
 import { assignTaskFlow } from '../flows/assignTask';
+import { searchMemberCommits } from '../tools/assignTools';
 
 // ---- Helpers --------------------------------------------------------------
 
@@ -208,6 +214,7 @@ beforeEach(() => {
   store.clear();
   createQueue.length = 0;
   mockCreate.mockClear();
+  findNearestError = null;
 });
 
 // ---- Tests ----------------------------------------------------------------
@@ -321,5 +328,47 @@ describe('assignTaskFlow fallback', () => {
     expect(res.assigneeId).toBe('u2');
     expect(store.get(`apps/gitsync/repos/${REPO}/tasks/t1`)?.assigneeId).toBe('u2');
     expect(store.get(`apps/gitsync/repos/${REPO}/members/u2`)?.activeIssueCount).toBe(3);
+  });
+});
+
+describe('searchMemberCommits best-effort', () => {
+  it('returns [] (does not throw) when findNearest fails with FAILED_PRECONDITION', async () => {
+    seedMember('u1', {}, { name: 'A', githubLogin: 'a' });
+    // Simulate the live failure: 9 FAILED_PRECONDITION: Missing vector index.
+    findNearestError = new Error('9 FAILED_PRECONDITION: Missing vector index configuration');
+
+    await expect(
+      searchMemberCommits(REPO, 'u1', 'auth refactor'),
+    ).resolves.toEqual([]);
+  });
+
+  it('still returns [] for a member without a githubLogin (existing early return)', async () => {
+    seedMember('u1', {}, { name: 'A' }); // no githubLogin
+    findNearestError = new Error('should never be reached');
+
+    await expect(searchMemberCommits(REPO, 'u1', 'anything')).resolves.toEqual([]);
+  });
+});
+
+describe('assignTaskFlow resilient to commit search failure', () => {
+  it('finalizes via other signals even when searchMemberCommits throws', async () => {
+    seedTask('t1', {});
+    seedMember('u1', { activeIssueCount: 4 }, { name: 'A', githubLogin: 'a' });
+    seedMember('u2', { activeIssueCount: 0 }, { name: 'B', githubLogin: 'b' }); // lighter
+
+    // Missing commit vector index — every findNearest throws.
+    findNearestError = new Error('9 FAILED_PRECONDITION: Missing vector index configuration');
+
+    // Round 0: model probes commit history (search will degrade to []).
+    // Round 1: model finalizes using workload signal.
+    createQueue.push(readToolTurn('searchMemberCommits', { memberId: 'u2', query: 'topic' }));
+    createQueue.push(finalizeTurn('u2', 'B has the lighter load; no commit signal available.'));
+
+    const res = await assignTaskFlow({ repoId: REPO, taskId: 't1' });
+
+    expect(res.assigneeId).toBe('u2');
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+    expect(store.get(`apps/gitsync/repos/${REPO}/tasks/t1`)?.assigneeId).toBe('u2');
+    expect(store.get(`apps/gitsync/repos/${REPO}/members/u2`)?.activeIssueCount).toBe(1);
   });
 });
