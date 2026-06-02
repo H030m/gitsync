@@ -23,6 +23,7 @@ export { onTaskCreated } from './triggers/onTaskCreated';
 export { onTaskUpdated } from './triggers/onTaskUpdated';
 export { onCommitCreated } from './triggers/onCommitCreated';
 export { onPRMerged } from './triggers/onPRMerged';
+export { onIssueWritten } from './triggers/onIssueWritten';
 export { onDiscordMessageCreated } from './triggers/onDiscordMessageCreated';
 
 // ---- Scheduled triggers --------------------------------------------------

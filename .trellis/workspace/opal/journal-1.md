@@ -182,3 +182,36 @@ Replaced the Graph-tab stub in TasksBoardPage with TaskGraphTab: renders a depen
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: GitHub sync: webhook ingestion + task/issue/PR triggers
+
+**Date**: 2026-06-02
+**Task**: GitHub sync: webhook ingestion + task/issue/PR triggers
+**Branch**: `feature/github-webhook`
+
+### Summary
+
+End-to-end GitHub integration. Webhook (HMAC verify on rawBody + idempotency + dispatch -> raw writes to commits/pullRequests/issues) + githubClient.createIssue. Triggers: onTaskCreated mirrors task->GitHub issue (stores githubIssueNumber), onCommitCreated parses #N->linkedTaskIds + embedding + aiSummary (Rule D), onPRMerged (onDocumentWritten, parses closing refs -> txn mark done + counters), onIssueWritten (new, reverse-sync). tools/issueRefs + taskStatus. Linking via issue-mirror (#N). Check caught a production bug: onPRMerged was onDocumentUpdated but the PR doc is created already merged -> never fired; fixed to onDocumentWritten + spec Rule E. 8 suites / 65 tests green. Not yet deployed/live-tested.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c19231d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

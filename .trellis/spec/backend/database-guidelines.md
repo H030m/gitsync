@@ -52,6 +52,22 @@ From [`ARCHITECTURE.md §4.4`](../../../docs/ARCHITECTURE.md) — violating thes
 - **Rule D — never put slow side-effects in the idempotency transaction.** Mark the key,
   *exit* the transaction, *then* call OpenAI / GitHub, then write results back. MVP accepts
   an occasional null `aiSummary`/`embedding` on failure + a manual "regenerate" button.
+- **Rule E — match the trigger type to how the source doc is written.** If the producing
+  write **creates** the doc already in its terminal state, `onDocumentUpdated` will **never
+  fire** (it only fires on updates to an existing doc). The webhook's `handlePR` writes
+  `pullRequests/{n}` directly as `state: 'merged'` (a create), so `onPRMerged` must be
+  `onDocumentWritten`, guarding on the *transition into* the state:
+  ```ts
+  // onDocumentWritten — fires on create AND update
+  const before = event.data?.before.data();
+  const after = event.data?.after.data();
+  if (!after) return;                                   // deletion → ignore
+  if (after.state !== 'merged' || before?.state === 'merged') return; // transition guard
+  ```
+  Reserve `onDocumentUpdated` for docs that genuinely change *after* creation (e.g. a
+  `tasks` doc edited by the app). The in-txn idempotent re-read still guards double-fires.
+  Unit tests that call the raw handler with a synthetic `before/after` will pass either way —
+  this gap only shows up live, so pick the trigger type deliberately.
 
 ---
 
