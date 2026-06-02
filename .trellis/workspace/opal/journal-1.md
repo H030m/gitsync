@@ -208,12 +208,12 @@ End-to-end GitHub integration. Webhook (HMAC verify on rawBody + idempotency + d
 
 - [OK] Unit: 8 suites / 65 tests green (boundary-mocked).
 - [OK] Live (2026-06-02): deployed githubWebhook + 4 triggers; opened public invoker on `githubwebhook` Cloud Run service. **onTaskCreated** verified end-to-end — creating a new task auto-creates a GitHub issue and writes `githubIssueNumber` back to the task doc.
-- [ ] Live (pending): onCommitCreated (#N link + aiSummary), onPRMerged (closes #N -> task done + counters), onIssueWritten (close/reopen reverse-sync).
+- [OK] Live (2026-06-02): onCommitCreated (#N link + aiSummary), onPRMerged (closes #N -> task done + counters), onIssueWritten (close/reopen reverse-sync) — all verified end-to-end.
 
 ### Status
 
-[OK] **Completed** (code). Live-test in progress: onTaskCreated passed; PR/commit/issue triggers still to verify.
+[OK] **Completed** — code + full live verification (githubWebhook + all 4 triggers). Merged develop -> main.
 
 ### Next Steps
 
-- Finish live-testing the remaining 3 triggers, then merge develop -> main.
+- Next feature: #3 assignTaskFlow (module D dynamic task assignment).
