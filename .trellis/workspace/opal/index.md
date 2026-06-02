@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 4
+- **Total Sessions**: 5
 - **Last Active**: 2026-06-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~151 | Active |
+| `journal-1.md` | ~184 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 5 | 2026-06-02 | Task dependency graph in TasksBoard Graph tab | `6b31529` | `feature/task-graph-view` |
 | 4 | 2026-06-02 | breakdownTaskFlow Step 1-6 + add_todo spec input | `329735f` | `feature/breakdown-flow` |
 | 3 | 2026-06-02 | Implement removeRepo (backend + delete UI) | `ee9dc29`, `070bbf8`, `aeb980a`, `4e99e38` | `feature/remove-repo` |
 | 2 | 2026-06-02 | GitHub OAuth finishing + first live deploy (addRepo/OAuth e2e) | `0cdc8e0`, `730466e`, `fac85fd`, `7ddc050`, `11feff3`, `eb23e81` | `feature/github-oauth` |
