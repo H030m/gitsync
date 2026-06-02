@@ -42,6 +42,33 @@ export async function getRecentCommits(
   }));
 }
 
+export interface CreateIssueOptions {
+  title: string;
+  body: string;
+}
+
+/**
+ * Creates a GitHub issue (POST /repos/{owner}/{repo}/issues) and returns the
+ * created issue number + html url. Used by `onTaskCreated` to mirror a task as
+ * an issue so commits/PRs can reference it via `#N`. All GitHub API access stays
+ * in this file (ARCHITECTURE.md §6.4).
+ */
+export async function createIssue(
+  owner: string,
+  repo: string,
+  accessToken: string,
+  options: CreateIssueOptions,
+): Promise<{ number: number; htmlUrl: string }> {
+  const octokit = getOctokit(accessToken);
+  const res = await octokit.issues.create({
+    owner,
+    repo,
+    title: options.title,
+    body: options.body,
+  });
+  return { number: res.data.number, htmlUrl: res.data.html_url };
+}
+
 export interface RepoAccess {
   githubRepoId: number;
   defaultBranch: string;
