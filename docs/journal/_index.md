@@ -10,11 +10,16 @@
 
 | 隊員 | 在做什麼 | 預計動的檔案 |
 |---|---|---|
-| (空) | — | — |
+| 嘉駿 | Discord 整合（模組 B）| `discord-bot/`、`functions/src/handlers/discordMessageIngest.ts` |
 
 > 嘉駿剛把骨架鋪完（Sprint 1）。**接下來各模組隊員就 [`ARCHITECTURE.md §9`](../ARCHITECTURE.md#9-模組職責--隊員分工建議) 開工**，避免動到別人的層；如要跨層改動先在這列出。
 
 ---
+
+## 2026-06-02
+
+- **嘉駿 — Discord bot 上線 + 接收 probe**：建好 Discord application（Guild Install、唯讀權限、開 Message Content Intent）並邀請進伺服器；新增 `discord-bot/src/probe.ts`（只需 token 的連通性探針，`npm run probe`）。實測 probe 登入成功並收到 DC 訊息印在 terminal（`#幹話`/`#會議記錄` 中文內容正確）。端到端 ingest（bot→Function→Firestore）尚未測，trellis 工作 `06-02-discord-bot-live-setup` 仍 in_progress。詳見 [113062210_chiajun.md](./113062210_chiajun.md)。
+- **嘉駿 — Discord forwarder bot + ingest 完工**：新建 `discord-bot/`（discord.js v14 TS 套件，抓 mapped channel 訊息→第一道過濾→指數退避 POST）+ 補完 `discordMessageIngest` Cloud Function（驗 payload→第二道過濾→`create()` 原子寫入兼 messageId 去重）。雙層過濾 + 去重防垃圾塞爆。typecheck/build 0 error、filter smoke test 12/12。`onDiscordMessageCreated`（embedding/AI 連 task）仍 stub。詳見 [113062210_chiajun.md](./113062210_chiajun.md) 2026-06-02 那篇。
 
 ## 2026-05-27
 
