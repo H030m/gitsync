@@ -283,3 +283,36 @@ Implemented the onTaskUpdated trigger (was a stub): on a task's status transitio
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: addRepo join-as-member on duplicate
+
+**Date**: 2026-06-02
+**Task**: addRepo join-as-member on duplicate
+**Branch**: `feature/add-repo-join-member`
+
+### Summary
+
+Fixed addRepo rejecting a second collaborator with already-exists. Now: permission check (push/admin via verifyRepoAccess) runs before a create-vs-join split. New repo -> owner + webhook + 3 docs (unchanged). Existing repo -> join path (skips webhook): if already a member, idempotent {repoId, alreadyMember:true} no writes; else batch set members/{uid} role member + users/{uid}/repos/{repoId} + repos/{repoId}.memberIds arrayUnion(uid), never overwriting webhookSecret/createdBy. Non-collaborator still rejected. Frontend unchanged (repo-list stream reads repos.where memberIds array-contains uid, which the join writes). trellis-check 0 issues; noted firestore.rules is still the DEFAULT OPEN ruleset (allow read/write until 2026-06-25) — security follow-up, out of scope here. 10 suites/86 tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `041d19d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
