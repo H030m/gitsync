@@ -25,5 +25,7 @@ class FirestorePaths {
   static String pullRequests(String repoId) => '${repo(repoId)}/pullRequests';
   static String discordMessages(String repoId) =>
       '${repo(repoId)}/discordMessages';
+  static String discordDigests(String repoId) =>
+      '${repo(repoId)}/discordDigests';
   static String dailyReports(String repoId) => '${repo(repoId)}/dailyReports';
 }
