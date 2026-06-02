@@ -149,3 +149,36 @@ Implemented breakdownTaskFlow (context from pasted SPEC.md + repo info -> OpenAI
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Task dependency graph in TasksBoard Graph tab
+
+**Date**: 2026-06-02
+**Task**: Task dependency graph in TasksBoard Graph tab
+**Branch**: `feature/task-graph-view`
+
+### Summary
+
+Replaced the Graph-tab stub in TasksBoardPage with TaskGraphTab: renders a dependency DAG from vm.tasks using the graphview package (1.5.1) + Sugiyama top-down layout in an InteractiveViewer. Nodes = tasks (status-colored cards, tap -> goTaskDetails), edges = prerequisite->dependent, dangling edges skipped, isolated nodes shown, empty-state placeholder. Added graphview dep (user-approved). Spec: graphview/DAG convention (use plain GraphView + own InteractiveViewer not GraphView.builder; addNode every node; Node.Id key round-trip). Live-verified by user (flutter run). analyze clean, 7 tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6b31529` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

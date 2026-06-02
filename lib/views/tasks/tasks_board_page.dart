@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/task.dart';
 import '../../services/navigation.dart';
 import '../../view_models/tasks_board_vm.dart';
+import 'widgets/task_graph_tab.dart';
 
 // TasksBoardPage — kanban + relation-graph tabs.
 // TODO: implement drag-and-drop kanban + relation graph per prototype
@@ -40,7 +41,7 @@ class TasksBoardPage extends StatelessWidget {
             return TabBarView(
               children: [
                 _BoardTab(vm: vm),
-                const Center(child: Text('Graph view — TODO')),
+                TaskGraphTab(vm: vm),
               ],
             );
           },
