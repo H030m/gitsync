@@ -192,7 +192,7 @@ Replaced the Graph-tab stub in TasksBoardPage with TaskGraphTab: renders a depen
 
 ### Summary
 
-End-to-end GitHub integration. Webhook (HMAC verify on rawBody + idempotency + dispatch -> raw writes to commits/pullRequests/issues) + githubClient.createIssue. Triggers: onTaskCreated mirrors task->GitHub issue (stores githubIssueNumber), onCommitCreated parses #N->linkedTaskIds + embedding + aiSummary (Rule D), onPRMerged (onDocumentWritten, parses closing refs -> txn mark done + counters), onIssueWritten (new, reverse-sync). tools/issueRefs + taskStatus. Linking via issue-mirror (#N). Check caught a production bug: onPRMerged was onDocumentUpdated but the PR doc is created already merged -> never fired; fixed to onDocumentWritten + spec Rule E. 8 suites / 65 tests green. Not yet deployed/live-tested.
+End-to-end GitHub integration. Webhook (HMAC verify on rawBody + idempotency + dispatch -> raw writes to commits/pullRequests/issues) + githubClient.createIssue. Triggers: onTaskCreated mirrors task->GitHub issue (stores githubIssueNumber), onCommitCreated parses #N->linkedTaskIds + embedding + aiSummary (Rule D), onPRMerged (onDocumentWritten, parses closing refs -> txn mark done + counters), onIssueWritten (new, reverse-sync). tools/issueRefs + taskStatus. Linking via issue-mirror (#N). Check caught a production bug: onPRMerged was onDocumentUpdated but the PR doc is created already merged -> never fired; fixed to onDocumentWritten + spec Rule E. 8 suites / 65 tests green. Deployed 2026-06-02 (githubWebhook public-access opened on Cloud Run); onTaskCreated live-verified end-to-end. Remaining triggers (onCommitCreated / onPRMerged / onIssueWritten) deployed but not yet live-tested.
 
 ### Main Changes
 
@@ -206,12 +206,14 @@ End-to-end GitHub integration. Webhook (HMAC verify on rawBody + idempotency + d
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] Unit: 8 suites / 65 tests green (boundary-mocked).
+- [OK] Live (2026-06-02): deployed githubWebhook + 4 triggers; opened public invoker on `githubwebhook` Cloud Run service. **onTaskCreated** verified end-to-end — creating a new task auto-creates a GitHub issue and writes `githubIssueNumber` back to the task doc.
+- [ ] Live (pending): onCommitCreated (#N link + aiSummary), onPRMerged (closes #N -> task done + counters), onIssueWritten (close/reopen reverse-sync).
 
 ### Status
 
-[OK] **Completed**
+[OK] **Completed** (code). Live-test in progress: onTaskCreated passed; PR/commit/issue triggers still to verify.
 
 ### Next Steps
 
-- None - task complete
+- Finish live-testing the remaining 3 triggers, then merge develop -> main.
