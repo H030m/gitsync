@@ -52,6 +52,22 @@ From [`ARCHITECTURE.md §4.4`](../../../docs/ARCHITECTURE.md) — violating thes
 - **Rule D — never put slow side-effects in the idempotency transaction.** Mark the key,
   *exit* the transaction, *then* call OpenAI / GitHub, then write results back. MVP accepts
   an occasional null `aiSummary`/`embedding` on failure + a manual "regenerate" button.
+- **Rule E — match the trigger type to how the source doc is written.** If the producing
+  write **creates** the doc already in its terminal state, `onDocumentUpdated` will **never
+  fire** (it only fires on updates to an existing doc). The webhook's `handlePR` writes
+  `pullRequests/{n}` directly as `state: 'merged'` (a create), so `onPRMerged` must be
+  `onDocumentWritten`, guarding on the *transition into* the state:
+  ```ts
+  // onDocumentWritten — fires on create AND update
+  const before = event.data?.before.data();
+  const after = event.data?.after.data();
+  if (!after) return;                                   // deletion → ignore
+  if (after.state !== 'merged' || before?.state === 'merged') return; // transition guard
+  ```
+  Reserve `onDocumentUpdated` for docs that genuinely change *after* creation (e.g. a
+  `tasks` doc edited by the app). The in-txn idempotent re-read still guards double-fires.
+  Unit tests that call the raw handler with a synthetic `before/after` will pass either way —
+  this gap only shows up live, so pick the trigger type deliberately.
 
 ---
 
@@ -66,6 +82,25 @@ From [`ARCHITECTURE.md §4.4`](../../../docs/ARCHITECTURE.md) — violating thes
   never the AI's — see `AI_AGENT_RULES.md §R2`.
 - Before embedding a commit, call `shouldSkipEmbedding(message)` (`tools/commitFilter.ts`) to
   skip noise (`Merge ...`, version bumps, etc.).
+
+---
+
+## Rule F — producer must persist the field name the consumer prefilters on
+
+When a doc is written by one function (producer) and a `findNearest` / `where` prefilter in
+another (consumer) reads it, the **stored field name is a contract** — a mismatch fails
+*silently* (query returns `[]`, no error). The schema in `ARCHITECTURE.md §2.1` is the single
+source of truth for the key; the inbound payload's key is irrelevant and often differs.
+
+Concrete incident (2026-06): GitHub's `push` webhook payload delivers the author handle as
+`commits[].author.username`, but the canonical schema is `commits.author.login` and
+`searchMemberCommits` prefilters `.where('author.login','==',githubLogin)`. `handlePush` had
+persisted it under `author.username`, so the vector search always returned nothing. Fix: map
+on write (`login: payload.author.username`), not on read.
+
+Before writing a doc that something else queries: open `ARCHITECTURE.md §2.1`, copy the exact
+field name, and (if the payload key differs) translate at the write site. Unit tests that mock
+the consumer's Firestore won't catch this — trace the **actual producer** (as in Rule E).
 
 ---
 

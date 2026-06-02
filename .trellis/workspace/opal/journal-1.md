@@ -182,3 +182,71 @@ Replaced the Graph-tab stub in TasksBoardPage with TaskGraphTab: renders a depen
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: GitHub sync: webhook ingestion + task/issue/PR triggers
+
+**Date**: 2026-06-02
+**Task**: GitHub sync: webhook ingestion + task/issue/PR triggers
+**Branch**: `feature/github-webhook`
+
+### Summary
+
+End-to-end GitHub integration. Webhook (HMAC verify on rawBody + idempotency + dispatch -> raw writes to commits/pullRequests/issues) + githubClient.createIssue. Triggers: onTaskCreated mirrors task->GitHub issue (stores githubIssueNumber), onCommitCreated parses #N->linkedTaskIds + embedding + aiSummary (Rule D), onPRMerged (onDocumentWritten, parses closing refs -> txn mark done + counters), onIssueWritten (new, reverse-sync). tools/issueRefs + taskStatus. Linking via issue-mirror (#N). Check caught a production bug: onPRMerged was onDocumentUpdated but the PR doc is created already merged -> never fired; fixed to onDocumentWritten + spec Rule E. 8 suites / 65 tests green. Deployed 2026-06-02 (githubWebhook public-access opened on Cloud Run); onTaskCreated live-verified end-to-end. Remaining triggers (onCommitCreated / onPRMerged / onIssueWritten) deployed but not yet live-tested.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c19231d` | (see git log) |
+
+### Testing
+
+- [OK] Unit: 8 suites / 65 tests green (boundary-mocked).
+- [OK] Live (2026-06-02): deployed githubWebhook + 4 triggers; opened public invoker on `githubwebhook` Cloud Run service. **onTaskCreated** verified end-to-end — creating a new task auto-creates a GitHub issue and writes `githubIssueNumber` back to the task doc.
+- [OK] Live (2026-06-02): onCommitCreated (#N link + aiSummary), onPRMerged (closes #N -> task done + counters), onIssueWritten (close/reopen reverse-sync) — all verified end-to-end.
+
+### Status
+
+[OK] **Completed** — code + full live verification (githubWebhook + all 4 triggers). Merged develop -> main.
+
+### Next Steps
+
+- Next feature: #3 assignTaskFlow (module D dynamic task assignment).
+
+
+## Session 7: assignTaskFlow — agentic dynamic task assignment
+
+**Date**: 2026-06-02
+**Task**: assignTaskFlow — agentic dynamic task assignment
+**Branch**: `feature/assign-task-flow`
+
+### Summary
+
+Implemented assignTaskFlow: OpenAI function-calling agentic loop (max 5 rounds, 4 tools: readTeamState=members+users join, searchMemberCommits=findNearest repoId+author.login prefilter, getTaskDependents, finalizeAssignment) picks best assignee by load/expertise/commit-history/dependents. Auto-apply: writes tasks/{taskId}.assigneeId + rebalances activeIssueCount in a transaction (reassign old-1/new+1, atomic). Pre-checks (task-done/no-member throw, single-member shortcut skips OpenAI) + lowest-load fallback. trellis-check caught a latent prod bug in the already-shipped handlePush: commit author handle persisted as author.username but schema+consumer use author.login -> vector search silently returned []; fixed + captured as database-guidelines Rule F. Discord-chat RAG deferred to future TODO (readTeamState already returns discordUserId for it). 9 suites/73 tests green. Not yet deployed; needs new commits vector index.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7533790` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

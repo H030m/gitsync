@@ -20,6 +20,18 @@
       ]
     },
     {
+      "collectionGroup": "commits",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "repoId", "order": "ASCENDING" },
+        { "fieldPath": "author.login", "order": "ASCENDING" },
+        {
+          "fieldPath": "messageEmbedding",
+          "vectorConfig": { "dimension": 1536, "flat": {} }
+        }
+      ]
+    },
+    {
       "collectionGroup": "discordMessages",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
