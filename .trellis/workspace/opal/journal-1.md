@@ -116,3 +116,36 @@ Implemented removeRepo callable (owner check, best-effort deleteWebhook, member-
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: breakdownTaskFlow Step 1-6 + add_todo spec input
+
+**Date**: 2026-06-02
+**Task**: breakdownTaskFlow Step 1-6 + add_todo spec input
+**Branch**: `feature/breakdown-flow`
+
+### Summary
+
+Implemented breakdownTaskFlow (context from pasted SPEC.md + repo info -> OpenAI structured output -> detectCycles+re-prompt -> pre-gen taskIds -> index->taskId translation -> batch write tasks as source:ai_breakdown; flow does not touch isBreakingDown, handler owns lock). Shallow-graph prompt (~5-12 top-level TODOs). Fixed add_todo setState button bug + enlarged spec paste box + mounted guard. Boundary-mocked test suite (32 green). Specs: handler/flow lock-ownership division, OpenAI .beta.parse SDK-path convention. Deployed + live-verified: TODOs generate with dependsOn populated. Next: render dependency graph in TasksBoard Graph tab (currently stub).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `329735f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
