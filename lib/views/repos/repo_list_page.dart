@@ -4,7 +4,9 @@ import 'package:provider/provider.dart';
 import '../../models/repo.dart';
 import '../../services/authentication.dart';
 import '../../services/navigation.dart';
+import '../../theme/app_dimens.dart';
 import '../../view_models/repo_list_vm.dart';
+import '../../widgets/empty_state.dart';
 
 // RepoListPage — lists every repo the signed-in user is a member of.
 // TODO: implement final UI per prototype `RepoList.tsx`.
@@ -38,32 +40,54 @@ class RepoListPage extends StatelessWidget {
               return const Center(child: CircularProgressIndicator());
             }
             if (vm.repos.isEmpty) {
-              return const Center(child: Text('No repos yet — add one'));
+              return const EmptyState(
+                icon: Icons.folder_open_outlined,
+                title: 'No repos yet',
+                message: 'Tap + to connect your first GitHub repository.',
+              );
             }
-            return ListView.separated(
+            final scheme = Theme.of(ctx).colorScheme;
+            return ListView.builder(
+              padding: const EdgeInsets.symmetric(
+                vertical: AppDimens.spacingSm,
+              ),
               itemCount: vm.repos.length,
-              separatorBuilder: (_, _) => const Divider(height: 1),
               itemBuilder: (_, i) {
                 final repo = vm.repos[i];
                 final removing = vm.isRemoving(repo.id);
-                return ListTile(
-                  title: Text(repo.name),
-                  subtitle: Text(repo.url),
-                  onTap: removing
-                      ? null
-                      : () => Provider.of<NavigationService>(ctx, listen: false)
-                          .goTasks(repo.id),
-                  trailing: removing
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          tooltip: 'Remove repo',
-                          onPressed: () => _confirmRemove(ctx, vm, repo),
-                        ),
+                return Card(
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: scheme.primaryContainer,
+                      foregroundColor: scheme.onPrimaryContainer,
+                      child: const Icon(Icons.folder_outlined),
+                    ),
+                    title: Text(
+                      repo.name,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      repo.url,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onTap: removing
+                        ? null
+                        : () =>
+                            Provider.of<NavigationService>(ctx, listen: false)
+                                .goTasks(repo.id),
+                    trailing: removing
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : IconButton(
+                            icon: const Icon(Icons.delete_outline),
+                            tooltip: 'Remove repo',
+                            onPressed: () => _confirmRemove(ctx, vm, repo),
+                          ),
+                  ),
                 );
               },
             );

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../../models/task.dart';
 import '../../../services/navigation.dart';
+import '../../../theme/app_dimens.dart';
 import '../../../view_models/tasks_board_vm.dart';
 
 // Dependency-DAG visualization of a repo's tasks (TasksBoardPage "Graph" tab).
@@ -43,14 +44,23 @@ class TaskGraphTab extends StatelessWidget {
       }
     }
 
+    final scheme = Theme.of(context).colorScheme;
     final configuration = SugiyamaConfiguration()
       ..orientation = SugiyamaConfiguration.ORIENTATION_TOP_BOTTOM
-      ..nodeSeparation = 24
-      ..levelSeparation = 48;
+      ..nodeSeparation = 36
+      ..levelSeparation = 64
+      // Smooth the bend points into curves and keep directional arrowheads
+      // (prerequisite -> dependent). graphview draws both natively.
+      ..bendPointShape = CurvedBendPointShape(curveLength: 16)
+      ..addTriangleToEdge = true;
 
+    // Softer, themed edge: primary tint instead of the faint grey `outline`,
+    // with round caps/joins so the curves read cleanly in light + dark.
     final edgePaint = Paint()
-      ..color = Theme.of(context).colorScheme.outline
-      ..strokeWidth = 2
+      ..color = scheme.primary.withValues(alpha: 0.55)
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
       ..style = PaintingStyle.stroke;
 
     return InteractiveViewer(
@@ -81,32 +91,81 @@ class _TaskNode extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final (bg, fg) = switch (task.status) {
-      TaskStatus.todo => (scheme.surfaceContainerHighest, scheme.onSurface),
-      TaskStatus.inProgress => (scheme.primaryContainer, scheme.onPrimaryContainer),
-      TaskStatus.done => (scheme.secondaryContainer, scheme.onSecondaryContainer),
+    final (bg, fg, accent) = switch (task.status) {
+      TaskStatus.todo => (
+          scheme.surfaceContainerHighest,
+          scheme.onSurface,
+          scheme.outline,
+        ),
+      TaskStatus.inProgress => (
+          scheme.primaryContainer,
+          scheme.onPrimaryContainer,
+          scheme.primary,
+        ),
+      TaskStatus.done => (
+          scheme.secondaryContainer,
+          scheme.onSecondaryContainer,
+          scheme.secondary,
+        ),
     };
 
     return InkWell(
       onTap: () => Provider.of<NavigationService>(context, listen: false)
           .goTaskDetails(vm.repoId, task.id),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(AppDimens.radiusMd),
       child: Container(
-        width: 140,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        width: 152,
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppDimens.spacingMd,
+          vertical: AppDimens.spacingSm + 2,
+        ),
         decoration: BoxDecoration(
           color: bg,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: scheme.outlineVariant),
+          borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+          border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.6)),
+          boxShadow: [
+            BoxShadow(
+              color: scheme.shadow.withValues(alpha: 0.10),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
-        child: Text(
-          task.title,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context)
-              .textTheme
-              .bodyMedium
-              ?.copyWith(color: fg, fontWeight: FontWeight.w500),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: AppDimens.spacingSm),
+                Expanded(
+                  child: Text(
+                    task.status.wire,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: fg.withValues(alpha: 0.75),
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.3,
+                        ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppDimens.spacingXs + 2),
+            Text(
+              task.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: fg, fontWeight: FontWeight.w600),
+            ),
+          ],
         ),
       ),
     );

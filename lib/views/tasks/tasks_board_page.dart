@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../models/task.dart';
 import '../../services/navigation.dart';
+import '../../theme/app_dimens.dart';
 import '../../view_models/tasks_board_vm.dart';
 import 'widgets/task_graph_tab.dart';
 
@@ -57,51 +58,153 @@ class _BoardTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(child: _Column(title: 'To do', tasks: vm.todo)),
-        Expanded(child: _Column(title: 'In progress', tasks: vm.inProgress)),
-        Expanded(child: _Column(title: 'Done', tasks: vm.done)),
-      ],
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: _Column(
+              title: 'To do',
+              tasks: vm.todo,
+              accent: scheme.outline,
+            ),
+          ),
+          Expanded(
+            child: _Column(
+              title: 'In progress',
+              tasks: vm.inProgress,
+              accent: scheme.primary,
+            ),
+          ),
+          Expanded(
+            child: _Column(
+              title: 'Done',
+              tasks: vm.done,
+              accent: scheme.secondary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
 class _Column extends StatelessWidget {
-  const _Column({required this.title, required this.tasks});
+  const _Column({
+    required this.title,
+    required this.tasks,
+    required this.accent,
+  });
   final String title;
   final List<Task> tasks;
+  final Color accent;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.all(8),
-          child: Text(title, style: Theme.of(context).textTheme.titleMedium),
-        ),
-        Expanded(
-          child: ListView.builder(
-            itemCount: tasks.length,
-            itemBuilder: (ctx, i) {
-              final t = tasks[i];
-              return Card(
-                margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: ListTile(
-                  title: Text(t.title),
-                  subtitle:
-                      t.description.isEmpty ? null : Text(t.description),
-                  onTap: () => Provider.of<NavigationService>(ctx, listen: false)
-                      .goTaskDetails(
-                          Provider.of<TasksBoardViewModel>(ctx, listen: false)
-                              .repoId,
-                          t.id),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppDimens.spacingSm + AppDimens.spacingXs,
+            vertical: AppDimens.spacingSm,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: AppDimens.spacingSm),
+              Expanded(
+                child: Text(
+                  title,
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-              );
-            },
+              ),
+              _CountBadge(count: tasks.length, color: accent),
+            ],
           ),
         ),
+        Expanded(
+          child: tasks.isEmpty
+              ? Center(
+                  child: Text(
+                    '—',
+                    style: theme.textTheme.bodyLarge
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.only(bottom: AppDimens.spacingLg),
+                  itemCount: tasks.length,
+                  itemBuilder: (ctx, i) {
+                    final t = tasks[i];
+                    return Card(
+                      margin: const EdgeInsets.symmetric(
+                        horizontal: AppDimens.spacingSm,
+                        vertical: AppDimens.spacingXs,
+                      ),
+                      child: ListTile(
+                        title: Text(
+                          t.title,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: t.description.isEmpty
+                            ? null
+                            : Text(
+                                t.description,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                        onTap: () => Provider.of<NavigationService>(ctx,
+                                listen: false)
+                            .goTaskDetails(
+                                Provider.of<TasksBoardViewModel>(ctx,
+                                        listen: false)
+                                    .repoId,
+                                t.id),
+                      ),
+                    );
+                  },
+                ),
+        ),
       ],
+    );
+  }
+}
+
+// Small pill showing the number of tasks in a board column.
+class _CountBadge extends StatelessWidget {
+  const _CountBadge({required this.count, required this.color});
+  final int count;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDimens.spacingSm,
+        vertical: 2,
+      ),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(AppDimens.radiusLg),
+      ),
+      child: Text(
+        '$count',
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
+      ),
     );
   }
 }

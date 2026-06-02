@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../theme/app_dimens.dart';
 import '../../view_models/commits_vm.dart';
 import '../../view_models/daily_report_vm.dart';
 import '../../view_models/discord_messages_vm.dart';
+import '../../widgets/empty_state.dart';
 
 // DailyViewPage — three tabs: Summary / Commits / Discord.
 // TODO: implement per prototype `daily/DailyView.tsx`.
@@ -49,20 +51,49 @@ class _SummaryTab extends StatelessWidget {
           return const Center(child: CircularProgressIndicator());
         }
         final report = vm.report;
-        return Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(report?.summary ?? 'No report yet'),
-              const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: vm.regenerating ? null : vm.regenerate,
-                icon: const Icon(Icons.refresh),
-                label: Text(vm.regenerating ? 'Generating…' : 'Regenerate'),
+        final theme = Theme.of(ctx);
+        return ListView(
+          padding: const EdgeInsets.all(AppDimens.spacingMd),
+          children: [
+            Card(
+              margin: EdgeInsets.zero,
+              child: Padding(
+                padding: const EdgeInsets.all(AppDimens.spacingMd),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.auto_awesome_outlined,
+                            size: 20, color: theme.colorScheme.primary),
+                        const SizedBox(width: AppDimens.spacingSm),
+                        Text('Daily summary',
+                            style: theme.textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                    const SizedBox(height: AppDimens.spacingSm),
+                    Text(
+                      report?.summary ?? 'No report yet',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ],
+                ),
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: AppDimens.spacingMd),
+            FilledButton.icon(
+              onPressed: vm.regenerating ? null : vm.regenerate,
+              icon: vm.regenerating
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh),
+              label: Text(vm.regenerating ? 'Generating…' : 'Regenerate'),
+            ),
+          ],
         );
       },
     );
@@ -80,19 +111,33 @@ class _CommitsTab extends StatelessWidget {
           return const Center(child: CircularProgressIndicator());
         }
         if (vm.commits.isEmpty) {
-          return const Center(child: Text('No commits yet'));
+          return const EmptyState(
+            icon: Icons.commit_outlined,
+            title: 'No commits yet',
+            message: 'Recent commits on this repo will show up here.',
+          );
         }
+        final scheme = Theme.of(ctx).colorScheme;
         return ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
           itemCount: vm.commits.length,
           itemBuilder: (_, i) {
             final c = vm.commits[i];
-            return ListTile(
-              title: Text(
-                c.message.split('\n').first,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+            return Card(
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: scheme.tertiaryContainer,
+                  foregroundColor: scheme.onTertiaryContainer,
+                  child: const Icon(Icons.commit_outlined, size: 20),
+                ),
+                title: Text(
+                  c.message.split('\n').first,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text('${c.author.login} · ${c.sha.substring(0, 7)}'),
               ),
-              subtitle: Text('${c.author.login} · ${c.sha.substring(0, 7)}'),
             );
           },
         );
@@ -112,15 +157,36 @@ class _DiscordTab extends StatelessWidget {
           return const Center(child: CircularProgressIndicator());
         }
         if (vm.messages.isEmpty) {
-          return const Center(child: Text('No Discord messages yet'));
+          return const EmptyState(
+            icon: Icons.forum_outlined,
+            title: 'No Discord messages yet',
+            message: 'Ingested Discord activity will appear here.',
+          );
         }
+        final scheme = Theme.of(ctx).colorScheme;
         return ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
           itemCount: vm.messages.length,
           itemBuilder: (_, i) {
             final m = vm.messages[i];
-            return ListTile(
-              title: Text(m.authorName),
-              subtitle: Text(m.content),
+            return Card(
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: scheme.secondaryContainer,
+                  foregroundColor: scheme.onSecondaryContainer,
+                  child: Text(
+                    m.authorName.isEmpty
+                        ? '?'
+                        : m.authorName.substring(0, 1).toUpperCase(),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                title: Text(
+                  m.authorName,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(m.content),
+              ),
             );
           },
         );

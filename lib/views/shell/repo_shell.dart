@@ -15,10 +15,30 @@ class RepoShell extends StatelessWidget {
   final Widget child;
 
   static const _items = <_NavItem>[
-    _NavItem(icon: Icons.view_kanban, label: 'Tasks', segment: 'tasks'),
-    _NavItem(icon: Icons.today, label: 'Daily', segment: 'daily'),
-    _NavItem(icon: Icons.bar_chart, label: 'Stats', segment: 'stats'),
-    _NavItem(icon: Icons.settings, label: 'Settings', segment: 'settings'),
+    _NavItem(
+      icon: Icons.view_kanban_outlined,
+      selectedIcon: Icons.view_kanban,
+      label: 'Tasks',
+      segment: 'tasks',
+    ),
+    _NavItem(
+      icon: Icons.today_outlined,
+      selectedIcon: Icons.today,
+      label: 'Daily',
+      segment: 'daily',
+    ),
+    _NavItem(
+      icon: Icons.bar_chart_outlined,
+      selectedIcon: Icons.bar_chart,
+      label: 'Stats',
+      segment: 'stats',
+    ),
+    _NavItem(
+      icon: Icons.settings_outlined,
+      selectedIcon: Icons.settings,
+      label: 'Settings',
+      segment: 'settings',
+    ),
   ];
 
   int _selectedIndex(BuildContext context) {
@@ -39,6 +59,7 @@ class RepoShell extends StatelessWidget {
           for (final item in _items)
             NavigationDestination(
               icon: Icon(item.icon),
+              selectedIcon: Icon(item.selectedIcon),
               label: item.label,
             ),
         ],
@@ -53,10 +74,12 @@ class RepoShell extends StatelessWidget {
 class _NavItem {
   const _NavItem({
     required this.icon,
+    required this.selectedIcon,
     required this.label,
     required this.segment,
   });
   final IconData icon;
+  final IconData selectedIcon;
   final String label;
   final String segment;
 }
