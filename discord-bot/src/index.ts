@@ -1,14 +1,22 @@
-// GitSync forwarder bot entry point.
+// GitSync bot entry point.
 //
-// Captures messages from mapped Discord channels, runs a first-pass noise
-// filter, and forwards the survivors to the discordMessageIngest Cloud Function.
+// Real-time message forwarding has been removed. The bot now:
+//   1. Registers the `/gitsync-listen` slash command per guild (channel→repo
+//      config lives in Firestore, set via setRepoChannel).
+//   2. Polls claimDiscordFetch for on-demand backfill requests and REST-
+//      backfills the day's messages to discordMessageIngest.
 // Stateless Cloud Functions can't hold a Discord gateway connection, so this
-// runs separately (locally / on a VPS). See ARCHITECTURE.md §7.2.
+// runs separately (locally / on a VPS). See ARCHITECTURE.md §7.
 import { Client, Events, GatewayIntentBits } from 'discord.js';
 
+import {
+  handleListenCommand,
+  LISTEN_COMMAND,
+  registerAllGuildCommands,
+  registerGuildCommands,
+} from './commands';
 import { loadConfig } from './config';
-import { shouldKeepMessage } from './filter';
-import { sendWithRetry, type IngestPayload } from './ingest';
+import { startBackfillPoller } from './backfill';
 
 const cfg = loadConfig();
 
@@ -16,45 +24,29 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
+    // MessageContent stays a required intent even though real-time forwarding
+    // is gone: REST message backfill (channel.messages.fetch) only returns
+    // populated `content` when the privileged Message Content Intent is on.
     GatewayIntentBits.MessageContent,
   ],
 });
 
-client.once(Events.ClientReady, (c) => {
+client.once(Events.ClientReady, async (c) => {
   console.log(`[bot] logged in as ${c.user.tag}`);
-  console.log(`[bot] forwarding ${cfg.channelRepoMap.size} channel(s) to ${cfg.ingestUrl}`);
+  await registerAllGuildCommands(c);
+  startBackfillPoller(c, cfg);
 });
 
-client.on(Events.MessageCreate, (msg) => {
-  // 1. Only forward channels we're configured to watch.
-  const repoId = cfg.channelRepoMap.get(msg.channelId);
-  if (!repoId) return;
+// Register commands for guilds the bot joins after startup.
+client.on(Events.GuildCreate, (guild) => {
+  void registerGuildCommands(guild);
+});
 
-  // 2. First-pass noise filter (same rules as the server-side second pass).
-  if (
-    !shouldKeepMessage({
-      isBot: msg.author.bot,
-      content: msg.content,
-      attachmentCount: msg.attachments.size,
-    })
-  ) {
-    return;
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName === LISTEN_COMMAND) {
+    await handleListenCommand(interaction, cfg);
   }
-
-  // 3. Build the payload and forward WITHOUT awaiting — a slow POST must not
-  //    block discord.js from processing later messages (ARCHITECTURE §7.2).
-  const payload: IngestPayload = {
-    repoId,
-    messageId: msg.id,
-    channelId: msg.channelId,
-    authorId: msg.author.id,
-    authorName: msg.author.username,
-    content: msg.content,
-    mentionedUserIds: [...msg.mentions.users.keys()],
-    timestamp: msg.createdAt.toISOString(),
-  };
-
-  void sendWithRetry(cfg, payload);
 });
 
 client.login(cfg.botToken).catch((e) => {

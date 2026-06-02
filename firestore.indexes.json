@@ -41,6 +41,14 @@
           "vectorConfig": { "dimension": 1536, "flat": {} }
         }
       ]
+    },
+    {
+      "collectionGroup": "fetchRequests",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
