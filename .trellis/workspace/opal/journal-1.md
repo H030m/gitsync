@@ -316,3 +316,36 @@ Fixed addRepo rejecting a second collaborator with already-exists. Now: permissi
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: Fix: dynamic assignment hard-failed on missing commits vector index
+
+**Date**: 2026-06-03
+**Task**: Fix: dynamic assignment hard-failed on missing commits vector index
+**Branch**: `feature/assign-commit-search-resilient`
+
+### Summary
+
+Live debug: onTaskUpdated auto-assignment left downstream assigneeId null. Logs showed assignTaskFlow ran the agentic loop but searchMemberCommits findNearest threw 9 FAILED_PRECONDITION (missing vector index) which propagated and killed the whole assignment. Root causes: (1) optional commit-search signal was not best-effort — one throw aborted the flow; (2) firestore.indexes.json declared the commits vector indexes COLLECTION_GROUP but the query is .collection() = COLLECTION scope, so even deploying built the wrong index. Fix: wrap embed+findNearest+map in try/catch -> return [] + warn (assignment now finalizes on workload/expertise/dependents even with no index and no commits — demo no longer needs the index); changed both commits vector indexes to queryScope COLLECTION; left discordMessages COLLECTION_GROUP (no findNearest consumer). Confirmed user's remove/re-add/regenerate test flow was NOT the cause. Extended error-handling spec: optional/secondary signal tools must be best-effort + must not hard-depend on a user-deployed index + match index queryScope to query. trellis-check 0 issues; 12 suites/98 tests green. User to redeploy functions:onTaskUpdated,assignTask; index deploy optional now.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `aae8c7e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
