@@ -69,9 +69,13 @@ async function handlePush(repoId: string, body: Record<string, unknown>): Promis
       sha,
       message: (c.message as string | undefined) ?? '',
       author: {
+        // Canonical schema is `author.{login,name,email}` (ARCHITECTURE §2.1).
+        // The GitHub push payload carries the GitHub handle as `author.username`
+        // — store it as `login` so searchMemberCommits' `author.login` prefilter
+        // (assignTaskFlow vector search) actually matches.
+        login: (author.username as string | undefined) ?? '',
         name: (author.name as string | undefined) ?? '',
         email: (author.email as string | undefined) ?? '',
-        username: (author.username as string | undefined) ?? '',
       },
       url: (c.url as string | undefined) ?? '',
       filesChanged: added.length + removed.length + modified.length,
