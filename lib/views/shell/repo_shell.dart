@@ -85,20 +85,66 @@ class _SlidingBottomNav extends StatefulWidget {
   State<_SlidingBottomNav> createState() => _SlidingBottomNavState();
 }
 
-class _SlidingBottomNavState extends State<_SlidingBottomNav> {
+class _SlidingBottomNavState extends State<_SlidingBottomNav>
+    with SingleTickerProviderStateMixin {
   static const _height = 80.0;
   static const _pillHeight = 56.0;
   static const _pillWidth = 64.0;
   static const _duration = Duration(milliseconds: 300);
-  static const _curve = Curves.easeOut;
 
-  Alignment _pillAlignment() {
-    // Map index 0..n-1 to alignment -1..1.
-    // Wrapping the pill in a FractionallySizedBox(widthFactor: 1/n) makes
-    // AnimatedAlign land the pill exactly centered on each Expanded tab.
+  late final AnimationController _controller;
+  late int _activeIndex;
+  late double _from;
+  late double _to;
+
+  double _fraction(int index) {
     final n = widget.items.length;
-    final t = n <= 1 ? 0.0 : (widget.selectedIndex / (n - 1)) * 2 - 1;
-    return Alignment(t, 0);
+    return n <= 1 ? 0.0 : index / (n - 1);
+  }
+
+  double get _currentPosition {
+    final curved = Curves.easeOut.transform(_controller.value);
+    return _from + (_to - _from) * curved;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: _duration);
+    _activeIndex = widget.selectedIndex;
+    _from = _fraction(_activeIndex);
+    _to = _from;
+  }
+
+  @override
+  void didUpdateWidget(covariant _SlidingBottomNav oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Sync if external navigation changed the index (e.g. deep link)
+    // but only if we aren't already animating to it.
+    if (widget.selectedIndex != _activeIndex && !_controller.isAnimating) {
+      _activeIndex = widget.selectedIndex;
+      _from = _fraction(_activeIndex);
+      _to = _from;
+    }
+  }
+
+  void _handleTap(int index) {
+    if (index == _activeIndex) return;
+    // Start animation IMMEDIATELY on tap — before GoRouter rebuilds.
+    setState(() {
+      _from = _currentPosition;
+      _activeIndex = index;
+      _to = _fraction(index);
+      _controller.forward(from: 0);
+    });
+    // Then navigate.
+    widget.onTap(index);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   @override
@@ -120,72 +166,80 @@ class _SlidingBottomNavState extends State<_SlidingBottomNav> {
         ],
       ),
       padding: EdgeInsets.only(bottom: bottomPadding),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Sliding pill indicator — FractionallySizedBox ensures the
-          // alignment maps 1:1 to the Expanded tab positions.
-          AnimatedAlign(
-            duration: _duration,
-            curve: _curve,
-            alignment: _pillAlignment(),
-            child: FractionallySizedBox(
-              widthFactor: 1 / widget.items.length,
-              child: Center(
-                child: Container(
-                  width: _pillWidth,
-                  height: _pillHeight,
-                  decoration: BoxDecoration(
-                    color: scheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(_pillHeight / 2),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          // Tab buttons
-          Row(
-            children: [
-              for (var i = 0; i < widget.items.length; i++)
-                Expanded(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => widget.onTap(i),
-                    child: SizedBox(
-                      height: _height,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            i == widget.selectedIndex
-                                ? widget.items[i].selectedIcon
-                                : widget.items[i].icon,
-                            size: 24,
-                            color: i == widget.selectedIndex
-                                ? scheme.onPrimaryContainer
-                                : scheme.onSurfaceVariant,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            widget.items[i].label,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: i == widget.selectedIndex
-                                  ? FontWeight.w600
-                                  : null,
-                              color: i == widget.selectedIndex
-                                  ? scheme.onPrimaryContainer
-                                  : scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final totalWidth = constraints.maxWidth;
+          final tabWidth = totalWidth / widget.items.length;
+
+          return AnimatedBuilder(
+            animation: _controller,
+            builder: (context, _) {
+              final pos = _currentPosition;
+              final pillLeft =
+                  pos * (totalWidth - tabWidth) + (tabWidth - _pillWidth) / 2;
+
+              return Stack(
+                children: [
+                  // Sliding pill
+                  Positioned(
+                    left: pillLeft,
+                    top: (_height - _pillHeight) / 2,
+                    child: Container(
+                      width: _pillWidth,
+                      height: _pillHeight,
+                      decoration: BoxDecoration(
+                        color: scheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(_pillHeight / 2),
                       ),
                     ),
                   ),
-                ),
-            ],
-          ),
-        ],
+                  // Tab buttons — use _activeIndex for visual state
+                  Row(
+                    children: [
+                      for (var i = 0; i < widget.items.length; i++)
+                        Expanded(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => _handleTap(i),
+                            child: SizedBox(
+                              height: _height,
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    i == _activeIndex
+                                        ? widget.items[i].selectedIcon
+                                        : widget.items[i].icon,
+                                    size: 24,
+                                    color: i == _activeIndex
+                                        ? scheme.onPrimaryContainer
+                                        : scheme.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    widget.items[i].label,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: i == _activeIndex
+                                          ? FontWeight.w600
+                                          : null,
+                                      color: i == _activeIndex
+                                          ? scheme.onPrimaryContainer
+                                          : scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              );
+            },
+          );
+        },
       ),
     );
   }
