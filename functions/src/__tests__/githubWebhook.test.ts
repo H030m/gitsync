@@ -72,6 +72,9 @@ jest.mock('firebase-admin/firestore', () => ({
   FieldValue: {
     serverTimestamp: () => '__serverTimestamp__',
   },
+  Timestamp: {
+    fromDate: (d: Date) => ({ __ms__: d.getTime(), toMillis: () => d.getTime() }),
+  },
 }));
 
 // Import after mocks are registered.
@@ -209,10 +212,28 @@ describe('githubWebhook', () => {
       repoId: REPO_ID,
       sha: 'abc123',
       message: 'fix: something',
-      filesChanged: 2,
+      // Canonical schema: list of touched paths (added + removed + modified).
+      filesChanged: ['a.ts', 'b.ts'],
       // Stored under canonical `login` (payload's `author.username` → `login`).
       author: { name: 'Octo', login: 'octocat' },
     });
+    // committedAt is a real Timestamp parsed from the payload's ISO string —
+    // string-typed values would fall out of every Timestamp range query.
+    expect((commit?.committedAt as { __ms__: number }).__ms__).toBe(
+      Date.parse('2026-06-02T00:00:00Z'),
+    );
+  });
+
+  it('push commit without a timestamp → committedAt falls back to server time', async () => {
+    const body = pushBody();
+    delete (body.commits as Array<Record<string, unknown>>)[0].timestamp;
+    const req = makeReq({ body, event: 'push' });
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const commit = store.get(`apps/gitsync/repos/${REPO_ID}/commits/abc123`);
+    expect(commit?.committedAt).toBe('__serverTimestamp__');
   });
 
   it('invalid signature → 401, no write', async () => {

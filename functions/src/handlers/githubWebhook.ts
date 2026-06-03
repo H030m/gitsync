@@ -9,7 +9,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import { onRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 
 import { db, REGION } from '../admin';
 import { markIdempotent } from '../tools/idempotency';
@@ -63,6 +63,16 @@ async function handlePush(repoId: string, body: Record<string, unknown>): Promis
     const added = (c.added as string[] | undefined) ?? [];
     const removed = (c.removed as string[] | undefined) ?? [];
     const modified = (c.modified as string[] | undefined) ?? [];
+    // `committedAt` MUST be a Firestore Timestamp (not the payload's ISO
+    // string): the Flutter Commit model and every range query (Flutter
+    // streamRange, dailyIntel listRangeCommits) compare against Timestamps —
+    // string-typed values silently fall out of those queries. Fall back to
+    // the server time so the field always exists with a uniform type.
+    const parsedTs = c.timestamp ? new Date(c.timestamp as string) : null;
+    const committedAt =
+      parsedTs && !Number.isNaN(parsedTs.getTime())
+        ? Timestamp.fromDate(parsedTs)
+        : FieldValue.serverTimestamp();
     const ref2 = db.doc(`apps/gitsync/repos/${repoId}/commits/${sha}`);
     batch.set(ref2, {
       repoId,
@@ -78,11 +88,14 @@ async function handlePush(repoId: string, body: Record<string, unknown>): Promis
         email: (author.email as string | undefined) ?? '',
       },
       url: (c.url as string | undefined) ?? '',
-      filesChanged: added.length + removed.length + modified.length,
+      // Canonical schema: `filesChanged` is the list of touched file paths
+      // (consumed by the Flutter commit sheet's file chips and by
+      // explainCommit's prompt context), not a count.
+      filesChanged: [...added, ...removed, ...modified],
       added,
       removed,
       modified,
-      committedAt: (c.timestamp as string | undefined) ?? null,
+      committedAt,
       createdAt: FieldValue.serverTimestamp(),
     });
   }

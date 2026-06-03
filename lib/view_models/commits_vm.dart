@@ -14,9 +14,9 @@ class CommitsViewModel with ChangeNotifier {
     required String repoId,
     CommitRepository? commitRepository,
     FunctionsService? functionsService,
-  })  : _repoId = repoId,
-        _repo = commitRepository ?? CommitRepository(),
-        _functions = functionsService ?? FunctionsService() {
+  }) : _repoId = repoId,
+       _repo = commitRepository ?? CommitRepository(),
+       _functions = functionsService ?? FunctionsService() {
     _subscribe();
   }
 
@@ -31,6 +31,12 @@ class CommitsViewModel with ChangeNotifier {
   bool _loading = true;
   bool get loading => _loading;
 
+  String? _streamError;
+
+  /// Non-null when the commit stream itself failed (parse error, permission,
+  /// missing index, offline). The tab shows an error state with a retry.
+  String? get streamError => _streamError;
+
   // ---- Range filter --------------------------------------------------------
 
   DateTime? _rangeStart;
@@ -42,14 +48,31 @@ class CommitsViewModel with ChangeNotifier {
   void _subscribe() {
     _sub?.cancel();
     _loading = true;
+    _streamError = null;
     final stream = hasRange
         ? _repo.streamRange(_repoId, _rangeStart!, _rangeEnd!)
         : _repo.streamRecent(_repoId, limit: 50);
-    _sub = stream.listen((commits) {
-      _commits = commits;
-      _loading = false;
-      notifyListeners();
-    });
+    _sub = stream.listen(
+      (commits) {
+        _commits = commits;
+        _loading = false;
+        _streamError = null;
+        notifyListeners();
+      },
+      onError: (Object e) {
+        // Without this handler a stream error would leave `loading` true
+        // forever (an eternal spinner). Surface it instead.
+        _streamError = '$e';
+        _loading = false;
+        notifyListeners();
+      },
+    );
+  }
+
+  /// Re-subscribes after a stream error (the "Retry" button).
+  void retry() {
+    _subscribe();
+    notifyListeners();
   }
 
   /// Filters the list to commits inside [start]..[end] (inclusive days).

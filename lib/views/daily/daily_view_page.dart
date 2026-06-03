@@ -796,6 +796,38 @@ class _CommitsTab extends StatelessWidget {
         if (vm.loading) {
           return const Center(child: CircularProgressIndicator());
         }
+        if (vm.streamError != null) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(AppDimens.spacingLg),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error_outline, size: 40),
+                  const SizedBox(height: AppDimens.spacingSm),
+                  Text(
+                    'Could not load commits',
+                    style: Theme.of(ctx).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: AppDimens.spacingXs),
+                  Text(
+                    vm.streamError!,
+                    style: Theme.of(ctx).textTheme.bodySmall,
+                    textAlign: TextAlign.center,
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: AppDimens.spacingMd),
+                  FilledButton.icon(
+                    onPressed: vm.retry,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
         return Column(
           children: [
             Padding(
