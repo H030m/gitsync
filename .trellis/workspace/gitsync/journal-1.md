@@ -119,3 +119,36 @@ Implemented agentic summarizeDayFlow (getDayDigest/searchPastCommits/finalizeRep
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Summary range reports + commit tree map with AI explain
+
+**Date**: 2026-06-04
+**Task**: Summary range reports + commit tree map with AI explain
+**Branch**: `feature/summary-intel-hub`
+
+### Summary
+
+Range-scoped summarizeDayFlow ({start}_{end} reports, range Discord digests + raw fallback), dailyBrief endDate, new explainCommit callable with workSummary cache, Summary period picker, Commits tab rebuilt as lane-per-author tree map with tap-to-explain bottom sheet. Gates: functions 137/137, flutter 15/15, analyze clean.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c8aa096` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
