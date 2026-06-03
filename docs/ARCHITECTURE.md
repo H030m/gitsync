@@ -336,7 +336,8 @@ service cloud.firestore {
 | `forceUnlockBreakdown` | `{ repoId }` | `{}` | 強制解 `isBreakingDown` 鎖（卡 > 5min 時前端顯示「重置」按鈕呼叫）|
 | `assignTask` | `{ repoId, taskId }` | `{ assigneeId, reason }` | AI Flow — 動態分派 |
 | `generateHandoff` | `{ repoId, taskId }` | `{ handoffMarkdown }` | AI Flow — 交接文件 |
-| `summarizeDay` | `{ repoId, date: string }` | `{ summary }` | AI Flow — 日報生成 |
+| `summarizeDay` | `{ repoId, date: string }` | `{ summary, highlights, blockers, commitThemes, memberContributions, ... }` | AI Flow — 日報生成（agentic，§5.4）|
+| `dailyBrief` | `{ repoId, date, question, history? }` | `{ answer, commits[] }` | AI Flow — Summary tab「問 AI 今天」agentic 聊天（§5.4）|
 | `setDiscordWebhook` | `{ repoId, webhookUrl, channelIds[] }` | `{}` | 設定 Discord outbound webhook + 監聽頻道 |
 | `subscribeToTopic` | `{ token, topic }` | `{}` | FCM web push（同課程） |
 
@@ -539,28 +540,41 @@ Phase 2 — Self Review (1 round):
 
 **自動觸發**：由 Firestore `onTaskUpdated` trigger 在 task 變 done 時自動呼叫此 flow，結果寫回 `tasks/{taskId}.handoffDoc`。
 
-### 5.4 Flow 4 — `summarizeDayFlow`（日報生成）
+### 5.4 Flow 4 — `summarizeDayFlow`（日報生成）+ Summary「情報總站」
 
-**Input**: `{ repoId: string, date: string }`
-**Output**: `{ summary: string, memberContributions: {...} }`
+Summary tab 是**開發者每日情報總站**：把當天 commits + completed tasks + Discord 討論彙整成「人話日報 + 重點 + 阻礙 + commit 訊息整理 + 成員貢獻」，並提供一個 agentic 聊天框讓開發者自然語言追問。後端兩支 flow：
 
-查當日 commits + completed tasks + discord 討論 → 寫成兩三句的人話日報。
+**(a) `summarizeDayFlow`（agentic — 升級自原本的「非 Agentic 單次」）**
+
+**Input**: `{ repoId, date }`
+**Output**: `{ summary, highlights[], blockers[], commitThemes[], memberContributions, completedTaskIds[], commitCount }`
+
+```
+Step 1 — 純 TS 先抓 context（精確計數，不交給 LLM 數）
+  ├─ listDayCommits / listCompletedTasks / readRoster（tools/dailyIntel.ts）
+  └─ computeContributions()：author.login → userId 對齊，算每人 tasksDone / commits
+
+Step 2 — agentic function-calling loop（MODELS.fast）
+  ├─ tools: getDayDigest（讀當日 Discord digest 找 blocker）、searchPastCommits
+  │         （跨日 grounding）、finalizeReport（一次性繳交敘事）
+  ├─ agent 自由 drill-down，最後 commit 一份 narrative（summary/highlights/
+  │   blockers/commitThemes＝commit 訊息整理）
+  └─ 最後一輪 tool_choice 強制 finalizeReport；萬一沒繳交 → 退回 deterministic fallback
+
+Step 3 — 寫 dailyReports/{date}（只有 Cloud Functions 寫得進；前端唯讀）
+```
+
+**(b) `dailyBriefChatFlow` / `dailyBrief` callable（agentic 聊天 — 「問 AI 今天」）**
+
+仿 `discordChatFlow`：function-calling loop（`listDayCommits` / `listCompletedTasks` / `getDayDigest` / `searchPastCommits`），把 agent 在過程中撈到的 commits 去重後連同答案一起回傳，前端在答案下方顯示「來源 commit」面板。
 
 **排程觸發 — 用 Cloud Tasks 扇出，不要 for-loop**
 
-Cloud Functions 單次執行上限 540 秒（9 分鐘）。若每日 18:00 用一個 function 順序跑 50 個 repo 的 `summarizeDayFlow`（每個約 5–10 秒）→ 直接 timeout 崩潰。
+Cloud Functions 單次執行上限 540 秒（9 分鐘）。若每日 18:00 用一個 function 順序跑 50 個 repo 的 `summarizeDayFlow`（每個約 5–10 秒）→ 直接 timeout 崩潰。採用兩階段（isolated sub-agent，AGENTIC_CONCEPTS §5）：
 
-採用兩階段架構：
+- **`scheduledDailyReport`** — `onSchedule`，每日台北 18:00。**只做扇出**：掃 `apps/gitsync/repos` 所有 ID，對每個 repoId 用 `firebase-admin/functions` `getFunctions().taskQueue('locations/asia-east1/functions/dailyReportWorker').enqueue({ repoId, date })`。`Promise.allSettled` 互不阻擋，回完即結束。
 
-- **`scheduledDailyReport`** — `onSchedule` Cloud Function，每日台北時間 18:00 觸發。**只做扇出**：掃 `apps/gitsync/repos` 所有文件 ID，為每個 repoId 在 `daily-report-queue` 上建一個 Cloud Task，task 內容包含 repoId + 今日日期（ISO 字串），target 指向 `dailyReportWorker` 的 HTTPS URL。本身回 200 後立即結束。
-
-- **`dailyReportWorker`** — `onRequest` Cloud Function，由 Cloud Tasks 觸發。每個 instance 只處理一個 repoId，呼叫 `summarizeDayFlow({ repoId, date })`。Cloud Tasks 自動水平擴展，多個 worker 平行跑，互不影響。
-
-部署前需手動建立 queue（**使用者親自跑**，AI 不可）：
-
-```bash
-gcloud tasks queues create daily-report-queue --location=asia-east1
-```
+- **`dailyReportWorker`** — **`onTaskDispatched`**（Cloud Tasks queue 函式，非裸 HTTP）。每個 dispatch 只處理一個 repoId → 呼叫 `summarizeDayFlow`。用 onTaskDispatched 的好處：queue 隨函式自動建立（**不需** 手動 `gcloud tasks queues create`）、Admin SDK enqueue 自帶 auth + retry、不引入 `@google-cloud/tasks` 依賴。`retryConfig.maxAttempts=3` 讓 OpenAI 偶發失敗有第二次機會。
 
 ### 5.5 Prompt Caching 與成本控制
 
