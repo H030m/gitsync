@@ -21,7 +21,7 @@ class StatsViewPage extends StatelessWidget {
       update: (_, tasks, commits, prev) =>
           (prev ?? StatsViewModel())..updateFromUpstream(tasks: tasks, commits: commits),
       child: Scaffold(
-        appBar: AppBar(title: const Text('Stats')),
+        appBar: AppBar(title: const Text('統計'), centerTitle: true),
         body: Consumer<StatsViewModel>(
           builder: (ctx, vm, _) {
             final scheme = Theme.of(ctx).colorScheme;
@@ -31,7 +31,7 @@ class StatsViewPage extends StatelessWidget {
               padding: const EdgeInsets.all(AppDimens.spacingMd),
               children: [
                 _StatCard(
-                  title: 'Task status',
+                  title: '任務狀態',
                   icon: Icons.task_alt_outlined,
                   child: Column(
                     children: [
@@ -47,7 +47,7 @@ class StatsViewPage extends StatelessWidget {
                 ),
                 const SizedBox(height: AppDimens.spacingMd),
                 _StatCard(
-                  title: 'Commits per author',
+                  title: '每人 commit 數',
                   icon: Icons.commit_outlined,
                   child: Column(
                     children: [

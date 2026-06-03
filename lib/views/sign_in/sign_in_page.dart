@@ -47,7 +47,7 @@ class SignInPage extends StatelessWidget {
                     ),
                     const SizedBox(height: AppDimens.spacingSm),
                     Text(
-                      'Your team\'s repos, tasks, and daily activity in one place.',
+                      '團隊的 Repo、任務與每日動態，一目瞭然。',
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodyMedium
                           ?.copyWith(color: scheme.onSurfaceVariant),

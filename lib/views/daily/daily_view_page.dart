@@ -19,12 +19,13 @@ class DailyViewPage extends StatelessWidget {
       length: 3,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Daily'),
+          title: const Text('每日彙整'),
+          centerTitle: true,
           bottom: const TabBar(
             tabs: [
-              Tab(text: 'Summary'),
-              Tab(text: 'Commits'),
-              Tab(text: 'Discord'),
+              Tab(text: '日報'),
+              Tab(text: 'commit'),
+              Tab(text: 'DC群組'),
             ],
           ),
         ),
@@ -67,14 +68,14 @@ class _SummaryTab extends StatelessWidget {
                         Icon(Icons.auto_awesome_outlined,
                             size: 20, color: theme.colorScheme.primary),
                         const SizedBox(width: AppDimens.spacingSm),
-                        Text('Daily summary',
+                        Text('日報摘要',
                             style: theme.textTheme.titleMedium
                                 ?.copyWith(fontWeight: FontWeight.w600)),
                       ],
                     ),
                     const SizedBox(height: AppDimens.spacingSm),
                     Text(
-                      report?.summary ?? 'No report yet',
+                      report?.summary ?? '尚無日報',
                       style: theme.textTheme.bodyMedium,
                     ),
                   ],
@@ -91,7 +92,7 @@ class _SummaryTab extends StatelessWidget {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.refresh),
-              label: Text(vm.regenerating ? 'Generating…' : 'Regenerate'),
+              label: Text(vm.regenerating ? '生成中…' : '重新生成'),
             ),
           ],
         );
@@ -113,8 +114,8 @@ class _CommitsTab extends StatelessWidget {
         if (vm.commits.isEmpty) {
           return const EmptyState(
             icon: Icons.commit_outlined,
-            title: 'No commits yet',
-            message: 'Recent commits on this repo will show up here.',
+            title: '尚無 commit',
+            message: '此 Repo 的近期 commit 將會顯示於此。',
           );
         }
         final scheme = Theme.of(ctx).colorScheme;
@@ -183,7 +184,7 @@ class _DiscordTab extends StatelessWidget {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.refresh),
-                      label: Text(vm.refreshing ? 'Fetching…' : 'Refresh'),
+                      label: Text(vm.refreshing ? '擷取中…' : '重新整理'),
                     ),
                   ),
                 ],
@@ -216,7 +217,7 @@ class _DigestCard extends StatelessWidget {
                 Icon(Icons.auto_awesome_outlined,
                     size: 20, color: theme.colorScheme.primary),
                 const SizedBox(width: AppDimens.spacingSm),
-                Text('Discord digest',
+                Text('Discord 摘要',
                     style: theme.textTheme.titleMedium
                         ?.copyWith(fontWeight: FontWeight.w600)),
               ],
@@ -239,8 +240,8 @@ class _MessageList extends StatelessWidget {
     if (vm.messages.isEmpty) {
       return const EmptyState(
         icon: Icons.forum_outlined,
-        title: 'No Discord messages yet',
-        message: 'Tap Refresh to pull the day\'s chat from Discord.',
+        title: '尚無 DC 訊息',
+        message: '已匯入的 Discord 訊息將會顯示於此。',
       );
     }
     final scheme = Theme.of(context).colorScheme;

@@ -28,7 +28,7 @@ class RepoListPage extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (_) => RepoListViewModel(userId: uid),
       child: Scaffold(
-        appBar: AppBar(title: const Text('Your repos')),
+        appBar: AppBar(title: const Text('選擇 Repo'), centerTitle: true),
         floatingActionButton: FloatingActionButton(
           onPressed: () => Provider.of<NavigationService>(context, listen: false)
               .goAddRepo(),
@@ -42,8 +42,8 @@ class RepoListPage extends StatelessWidget {
             if (vm.repos.isEmpty) {
               return const EmptyState(
                 icon: Icons.folder_open_outlined,
-                title: 'No repos yet',
-                message: 'Tap + to connect your first GitHub repository.',
+                title: '尚無 Repo',
+                message: '點擊 + 連結你的第一個 GitHub Repo。',
               );
             }
             final scheme = Theme.of(ctx).colorScheme;
@@ -105,20 +105,19 @@ class RepoListPage extends StatelessWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        title: const Text('Remove repo?'),
+        title: const Text('移除 Repo？'),
         content: Text(
-          'Remove ${repo.name}? This deletes the repo and all its '
-          'tasks/data. This cannot be undone.',
+          '確定要移除 ${repo.name} 嗎？這會刪除此 Repo 及其所有任務資料，且無法復原。',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogCtx).pop(false),
-            child: const Text('Cancel'),
+            child: const Text('取消'),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogCtx).pop(true),
             child: Text(
-              'Remove',
+              '移除',
               style: TextStyle(
                 color: Theme.of(dialogCtx).colorScheme.error,
               ),
