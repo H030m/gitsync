@@ -28,11 +28,10 @@ class RepoListPage extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (_) => RepoListViewModel(userId: uid),
       child: Scaffold(
-        appBar: AppBar(title: const Text('Your repos')),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () => Provider.of<NavigationService>(context, listen: false)
-              .goAddRepo(),
-          child: const Icon(Icons.add),
+        appBar: AppBar(
+          title: const Text('選擇 Repo'),
+          centerTitle: true,
+          automaticallyImplyLeading: false,
         ),
         body: Consumer<RepoListViewModel>(
           builder: (ctx, vm, _) {
@@ -42,51 +41,170 @@ class RepoListPage extends StatelessWidget {
             if (vm.repos.isEmpty) {
               return const EmptyState(
                 icon: Icons.folder_open_outlined,
-                title: 'No repos yet',
-                message: 'Tap + to connect your first GitHub repository.',
+                title: '尚無 Repo',
+                message: '點擊下方按鈕連結你的第一個 GitHub Repo。',
               );
             }
             final scheme = Theme.of(ctx).colorScheme;
+            final isDark = Theme.of(ctx).brightness == Brightness.dark;
+            final cardBg = isDark
+                ? const Color(0xFF222630)
+                : scheme.surface;
+            final shadow = BoxShadow(
+              color: isDark
+                  ? Colors.black.withValues(alpha: 0.3)
+                  : const Color(0xFF1565C0).withValues(alpha: 0.14),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            );
+            final lightShadow = BoxShadow(
+              color: isDark
+                  ? Colors.black.withValues(alpha: 0.2)
+                  : const Color(0xFF1565C0).withValues(alpha: 0.10),
+              blurRadius: 3,
+              offset: const Offset(0, 1),
+            );
             return ListView.builder(
               padding: const EdgeInsets.symmetric(
-                vertical: AppDimens.spacingSm,
+                horizontal: AppDimens.spacingMd + 4,
+                vertical: AppDimens.spacingMd,
               ),
-              itemCount: vm.repos.length,
+              itemCount: vm.repos.length + 1, // +1 for add card
               itemBuilder: (_, i) {
+                // Add card at the end
+                if (i == vm.repos.length) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: AppDimens.spacingSm),
+                    child: GestureDetector(
+                      onTap: () =>
+                          Provider.of<NavigationService>(ctx, listen: false)
+                              .goAddRepo(),
+                      child: Container(
+                        padding: const EdgeInsets.all(AppDimens.spacingMd),
+                        decoration: BoxDecoration(
+                          borderRadius:
+                              BorderRadius.circular(AppDimens.radiusLg),
+                          border: Border.all(
+                            color: scheme.primary.withValues(alpha: 0.4),
+                            style: BorderStyle.solid,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color:
+                                      scheme.primary.withValues(alpha: 0.4),
+                                ),
+                              ),
+                              child: Icon(Icons.add,
+                                  size: 20,
+                                  color:
+                                      scheme.primary.withValues(alpha: 0.6)),
+                            ),
+                            const SizedBox(width: AppDimens.spacingMd),
+                            Text(
+                              '新增 Repo...',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color:
+                                    scheme.primary.withValues(alpha: 0.6),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }
+
                 final repo = vm.repos[i];
                 final removing = vm.isRemoving(repo.id);
-                return Card(
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: scheme.primaryContainer,
-                      foregroundColor: scheme.onPrimaryContainer,
-                      child: const Icon(Icons.folder_outlined),
-                    ),
-                    title: Text(
-                      repo.name,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    subtitle: Text(
-                      repo.url,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                final isEdge =
+                    i == 0 || i == vm.repos.length - 1;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: AppDimens.spacingSm),
+                  child: GestureDetector(
                     onTap: removing
                         ? null
                         : () =>
                             Provider.of<NavigationService>(ctx, listen: false)
                                 .goTasks(repo.id),
-                    trailing: removing
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : IconButton(
-                            icon: const Icon(Icons.delete_outline),
-                            tooltip: 'Remove repo',
-                            onPressed: () => _confirmRemove(ctx, vm, repo),
+                    onLongPress: removing
+                        ? null
+                        : () => _confirmRemove(ctx, vm, repo),
+                    child: Container(
+                      padding: const EdgeInsets.all(AppDimens.spacingMd),
+                      decoration: BoxDecoration(
+                        color: cardBg,
+                        borderRadius:
+                            BorderRadius.circular(AppDimens.radiusLg),
+                        boxShadow: [isEdge ? shadow : lightShadow],
+                      ),
+                      child: Row(
+                        children: [
+                          // Tonal avatar
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: scheme.surfaceContainerHighest,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.fork_right,
+                              size: 20,
+                              color: scheme.primary,
+                            ),
                           ),
+                          const SizedBox(width: AppDimens.spacingMd),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  repo.name,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                // Shimmer placeholder bar
+                                Container(
+                                  height: 8,
+                                  width: 80,
+                                  decoration: BoxDecoration(
+                                    color: scheme.surfaceContainerHighest,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (removing)
+                            const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child:
+                                  CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          else if (isEdge)
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: scheme.primary,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
                 );
               },
@@ -105,20 +223,19 @@ class RepoListPage extends StatelessWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        title: const Text('Remove repo?'),
+        title: const Text('移除 Repo？'),
         content: Text(
-          'Remove ${repo.name}? This deletes the repo and all its '
-          'tasks/data. This cannot be undone.',
+          '確定要移除 ${repo.name} 嗎？這會刪除此 Repo 及其所有任務資料，且無法復原。',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogCtx).pop(false),
-            child: const Text('Cancel'),
+            child: const Text('取消'),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogCtx).pop(true),
             child: Text(
-              'Remove',
+              '移除',
               style: TextStyle(
                 color: Theme.of(dialogCtx).colorScheme.error,
               ),
