@@ -29,3 +29,35 @@ export function snowflakeForTaipeiDate(date: string): string {
   const startMs = BigInt(utcMidnight - TAIPEI_OFFSET_MS - 1);
   return ((startMs - DISCORD_EPOCH_MS) << 22n).toString();
 }
+
+/**
+ * Returns the snowflake id for the END of the given Asia/Taipei calendar day —
+ * i.e. the START of the NEXT day (`date` + 24h). This is the EXCLUSIVE upper
+ * bound (high cursor) of a backfill range: a message belongs to the range iff
+ * its id is `< snowflakeForTaipeiDayEnd(endDate)`. No -1ms here (we want the
+ * exact next-day boundary, compared with `>=`). Throws on a malformed date.
+ */
+export function snowflakeForTaipeiDayEnd(date: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error(`invalid date: ${date}`);
+  }
+  const utcMidnight = new Date(`${date}T00:00:00Z`).getTime();
+  if (Number.isNaN(utcMidnight)) {
+    throw new Error(`invalid date: ${date}`);
+  }
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+  const endMs = BigInt(utcMidnight - TAIPEI_OFFSET_MS + ONE_DAY_MS);
+  return ((endMs - DISCORD_EPOCH_MS) << 22n).toString();
+}
+
+/** Taipei 00:00 of `date` as a UTC epoch-ms number (for Firestore Timestamp). */
+export function taipeiDayStartMs(date: string): number {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error(`invalid date: ${date}`);
+  }
+  const utcMidnight = new Date(`${date}T00:00:00Z`).getTime();
+  if (Number.isNaN(utcMidnight)) {
+    throw new Error(`invalid date: ${date}`);
+  }
+  return utcMidnight - TAIPEI_OFFSET_MS;
+}

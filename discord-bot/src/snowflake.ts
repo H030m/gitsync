@@ -21,3 +21,19 @@ export function snowflakeForTaipeiDate(date: string): string {
   const startMs = BigInt(utcMidnight - TAIPEI_OFFSET_MS - 1);
   return ((startMs - DISCORD_EPOCH_MS) << 22n).toString();
 }
+
+// Returns the snowflake for the END of the given Taipei day (= START of the next
+// day, +24h). EXCLUSIVE upper bound (high cursor): a message is in range iff its
+// id is < snowflakeForTaipeiDayEnd(endDate). Throws on a malformed date.
+export function snowflakeForTaipeiDayEnd(date: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error(`invalid date: ${date}`);
+  }
+  const utcMidnight = new Date(`${date}T00:00:00Z`).getTime();
+  if (Number.isNaN(utcMidnight)) {
+    throw new Error(`invalid date: ${date}`);
+  }
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+  const endMs = BigInt(utcMidnight - TAIPEI_OFFSET_MS + ONE_DAY_MS);
+  return ((endMs - DISCORD_EPOCH_MS) << 22n).toString();
+}
