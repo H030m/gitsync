@@ -31,7 +31,7 @@ export interface DiscordDailyDigestResult {
 
 // Returns [startInclusive, endExclusive) as Firestore Timestamps for the given
 // Asia/Taipei calendar day. Throws on a malformed date string.
-function taipeiDayBounds(date: string): { start: Timestamp; end: Timestamp } {
+export function taipeiDayBounds(date: string): { start: Timestamp; end: Timestamp } {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     throw new Error(`invalid date: ${date}`);
   }
