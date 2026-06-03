@@ -194,38 +194,68 @@ class FakeFunctionsService implements FunctionsService {
   }) async {
     await Future.delayed(AppConfig.simulatedLatency * 3);
 
-    // Keyword-rank the demo messages the same way the backend tool does, so the
-    // sources panel shows something relevant in fake mode.
+    final all = DummyData.discordMessages;
+
+    // Keyword-match the demo messages the same way the backend tool does, then
+    // group each match with one neighbor before/after as context — mirroring
+    // the real callable's conversation-cluster shape.
     final terms = question
         .toLowerCase()
         .split(RegExp(r'[^a-z0-9一-鿿]+'))
         .where((t) => t.length >= 2)
         .toSet();
-    final scored = DummyData.discordMessages.map((m) {
-      final hay = m.content.toLowerCase();
-      final score = terms.where(hay.contains).length;
-      return (m: m, score: score);
-    }).toList();
-    final matched = scored.where((e) => e.score > 0).toList()
-      ..sort((a, b) => b.score.compareTo(a.score));
-    final hits = (matched.isEmpty ? scored : matched)
-        .take(6)
-        .map((e) => DiscordChatSource(
-              messageId: e.m.id,
-              channelId: e.m.channelId,
-              authorName: e.m.authorName,
-              content: e.m.content,
-              timestamp: null,
-            ))
-        .toList();
+    final matchIdxs = <int>[];
+    for (var i = 0; i < all.length; i++) {
+      final hay = all[i].content.toLowerCase();
+      if (terms.any(hay.contains)) matchIdxs.add(i);
+    }
 
-    final answer = hits.isEmpty
+    DiscordChatSource src(int i, {required bool isMatch}) {
+      final m = all[i];
+      return DiscordChatSource(
+        messageId: m.id,
+        channelId: m.channelId,
+        authorName: m.authorName,
+        content: m.content,
+        timestamp: m.timestamp.toDate().toIso8601String(),
+        isMatch: isMatch,
+      );
+    }
+
+    final snippets = <DiscordChatSnippet>[];
+    final hasMatch = matchIdxs.isNotEmpty;
+    if (hasMatch) {
+      // Build up to two clusters around the first matches; include one neighbor
+      // before/after each match for context.
+      for (final i in matchIdxs.take(2)) {
+        final idxs = <int>{
+          if (i - 1 >= 0) i - 1,
+          i,
+          if (i + 1 < all.length) i + 1,
+        }.toList()
+          ..sort();
+        snippets.add(DiscordChatSnippet(
+          channelId: all[i].channelId,
+          messages: [for (final j in idxs) src(j, isMatch: j == i)],
+        ));
+      }
+    } else {
+      // Nothing matched: show the last ~3 messages as plain context.
+      final start = all.length > 3 ? all.length - 3 : 0;
+      snippets.add(DiscordChatSnippet(
+        channelId: all.isNotEmpty ? all[start].channelId : '',
+        messages: [
+          for (var j = start; j < all.length; j++) src(j, isMatch: false),
+        ],
+      ));
+    }
+
+    final answer = !hasMatch
         ? '我在這個 repo 的 Discord 訊息裡找不到相關內容。'
-        : '根據團隊的 Discord 聊天，以下幾則訊息和你的問題相關'
-            '（**${hits.first.authorName}** 等人有提到）。詳見下方可滑動的相關訊息。\n\n'
+        : '根據團隊的 Discord 聊天，以下幾段對話和你的問題相關。詳見下方可滑動的相關對話。\n\n'
             '*(這是 fake backend 的示範回覆。)*';
 
-    return DiscordChatReply(answer: answer, messages: hits);
+    return DiscordChatReply(answer: answer, snippets: snippets);
   }
 
   // ---- FCM ---------------------------------------------------------------

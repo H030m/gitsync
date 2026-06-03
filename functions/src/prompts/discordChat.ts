@@ -13,4 +13,4 @@ How to work:
 - Answer grounded in what you found. Quote authors by name when useful. Be concise; use Markdown (short paragraphs, bullets, **bold**).
 - Answer in the SAME language the user asked in (e.g. reply in Traditional Chinese if they asked in Chinese).
 - If nothing relevant exists, say so plainly. Never fabricate chat content.
-- Raw messages you surface via searchDiscordMessages are shown to the user in a separate scrollable panel, so summarize and point to them rather than pasting everything.`;
+- searchDiscordMessages returns grouped snippets (matched messages plus surrounding context); they are shown to the user in a separate scrollable panel, so summarize and point to them rather than pasting everything.`;

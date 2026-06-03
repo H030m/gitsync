@@ -18,13 +18,11 @@ export interface DiscordMessageHit {
   authorName: string;
   content: string;
   timestamp: string | null; // ISO 8601, or null if missing
+  isMatch: boolean; // true if it matched the query (vs. surrounding context)
 }
 
-// How many recent messages we pull before ranking, and the hard cap on the
-// number we ever hand back to the model / client.
+// How many recent messages we pull before grouping into snippets.
 const SCAN_LIMIT = 300;
-const MAX_RETURN = 30;
-const DEFAULT_RETURN = 12;
 
 // How many day summaries `listDaySummaries` returns, and the preview length.
 const MAX_DAY_SUMMARIES = 60;
@@ -106,6 +104,24 @@ export async function getDaySummary(
   }
 }
 
+/** How many messages of context to include before/after each matched message. */
+const CONTEXT_BEFORE = 2;
+const CONTEXT_AFTER = 2;
+const DEFAULT_SNIPPETS = 6;
+const MAX_SNIPPETS = 12;
+
+/**
+ * A conversation snippet: a run of chronologically-ordered messages from ONE
+ * channel, centered on the message(s) that matched the query (`isMatch: true`)
+ * with a few surrounding messages for context. This is what the chat agent and
+ * the UI panel consume — grouped clusters, NOT a flat dump.
+ */
+export interface DiscordSnippet {
+  channelId: string;
+  messages: DiscordMessageHit[]; // oldest → newest, context + matches
+  score: number; // number of matched messages (for ranking)
+}
+
 /** Lowercase word tokens of length >= 2 (drops punctuation + stopword-ish noise). */
 function tokenize(text: string): string[] {
   return text
@@ -114,23 +130,27 @@ function tokenize(text: string): string[] {
     .filter((t) => t.length >= 2);
 }
 
+/** -1 / 0 / 1 comparison of two snowflake id strings by BigInt value. */
+function cmpId(a: string, b: string): number {
+  const x = BigInt(a || '0');
+  const y = BigInt(b || '0');
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+
 /**
- * Keyword + recency search over a repo's `discordMessages`. Pulls the most
- * recent {@link SCAN_LIMIT} messages, scores each by how many distinct query
- * tokens appear in its content, and returns the top `limit` by (score,
- * recency). When NO message matches any token (e.g. a vague question), it
- * degrades to the most recent `limit` messages so the agent always has
- * something to ground its answer on.
+ * Keyword search over a repo's `discordMessages`, returning grouped conversation
+ * snippets (each matched message bundled with {@link CONTEXT_BEFORE}/
+ * {@link CONTEXT_AFTER} surrounding messages from the same channel; overlapping
+ * windows merge). Snippets are ranked by match count then recency. When nothing
+ * matches, degrades to one snippet of the most recent messages.
  *
- * Never throws — a Firestore read failure degrades to `[]` + a `logger.warn`,
- * so a single bad call can't kill the whole chat flow.
+ * Never throws — a Firestore read failure degrades to `[]` + a `logger.warn`.
  */
 export async function searchDiscordMessages(
   repoId: string,
   query: string,
-  limit = DEFAULT_RETURN,
-): Promise<DiscordMessageHit[]> {
-  const cap = Math.max(1, Math.min(limit || DEFAULT_RETURN, MAX_RETURN));
+  limit = DEFAULT_SNIPPETS,
+): Promise<DiscordSnippet[]> {
   try {
     const snap = await db
       .collection(`apps/gitsync/repos/${repoId}/discordMessages`)
@@ -138,7 +158,7 @@ export async function searchDiscordMessages(
       .limit(SCAN_LIMIT)
       .get();
 
-    const docs = snap.docs.map((d) => {
+    const docs: DiscordMessageHit[] = snap.docs.map((d) => {
       const data = d.data() ?? {};
       const ts = data.timestamp;
       return {
@@ -146,6 +166,7 @@ export async function searchDiscordMessages(
         channelId: (data.channelId as string | undefined) ?? '',
         authorName: (data.authorName as string | undefined) ?? '',
         content: (data.content as string | undefined) ?? '',
+        isMatch: false,
         // Firestore Timestamp → ISO; tolerate already-string / missing values.
         timestamp:
           ts && typeof (ts as { toDate?: unknown }).toDate === 'function'
@@ -156,7 +177,7 @@ export async function searchDiscordMessages(
       };
     });
 
-    return rankMessages(docs, query, cap);
+    return buildSnippets(docs, query, { maxSnippets: limit });
   } catch (err) {
     logger.warn('searchDiscordMessages failed; returning [] (best-effort)', {
       repoId,
@@ -167,39 +188,81 @@ export async function searchDiscordMessages(
 }
 
 /**
- * Pure ranking core (no I/O) — extracted so it can be unit-tested directly.
- * `docs` is assumed to arrive newest-first (as Firestore returns them); ties in
- * score are broken by preserving that recency order.
+ * Pure snippet builder (no I/O) — extracted for unit tests. Groups matched
+ * messages with surrounding context, per channel, merging overlapping windows.
+ * `docs` may arrive in any order; they are re-sorted by snowflake id per
+ * channel. When the query has no usable terms OR nothing matches, returns a
+ * single snippet of the most recent messages (so the agent isn't empty-handed).
  */
-export function rankMessages(
+export function buildSnippets(
   docs: DiscordMessageHit[],
   query: string,
-  cap: number,
-): DiscordMessageHit[] {
+  opts?: { before?: number; after?: number; maxSnippets?: number },
+): DiscordSnippet[] {
+  const before = opts?.before ?? CONTEXT_BEFORE;
+  const after = opts?.after ?? CONTEXT_AFTER;
+  const maxSnippets = Math.max(1, Math.min(opts?.maxSnippets ?? DEFAULT_SNIPPETS, MAX_SNIPPETS));
   const terms = new Set(tokenize(query));
 
-  if (terms.size === 0) {
-    // No usable query terms — just hand back the most recent slice.
-    return docs.slice(0, cap);
+  const recentFallback = (): DiscordSnippet[] => {
+    const recent = [...docs]
+      .sort((a, b) => cmpId(b.messageId, a.messageId))
+      .slice(0, before + after + 1)
+      .sort((a, b) => cmpId(a.messageId, b.messageId))
+      .map((m) => ({ ...m, isMatch: false }));
+    return recent.length
+      ? [{ channelId: recent[0].channelId, messages: recent, score: 0 }]
+      : [];
+  };
+
+  if (terms.size === 0) return recentFallback();
+
+  const matches = (content: string): boolean => {
+    const hay = content.toLowerCase();
+    for (const t of terms) if (hay.includes(t)) return true;
+    return false;
+  };
+
+  // Group by channel, sort each channel chronologically (by snowflake id).
+  const byChannel = new Map<string, DiscordMessageHit[]>();
+  for (const d of docs) {
+    const arr = byChannel.get(d.channelId);
+    if (arr) arr.push(d);
+    else byChannel.set(d.channelId, [d]);
   }
 
-  const scored = docs.map((doc, index) => {
-    const haystack = doc.content.toLowerCase();
-    let score = 0;
-    for (const term of terms) {
-      if (haystack.includes(term)) score += 1;
+  const snippets: DiscordSnippet[] = [];
+  for (const [channelId, arrRaw] of byChannel) {
+    const arr = [...arrRaw].sort((a, b) => cmpId(a.messageId, b.messageId));
+    const hit = arr.map((m) => matches(m.content));
+
+    // Merge each hit's [k-before, k+after] window into contiguous ranges.
+    const ranges: Array<[number, number]> = [];
+    for (let k = 0; k < arr.length; k++) {
+      if (!hit[k]) continue;
+      const lo = Math.max(0, k - before);
+      const hi = Math.min(arr.length - 1, k + after);
+      const last = ranges[ranges.length - 1];
+      if (last && lo <= last[1] + 1) last[1] = Math.max(last[1], hi);
+      else ranges.push([lo, hi]);
     }
-    return { doc, score, index };
-  });
 
-  const matched = scored
-    .filter((s) => s.score > 0)
-    .sort((a, b) => (b.score - a.score) || (a.index - b.index));
-
-  if (matched.length === 0) {
-    // Nothing matched — degrade to most-recent so the agent isn't empty-handed.
-    return docs.slice(0, cap);
+    for (const [lo, hi] of ranges) {
+      const messages = arr
+        .slice(lo, hi + 1)
+        .map((m, idx) => ({ ...m, isMatch: hit[lo + idx] }));
+      snippets.push({
+        channelId,
+        messages,
+        score: messages.filter((m) => m.isMatch).length,
+      });
+    }
   }
 
-  return matched.slice(0, cap).map((s) => s.doc);
+  if (snippets.length === 0) return recentFallback();
+
+  // Rank: more matches first, then most-recent (by the snippet's newest id).
+  const lastId = (s: DiscordSnippet) => s.messages[s.messages.length - 1].messageId;
+  snippets.sort((a, b) => b.score - a.score || cmpId(lastId(b), lastId(a)));
+  return snippets.slice(0, maxSnippets);
 }

@@ -17,7 +17,7 @@ import {
   searchDiscordMessages,
   listDaySummaries,
   getDaySummary,
-  type DiscordMessageHit,
+  type DiscordSnippet,
 } from '../tools/discordSearch';
 
 /** One prior conversation turn passed in from the client. */
@@ -34,7 +34,14 @@ export interface DiscordChatInput {
 
 export interface DiscordChatResult {
   answer: string;
-  messages: DiscordMessageHit[];
+  snippets: DiscordSnippet[];
+}
+
+/** Stable key for deduping a snippet across multiple tool calls in one turn. */
+function snippetKey(s: DiscordSnippet): string {
+  const first = s.messages[0]?.messageId ?? '';
+  const last = s.messages[s.messages.length - 1]?.messageId ?? '';
+  return `${s.channelId}:${first}:${last}`;
 }
 
 const MAX_ROUNDS = 4;
@@ -82,9 +89,11 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       name: 'searchDiscordMessages',
       description:
         "Keyword search over the team's RAW ingested Discord messages. Returns " +
-        'matching messages with author, content and timestamp. Use this only ' +
-        'when you need specific quotes / exact wording / who-said-what — for ' +
-        'broad summaries prefer the day-summary tools above.',
+        'grouped conversation SNIPPETS: each match comes bundled with a few ' +
+        'surrounding messages for context (isMatch marks the matched ones), and ' +
+        'distinct conversations are separate snippets. Use this when you need ' +
+        'specific quotes / exact wording / who-said-what / the back-and-forth ' +
+        'around a topic — for broad summaries prefer the day-summary tools above.',
       parameters: {
         type: 'object',
         properties: {
@@ -120,9 +129,9 @@ export async function discordChatFlow(
     { role: 'user', content: question },
   ];
 
-  // Surfaced messages accumulate across rounds; dedupe by messageId, preserve
+  // Surfaced snippets accumulate across rounds; dedupe by snippet key, preserve
   // first-seen order (the order the agent found them in).
-  const surfaced = new Map<string, DiscordMessageHit>();
+  const surfaced = new Map<string, DiscordSnippet>();
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     logger.info('discordChatFlow: round', { repoId, round });
@@ -145,7 +154,7 @@ export async function discordChatFlow(
       // Model answered — we're done.
       return {
         answer: choice.content ?? '',
-        messages: [...surfaced.values()],
+        snippets: [...surfaced.values()],
       };
     }
 
@@ -169,13 +178,13 @@ export async function discordChatFlow(
             };
           }
           case 'searchDiscordMessages': {
-            const hits = await searchDiscordMessages(
+            const found = await searchDiscordMessages(
               repoId,
               String(args.query ?? ''),
               typeof args.limit === 'number' ? args.limit : undefined,
             );
-            for (const h of hits) surfaced.set(h.messageId, h);
-            return { tool_call_id: call.id, content: JSON.stringify(hits) };
+            for (const s of found) surfaced.set(snippetKey(s), s);
+            return { tool_call_id: call.id, content: JSON.stringify(found) };
           }
           default:
             return {
@@ -210,7 +219,7 @@ export async function discordChatFlow(
   });
   return {
     answer: finalCompletion.choices[0]?.message?.content ?? '',
-    messages: [...surfaced.values()],
+    snippets: [...surfaced.values()],
   };
 }
 

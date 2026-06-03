@@ -9,9 +9,10 @@ class DiscordChatTurn {
   final String role;
   final String content;
 
-  /// Messages the AI surfaced for this turn (assistant turns only). Shown in
-  /// the scrollable sources panel; not sent back to the backend.
-  final List<DiscordChatSource> sources;
+  /// Conversation clusters the AI surfaced for this turn (assistant turns
+  /// only). Shown in the scrollable sources panel; not sent back to the
+  /// backend.
+  final List<DiscordChatSnippet> snippets;
 
   /// When this turn was created on the client (for the bubble timestamp).
   /// Null only for transient placeholders.
@@ -20,7 +21,7 @@ class DiscordChatTurn {
   const DiscordChatTurn({
     required this.role,
     required this.content,
-    this.sources = const [],
+    this.snippets = const [],
     this.createdAt,
   });
 
@@ -39,12 +40,17 @@ class DiscordChatSource {
   /// ISO 8601 string, or null if the source had no timestamp.
   final String? timestamp;
 
+  /// Whether this message actually matched the query. False for surrounding
+  /// context messages included to make the cluster readable.
+  final bool isMatch;
+
   const DiscordChatSource({
     required this.messageId,
     required this.channelId,
     required this.authorName,
     required this.content,
     this.timestamp,
+    this.isMatch = false,
   });
 
   factory DiscordChatSource.fromMap(Map<String, dynamic> map) {
@@ -54,23 +60,50 @@ class DiscordChatSource {
       authorName: map['authorName'] as String? ?? '',
       content: map['content'] as String? ?? '',
       timestamp: map['timestamp'] as String?,
+      isMatch: map['isMatch'] as bool? ?? false,
     );
   }
 }
 
-/// The callable's response: the AI answer plus the messages it surfaced.
-class DiscordChatReply {
-  final String answer;
+/// A conversation cluster the AI surfaced: a run of chronological messages
+/// (oldest → newest) from one channel, where the matched message(s) are
+/// flanked by surrounding context.
+class DiscordChatSnippet {
+  final String channelId;
   final List<DiscordChatSource> messages;
 
-  const DiscordChatReply({required this.answer, required this.messages});
+  const DiscordChatSnippet({
+    required this.channelId,
+    required this.messages,
+  });
+
+  factory DiscordChatSnippet.fromMap(Map<String, dynamic> map) {
+    final raw = map['messages'] as List? ?? const [];
+    return DiscordChatSnippet(
+      channelId: map['channelId'] as String? ?? '',
+      messages: raw
+          .map((m) =>
+              DiscordChatSource.fromMap(Map<String, dynamic>.from(m as Map)))
+          .toList(),
+    );
+  }
+}
+
+/// The callable's response: the AI answer plus the conversation clusters it
+/// surfaced.
+class DiscordChatReply {
+  final String answer;
+  final List<DiscordChatSnippet> snippets;
+
+  const DiscordChatReply({required this.answer, required this.snippets});
 
   factory DiscordChatReply.fromMap(Map<String, dynamic> map) {
-    final raw = map['messages'] as List? ?? const [];
+    final raw = map['snippets'] as List? ?? const [];
     return DiscordChatReply(
       answer: map['answer'] as String? ?? '',
-      messages: raw
-          .map((m) => DiscordChatSource.fromMap(Map<String, dynamic>.from(m as Map)))
+      snippets: raw
+          .map((s) =>
+              DiscordChatSnippet.fromMap(Map<String, dynamic>.from(s as Map)))
           .toList(),
     );
   }

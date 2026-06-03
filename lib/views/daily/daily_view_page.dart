@@ -181,6 +181,16 @@ class _DiscordTab extends StatelessWidget {
         if (vm.loading) {
           return const Center(child: CircularProgressIndicator());
         }
+        // Show a one-shot "Updated" toast once a refresh round-trip completes.
+        if (vm.justUpdated) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!ctx.mounted) return;
+            vm.acknowledgeUpdated();
+            ScaffoldMessenger.of(ctx).showSnackBar(
+              const SnackBar(content: Text('Updated ✓')),
+            );
+          });
+        }
         return Column(
           children: [
             Padding(
@@ -199,9 +209,18 @@ class _DiscordTab extends StatelessWidget {
                   ],
                   Wrap(
                     alignment: WrapAlignment.end,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     spacing: AppDimens.spacingSm,
                     runSpacing: AppDimens.spacingSm,
                     children: [
+                      if (vm.lastUpdatedAt != null)
+                        Text(
+                          'Updated ${_hhmm(vm.lastUpdatedAt!)}',
+                          style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
+                                color:
+                                    Theme.of(ctx).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
                       OutlinedButton.icon(
                         onPressed: vm.settingRange
                             ? null
@@ -649,9 +668,9 @@ class _ChatTurnView extends StatelessWidget {
           ),
           const SizedBox(height: AppDimens.spacingSm),
           MarkdownView(data: turn.content),
-          if (turn.sources.isNotEmpty) ...[
+          if (turn.snippets.isNotEmpty) ...[
             const SizedBox(height: AppDimens.spacingSm),
-            _SourcesPanel(sources: turn.sources),
+            _SourcesPanel(snippets: turn.snippets),
           ],
         ],
       ),
@@ -659,18 +678,20 @@ class _ChatTurnView extends StatelessWidget {
   }
 }
 
-// Scrollable panel of the Discord messages the AI surfaced for an answer —
-// the "relevant chat content in the middle that the user can scroll" (D4).
+// Scrollable panel of the conversation clusters the AI surfaced for an answer
+// — the "relevant chat content in the middle that the user can scroll" (D4).
+// Each snippet is one cluster: chronological messages with the matched line(s)
+// emphasized and surrounding context dimmed; clusters are split by a divider.
 class _SourcesPanel extends StatelessWidget {
-  const _SourcesPanel({required this.sources});
-  final List<DiscordChatSource> sources;
+  const _SourcesPanel({required this.snippets});
+  final List<DiscordChatSnippet> snippets;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Container(
-      constraints: const BoxConstraints(maxHeight: 240),
+      constraints: const BoxConstraints(maxHeight: 260),
       decoration: BoxDecoration(
         border: Border.all(color: scheme.outlineVariant),
         borderRadius: BorderRadius.circular(12),
@@ -692,7 +713,7 @@ class _SourcesPanel extends StatelessWidget {
                 Icon(Icons.forum_outlined, size: 16, color: scheme.secondary),
                 const SizedBox(width: AppDimens.spacingXs),
                 Text(
-                  'Related messages (${sources.length})',
+                  'Related conversations (${snippets.length})',
                   style: theme.textTheme.labelMedium
                       ?.copyWith(fontWeight: FontWeight.w600),
                 ),
@@ -708,46 +729,107 @@ class _SourcesPanel extends StatelessWidget {
                 AppDimens.spacingSm,
               ),
               shrinkWrap: true,
-              itemCount: sources.length,
-              separatorBuilder: (_, _) =>
-                  const SizedBox(height: AppDimens.spacingSm),
-              itemBuilder: (_, i) {
-                final s = sources[i];
-                final time = _sourceTime(s.timestamp);
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            s.authorName.isEmpty ? 'Unknown' : s.authorName,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: scheme.primary,
-                            ),
-                          ),
-                        ),
-                        if (time.isNotEmpty) ...[
-                          const SizedBox(width: AppDimens.spacingSm),
-                          Text(
-                            time,
-                            style: theme.textTheme.labelSmall
-                                ?.copyWith(color: scheme.onSurfaceVariant),
-                          ),
-                        ],
-                      ],
-                    ),
-                    Text(s.content, style: theme.textTheme.bodySmall),
-                  ],
-                );
-              },
+              itemCount: snippets.length,
+              // Visible divider so distinct conversations read as separate
+              // clusters.
+              separatorBuilder: (_, _) => const Padding(
+                padding:
+                    EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
+                child: Divider(height: 1),
+              ),
+              itemBuilder: (_, i) => _SnippetBlock(snippet: snippets[i]),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+// One conversation cluster: its messages in chronological order. Matched
+// messages are emphasized (subtle highlight + leading marker); context
+// messages are dimmed.
+class _SnippetBlock extends StatelessWidget {
+  const _SnippetBlock({required this.snippet});
+  final DiscordChatSnippet snippet;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < snippet.messages.length; i++) ...[
+          if (i > 0) const SizedBox(height: AppDimens.spacingXs),
+          _SnippetMessage(source: snippet.messages[i]),
+        ],
+      ],
+    );
+  }
+}
+
+class _SnippetMessage extends StatelessWidget {
+  const _SnippetMessage({required this.source});
+  final DiscordChatSource source;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final s = source;
+    final time = _sourceTime(s.timestamp);
+    // Matched line: full-strength text with a highlight; context: dimmed.
+    final authorColor = s.isMatch ? scheme.primary : scheme.onSurfaceVariant;
+    final contentStyle = theme.textTheme.bodySmall?.copyWith(
+      color: s.isMatch ? scheme.onSurface : scheme.onSurfaceVariant,
+    );
+
+    final row = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            if (s.isMatch) ...[
+              Icon(Icons.arrow_right, size: 14, color: scheme.primary),
+              const SizedBox(width: 2),
+            ],
+            Flexible(
+              child: Text(
+                s.authorName.isEmpty ? 'Unknown' : s.authorName,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontWeight: s.isMatch ? FontWeight.w700 : FontWeight.w600,
+                  color: authorColor,
+                ),
+              ),
+            ),
+            if (time.isNotEmpty) ...[
+              const SizedBox(width: AppDimens.spacingSm),
+              Text(
+                time,
+                style: theme.textTheme.labelSmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ],
+          ],
+        ),
+        Text(s.content, style: contentStyle),
+      ],
+    );
+
+    if (!s.isMatch) return row;
+    // Subtle highlighted background for the matched message(s).
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDimens.spacingXs,
+        vertical: 2,
+      ),
+      decoration: BoxDecoration(
+        color: scheme.primaryContainer.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: row,
     );
   }
 }

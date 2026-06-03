@@ -6,6 +6,7 @@ import '../models/discord_digest.dart';
 import '../models/discord_message.dart';
 import '../models/repo.dart';
 import '../repositories/discord_digest_repo.dart';
+import '../repositories/discord_fetch_repo.dart';
 import '../repositories/discord_message_repo.dart';
 import '../repositories/repo_repo.dart';
 import '../services/functions_service.dart';
@@ -17,12 +18,14 @@ class DiscordMessagesViewModel with ChangeNotifier {
     DiscordMessageRepository? messageRepository,
     DiscordDigestRepository? digestRepository,
     RepoRepository? repoRepository,
+    DiscordFetchRepository? fetchRepository,
     FunctionsService? functionsService,
   })  : _repoId = repoId,
         _date = date ?? DateTime.now(),
         _repo = messageRepository ?? DiscordMessageRepository(),
         _digestRepo = digestRepository ?? DiscordDigestRepository(),
         _repoRepo = repoRepository ?? RepoRepository(),
+        _fetchRepo = fetchRepository ?? DiscordFetchRepository(),
         _functions = functionsService ?? FunctionsService() {
     _sub = _repo.streamRecent(_repoId).listen((messages) {
       _messages = messages;
@@ -41,10 +44,16 @@ class DiscordMessagesViewModel with ChangeNotifier {
   final DiscordMessageRepository _repo;
   final DiscordDigestRepository _digestRepo;
   final RepoRepository _repoRepo;
+  final DiscordFetchRepository _fetchRepo;
   final FunctionsService _functions;
   StreamSubscription<List<DiscordMessage>>? _sub;
   StreamSubscription<DiscordDigest?>? _digestSub;
   StreamSubscription<Repo?>? _repoSub;
+  StreamSubscription<String?>? _fetchSub;
+  Timer? _fetchTimeout;
+
+  // Terminal fetch-request statuses: the bot round-trip is finished.
+  static const _terminalStatuses = {'done', 'ingested', 'digest_failed'};
 
   // The day the digest stream is currently subscribed to (YYYY-MM-DD). Follows
   // the range's end date; starts at today.
@@ -70,6 +79,21 @@ class DiscordMessagesViewModel with ChangeNotifier {
 
   bool _refreshing = false;
   bool get refreshing => _refreshing;
+
+  // When the last refresh round-trip completed (bot finished). Null until the
+  // first one finishes.
+  DateTime? _lastUpdatedAt;
+  DateTime? get lastUpdatedAt => _lastUpdatedAt;
+
+  // One-shot flag set when a refresh just finished, so the UI can show a single
+  // "Updated" toast. Cleared via [acknowledgeUpdated].
+  bool _justUpdated = false;
+  bool get justUpdated => _justUpdated;
+
+  // Consumes the one-shot [justUpdated] flag after the UI has shown its toast.
+  void acknowledgeUpdated() {
+    _justUpdated = false;
+  }
 
   bool _settingRange = false;
   bool get settingRange => _settingRange;
@@ -119,21 +143,54 @@ class DiscordMessagesViewModel with ChangeNotifier {
   }
 
   // Triggers an on-demand Discord backfill for the range's end date (latest
-  // day). The bot ingests the messages and the backend writes a digest, which
-  // arrives via the stream.
+  // day). The bot ingests the messages and the backend writes a digest. We keep
+  // [refreshing] true until the fetch-request doc reaches a terminal status, so
+  // the spinner reflects the real round-trip rather than just the enqueue.
   Future<void> refresh() async {
     if (_refreshing) return;
     _refreshing = true;
     notifyListeners();
+
+    String requestId;
     try {
-      await _functions.requestDiscordFetch(
+      requestId = await _functions.requestDiscordFetch(
         repoId: _repoId,
         date: _digestDateKey,
       );
-    } finally {
+    } catch (_) {
       _refreshing = false;
       notifyListeners();
+      return;
     }
+
+    // Watch the request status; finish when it reaches a terminal state.
+    _fetchSub?.cancel();
+    _fetchSub =
+        _fetchRepo.streamStatus(_repoId, requestId).listen((status) {
+      if (status != null && _terminalStatuses.contains(status)) {
+        _finishRefresh();
+      }
+    });
+
+    // Safety net: stop spinning even if no terminal status ever arrives.
+    _fetchTimeout?.cancel();
+    _fetchTimeout = Timer(const Duration(seconds: 120), () {
+      if (_refreshing) _finishRefresh();
+    });
+  }
+
+  // Marks a refresh as complete: stops the spinner, records the time, raises
+  // the one-shot "updated" flag, and tears down the status watch.
+  void _finishRefresh() {
+    _fetchSub?.cancel();
+    _fetchSub = null;
+    _fetchTimeout?.cancel();
+    _fetchTimeout = null;
+    if (!_refreshing) return;
+    _refreshing = false;
+    _lastUpdatedAt = DateTime.now();
+    _justUpdated = true;
+    notifyListeners();
   }
 
   // Sets the backfill date range for this repo's Discord channels. After this,
@@ -204,6 +261,8 @@ class DiscordMessagesViewModel with ChangeNotifier {
     _sub?.cancel();
     _digestSub?.cancel();
     _repoSub?.cancel();
+    _fetchSub?.cancel();
+    _fetchTimeout?.cancel();
     super.dispose();
   }
 }

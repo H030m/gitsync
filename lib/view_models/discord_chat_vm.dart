@@ -53,7 +53,7 @@ class DiscordChatViewModel with ChangeNotifier {
       _turns.add(DiscordChatTurn(
         role: 'assistant',
         content: reply.answer,
-        sources: reply.messages,
+        snippets: reply.snippets,
         createdAt: DateTime.now(),
       ));
     } catch (e) {
