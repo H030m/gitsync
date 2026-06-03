@@ -781,6 +781,13 @@ read:user       # 讀 user info
 - bot 把每頻道抓到的最新 messageId 隨 `completeDiscordFetch` 回報 → 更新各頻道 `lastMessageId`（watermark 前進）。
 - 起始日期由 callable **`setDiscordStartDate({repoId, startDate})`**（auth）設定：對該 repo 所有頻道寫 `startDate` 並 reset `lastMessageId`，下次從新起點補抓缺口（不重複）。
 
+**範圍雙 cursor + prune（2026-06-03 升級，現行）**：單一起始日期升級成 **`[startDate, endDate]` 範圍**，存在 `repos/{repoId}.discordStartDate` / `discordEndDate`（repo-wide）。理由：舊單 watermark 在「已讀到 7 日、想把起點改回 5 日」時會被 `watermark(7) > snowflake(5)` 卡住而抓不到前面。
+
+- **兩個 cursor**：low = `snowflakeForTaipeiDate(start)`（含），high = `snowflakeForTaipeiDayEnd(end)`（= 隔天 00:00，**exclusive 上界**）。per-channel `lastMessageId` 仍是增量高水位。bot 抓 `after: lastMessageId ?? low`，且**忽略 id ≥ high 的訊息**（不抓 end 之後），watermark 只在範圍內前進。`claimDiscordFetch` 回傳新增 top-level `startDate`/`endDate`。
+- **callable `setDiscordRange({repoId, startDate, endDate})`**（auth，取代 app 對 `setDiscordStartDate` 的呼叫）：① 寫範圍到 repo doc（**持久化** → app 重新登入仍記得、預填 range picker）；② reset 各頻道 `lastMessageId`；③ **prune**：刪掉範圍外的 `discordMessages`（timestamp < start 或 ≥ end+1 天）與 `discordDigests/{date}`（date 不在 `[start,end]`）。**破壞性**——縮範圍會真的刪資料，放寬時 bot 重抓回來（messageId 去重不重複）。
+- **逐日 digest** `discordRangeDigestFlow`：`completeDiscordFetch` 在 repo 有範圍時對**範圍內每一天**各產一份 `discordDigests/{date}`（沒範圍則退回單日）。省成本 guard：空白日、鎖定日、以及「stored digest 的 `messageCount` == 當天 `count()`」的未變動日都跳過（不呼叫 OpenAI）；上限 92 天。
+- App picker 改用 `showDateRangePicker`（預設帶入已存範圍）；Refresh 改成串 `fetchRequests/{id}.status` 等 terminal（`done`/`ingested`/`digest_failed`）才停 spinner 並顯示「Updated」。
+
 ### 7.3 頻道設定 — `/gitsync-listen` slash command + 起始日期
 
 頻道對照從靜態 `.env` 改成在 Discord 內動態綁定：
@@ -800,7 +807,7 @@ read:user       # 讀 user info
 1. 讀該 repo 當天（Asia/Taipei `[00:00,24:00)`）的 `discordMessages`。
 2. 空的就 early-return（`markdown:null`，不呼叫 OpenAI）。
 3. 否則把 `authorName: content` 串成 transcript，用 `gpt-4o-mini` 整理成 markdown。
-4. 寫 `repos/{repoId}/discordDigests/{date}` `{date, markdown, messageCount, generatedAt}`。
+4. 寫 `repos/{repoId}/discordDigests/{date}` `{date, markdown, messageCount, generatedAt}`。**鎖定的 digest 不覆寫**（lock 閘，見 §7.7）；範圍回補時這支 flow 被 `discordRangeDigestFlow` 逐日呼叫（見 §7.2）。
 
 App 的「Daily → Discord」tab 串 `discordDigests/{今天}`，把 digest 卡片渲染在訊息列表上方（refresh 按鈕鏡像 Summary tab 的 Regenerate）。供日報 / 未來交接文件 RAG 取用。
 
@@ -822,6 +829,22 @@ App 的「Daily → Discord」tab 串 `discordDigests/{今天}`，把 digest 卡
 - ❌ 給 bot Firebase Admin service account（改用 poll-via-function）
 
 **注意**：bot 仍需 **24/7 常駐**——為了處理 slash command 與輪詢 fetch queue。正式上線可遷至 Cloud Run（min-instance=1）。
+
+### 7.7 AI 聊天 + digest 編輯／鎖定（2026-06-03 新增）
+
+Daily → Discord 下半部從「訊息列表」改成**與 AI 對話的聊天框**；digest 卡片可收合、鎖定、叫 AI 改寫。
+
+**AI 聊天 `discordChat`**（`onCall`，auth）— agentic function-calling loop（沿用 §5.2 `assignTaskFlow` 模式，`gpt-4o-mini`），三個工具，最省成本優先：
+
+- `listDaySummaries` / `getDaySummary`（`functions/src/tools/discordSearch.ts`）— 讀逐日 digest（§7.2 範圍逐日 digest 產生），摘要類問題先走這條，context 從 O(messages) 降到 O(days)。
+- `searchDiscordMessages` — 關鍵字搜原始訊息，回傳**分組對話 snippet**：每個命中訊息前後各帶 `CONTEXT_BEFORE/AFTER`（=2）則**同頻道**上下文（`isMatch` 標記命中 vs 脈絡），相鄰命中視窗合併，依命中數→時間排序。**仍是子字串關鍵字比對，非語意**（Discord 訊息尚未做 embedding，`onDiscordMessageCreated` 仍 stub；`firestore.indexes.json` 已預留 `discordMessages.embedding` 向量索引供日後接 `findNearest`）。
+- 回傳 `{ answer, snippets }`；UI 把每段 snippet 渲染成叢集（命中強調、脈絡淡化、divider 分隔）。
+
+**digest 編輯／鎖定**（lock 是所有寫 digest 路徑的單一閘）：
+
+- **`setDigestLock({repoId, date, locked})`**（`onCall`）— 寫 `discordDigests/{date}.locked`。鎖住後**自動排程 digest（§7.2/§7.4）與 AI 改寫都跳過**，不覆蓋使用者 pin 的版本。
+- **`editDiscordDigest({repoId, date, instruction})`**（`onCall`）— AI 依指令改寫某天 digest 的 markdown；digest 鎖住則拒絕。
+- **`botEditDigest`**（`onRequest`，secret-auth）— Discord slash command **`/gitsync-digest instruction:<…> [date]`** 的橋接：由 channelId 反查 repo（`discordChannelIds` array-contains），呼叫同一套改寫流程（鎖住回 409、查無回 404）。
 
 ---
 
