@@ -1,6 +1,7 @@
 import 'package:cloud_functions/cloud_functions.dart';
 
 import '../config/app_config.dart';
+import '../models/daily_brief.dart';
 import '../models/discord_chat.dart';
 import '../models/sub_task.dart';
 import 'fake/fake_functions_service.dart';
@@ -49,6 +50,17 @@ abstract class FunctionsService {
   Future<String> summarizeDay({
     required String repoId,
     required String date,
+  });
+
+  /// Asks the AI a question about a given day's activity (commits / completed
+  /// tasks / Discord discussion + repo history). The backend runs an agentic
+  /// loop and returns the answer plus the commits it surfaced. [history] is
+  /// prior turns, oldest first, for follow-up context.
+  Future<DailyBriefReply> dailyBrief({
+    required String repoId,
+    required String date,
+    required String question,
+    List<DailyBriefTurn> history = const [],
   });
 
   // ---- Discord -----------------------------------------------------------
@@ -199,6 +211,22 @@ class _LiveFunctionsService implements FunctionsService {
     });
     final data = Map<String, dynamic>.from(res.data as Map);
     return data['summary'] as String;
+  }
+
+  @override
+  Future<DailyBriefReply> dailyBrief({
+    required String repoId,
+    required String date,
+    required String question,
+    List<DailyBriefTurn> history = const [],
+  }) async {
+    final res = await _callable('dailyBrief').call({
+      'repoId': repoId,
+      'date': date,
+      'question': question,
+      'history': history.map((t) => t.toMap()).toList(),
+    });
+    return DailyBriefReply.fromMap(Map<String, dynamic>.from(res.data as Map));
   }
 
   @override

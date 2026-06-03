@@ -1,5 +1,6 @@
 import '../../config/app_config.dart';
 import '../../data/dummy_data.dart';
+import '../../models/daily_brief.dart';
 import '../../models/discord_chat.dart';
 import '../../models/sub_task.dart';
 import '../../repositories/fake/fake_discord_digest_repo.dart';
@@ -120,6 +121,50 @@ class FakeFunctionsService implements FunctionsService {
   }) async {
     await Future.delayed(AppConfig.simulatedLatency * 4);
     return DummyData.todayReport.summary;
+  }
+
+  @override
+  Future<DailyBriefReply> dailyBrief({
+    required String repoId,
+    required String date,
+    required String question,
+    List<DailyBriefTurn> history = const [],
+  }) async {
+    await Future.delayed(AppConfig.simulatedLatency * 3);
+
+    // Keyword-match the demo commits the same way the backend tool does, so the
+    // fake answer cites real "sources" in the panel.
+    final terms = question
+        .toLowerCase()
+        .split(RegExp(r'[^a-z0-9一-鿿]+'))
+        .where((t) => t.length >= 2)
+        .toSet();
+    final commits = DummyData.commits;
+    final matched = commits.where((c) {
+      final hay = '${c.message} ${c.aiSummary ?? ''}'.toLowerCase();
+      return terms.any(hay.contains);
+    }).toList();
+    final hits = matched.isNotEmpty ? matched : commits;
+
+    final sources = hits
+        .map((c) => DailyBriefSource(
+              sha: c.sha,
+              message: c.message.split('\n').first,
+              authorName: c.author.name,
+              authorLogin: c.author.login,
+              aiSummary: c.aiSummary,
+              linkedTaskIds: c.linkedTaskIds,
+            ))
+        .toList();
+
+    final answer = matched.isNotEmpty
+        ? '根據今天的活動，有 ${matched.length} 個相關的 commit（見下方來源）。'
+            '重點：${matched.first.aiSummary ?? matched.first.message}\n\n'
+            '*(這是 fake backend 的示範回覆。)*'
+        : '今天沒有和你問題直接相關的 commit；以下列出最近的提交作為參考。\n\n'
+            '*(這是 fake backend 的示範回覆。)*';
+
+    return DailyBriefReply(answer: answer, sources: sources);
   }
 
   // ---- Discord -----------------------------------------------------------

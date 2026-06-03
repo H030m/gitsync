@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitsync/models/daily_brief.dart';
 import 'package:gitsync/models/discord_chat.dart';
 import 'package:gitsync/models/repo.dart';
 import 'package:gitsync/models/sub_task.dart';
@@ -69,6 +70,15 @@ class _FakeFunctionsService implements FunctionsService {
   Future<String> summarizeDay({
     required String repoId,
     required String date,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<DailyBriefReply> dailyBrief({
+    required String repoId,
+    required String date,
+    required String question,
+    List<DailyBriefTurn> history = const [],
   }) =>
       throw UnimplementedError();
 

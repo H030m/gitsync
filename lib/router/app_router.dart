@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../config/app_config.dart';
 import '../view_models/commits_vm.dart';
+import '../view_models/daily_brief_vm.dart';
 import '../view_models/daily_report_vm.dart';
 import '../view_models/discord_chat_vm.dart';
 import '../view_models/discord_messages_vm.dart';
@@ -84,6 +85,9 @@ final GoRouter appRouter = GoRouter(
             ),
             ChangeNotifierProvider(
               create: (_) => DailyReportViewModel(repoId: repoId),
+            ),
+            ChangeNotifierProvider(
+              create: (_) => DailyBriefChatViewModel(repoId: repoId),
             ),
           ],
           child: RepoShell(repoId: repoId, child: child),

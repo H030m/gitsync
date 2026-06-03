@@ -334,6 +334,32 @@ No blockers raised in chat today.''';
         summary:
             'Sprint 1 skeleton merged. Alice started GitHub OAuth wiring; Bob '
             'drafted the breakdownTask zod schema. No blockers reported.',
+        highlights: const [
+          'Sprint 1 MVVM skeleton merged (PR #1)',
+          'GitHub OAuth flow wired into AuthService',
+          'breakdownTask zod schema + cycle detection drafted',
+        ],
+        blockers: const [
+          'Callback URL on Windows not yet verified by anyone',
+        ],
+        commitThemes: const [
+          CommitTheme(
+            theme: 'Project skeleton',
+            summary: 'MVVM scaffolding and Firebase config placeholders landed.',
+            commitCount: 1,
+          ),
+          CommitTheme(
+            theme: 'Auth',
+            summary: 'GitHub OAuth provider added; access token persisted.',
+            commitCount: 1,
+          ),
+          CommitTheme(
+            theme: 'AI flows',
+            summary: 'breakdownTask schema + cycle-detection draft started.',
+            commitCount: 1,
+          ),
+        ],
+        commitCount: 3,
         completedTaskIds: const ['task-001'],
         memberContributions: const {
           demoUserId: MemberContribution(tasksDone: 1, commits: 1),
