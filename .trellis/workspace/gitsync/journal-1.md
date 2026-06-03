@@ -86,3 +86,36 @@ Added --dart-define=TARGET (cloud|emulator) wiring so the app and Discord bot sw
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Summary intelligence hub — agentic daily report + brief chat
+
+**Date**: 2026-06-04
+**Task**: Summary intelligence hub — agentic daily report + brief chat
+**Branch**: `feature/summary-intel-hub`
+
+### Summary
+
+Implemented agentic summarizeDayFlow (getDayDigest/searchPastCommits/finalizeReport + deterministic counts), dailyBrief agentic chat callable, Cloud Tasks fan-out via onTaskDispatched, and rebuilt the Summary tab into a developer intelligence hub. Gates green: functions 131/131, flutter analyze clean, 12 flutter tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e31641a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
