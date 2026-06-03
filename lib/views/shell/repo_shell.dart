@@ -22,25 +22,25 @@ class RepoShell extends StatelessWidget {
     _NavItem(
       icon: Icons.view_kanban_outlined,
       selectedIcon: Icons.view_kanban,
-      label: 'Tasks',
+      label: '任務',
       segment: 'tasks',
     ),
     _NavItem(
       icon: Icons.today_outlined,
       selectedIcon: Icons.today,
-      label: 'Daily',
+      label: '每日彙整',
       segment: 'daily',
     ),
     _NavItem(
       icon: Icons.bar_chart_outlined,
       selectedIcon: Icons.bar_chart,
-      label: 'Stats',
+      label: '統計',
       segment: 'stats',
     ),
     _NavItem(
       icon: Icons.settings_outlined,
       selectedIcon: Icons.settings,
-      label: 'Settings',
+      label: '設定',
       segment: 'settings',
     ),
   ];
@@ -108,7 +108,9 @@ class _SlidingBottomNavState extends State<_SlidingBottomNav> {
     return Container(
       height: _height + bottomPadding,
       decoration: BoxDecoration(
-        color: const Color(0xFF222630),
+        color: Theme.of(context).brightness == Brightness.dark
+            ? const Color(0xFF222630)
+            : const Color(0xFFFFFFFF),
         boxShadow: [
           BoxShadow(
             color: scheme.shadow.withValues(alpha: 0.08),

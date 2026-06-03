@@ -20,7 +20,7 @@ class TaskDetailsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Task details')),
+      appBar: AppBar(title: const Text('任務細節'), centerTitle: true),
       body: Consumer<TasksBoardViewModel>(
         builder: (ctx, vm, _) {
           final task = vm.tasks.firstWhere(
@@ -60,13 +60,13 @@ class TaskDetailsPage extends StatelessWidget {
               ),
               if (task.description.isNotEmpty) ...[
                 const SizedBox(height: AppDimens.spacingLg),
-                _SectionTitle('Description'),
+                _SectionTitle('任務內容'),
                 const SizedBox(height: AppDimens.spacingSm),
                 Text(task.description, style: theme.textTheme.bodyMedium),
               ],
               if (task.handoffDoc != null) ...[
                 const SizedBox(height: AppDimens.spacingLg),
-                _SectionTitle('Handoff'),
+                _SectionTitle('交接內容'),
                 const SizedBox(height: AppDimens.spacingSm),
                 Card(
                   margin: EdgeInsets.zero,

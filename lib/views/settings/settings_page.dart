@@ -98,7 +98,9 @@ class _SettingsCard extends StatelessWidget {
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: const Color(0xFF222630),
+        color: brightness == Brightness.dark
+            ? const Color(0xFF222630)
+            : const Color(0xFFFFFFFF),
         borderRadius: BorderRadius.circular(AppDimens.radiusLg),
         boxShadow: [
           BoxShadow(

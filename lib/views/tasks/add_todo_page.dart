@@ -46,7 +46,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Add todo')),
+      appBar: AppBar(title: const Text('新增任務'), centerTitle: true),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: _step == 0 ? _inputStep() : _confirmStep(),
@@ -62,10 +62,8 @@ class _AddTodoPageState extends State<AddTodoPage> {
           constraints: const BoxConstraints(maxHeight: 360),
           child: TextField(
             decoration: const InputDecoration(
-              labelText: 'Project spec',
-              hintText:
-                  'Paste your SPEC.md (Markdown) here — the AI breaks it '
-                  'into a high-level TODO list.',
+              labelText: '專案架構',
+              hintText: '輸入專案架構…',
               border: OutlineInputBorder(),
               alignLabelWithHint: true,
             ),
@@ -79,7 +77,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
         FilledButton.icon(
           onPressed: _busy || _goal.trim().isEmpty ? null : _runBreakdown,
           icon: const Icon(Icons.auto_awesome),
-          label: Text(_busy ? 'Breaking down…' : 'Break down with AI'),
+          label: Text(_busy ? '生成中…' : '生成 Todos'),
         ),
         if (_error != null) ...[
           const SizedBox(height: 16),
@@ -95,7 +93,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('Generated ${_subtasks.length} subtasks',
+        Text('已生成 ${_subtasks.length} 個子任務',
             style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         Expanded(
@@ -117,7 +115,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
           onPressed: () =>
               Provider.of<NavigationService>(context, listen: false)
                   .goTasks(widget.repoId),
-          child: const Text('Done'),
+          child: const Text('確認並增加 Todos'),
         ),
       ],
     );
