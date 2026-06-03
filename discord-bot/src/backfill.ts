@@ -18,7 +18,7 @@ import {
 import type { BotConfig } from './config';
 import { shouldKeepMessage } from './filter';
 import { sendWithRetry, type IngestPayload } from './ingest';
-import { snowflakeForTaipeiDate } from './snowflake';
+import { snowflakeForTaipeiDate, snowflakeForTaipeiDayEnd } from './snowflake';
 
 const DISCORD_FETCH_LIMIT = 100; // max messages per REST page
 
@@ -33,6 +33,8 @@ interface ClaimResponse {
   requestId?: string;
   repoId?: string;
   date?: string;
+  startDate?: string | null; // repo-level backfill range (low cursor)
+  endDate?: string | null; // repo-level backfill range (high cursor, inclusive day)
   channels?: ChannelClaim[]; // new per-channel shape
   channelIds?: string[]; // legacy fallback
 }
@@ -56,14 +58,20 @@ function resolveChannels(claim: ClaimResponse): ChannelClaim[] {
   }));
 }
 
-// Fetches every message after `afterId`, paginating forward via the `after`
-// cursor. Returns the messages plus the newest id seen (the new watermark).
+// Fetches messages in the half-open window (afterId, highCursor), paginating
+// forward via the `after` cursor. `highCursor` (exclusive) bounds the range's
+// end — messages with id >= highCursor are skipped, and once a batch reaches
+// past it we stop. Returns the in-range messages plus the newest in-range id
+// (the new watermark — never beyond the range end).
 async function fetchMessagesAfter(
   channel: TextBasedChannel,
   afterId: string,
+  highCursor: string | null,
 ): Promise<{ messages: Message[]; newWatermark: string }> {
   const collected: Message[] = [];
+  const high = highCursor ? BigInt(highCursor) : null;
   let after = afterId;
+  let maxInRange = afterId; // watermark stays within the range end
 
   for (;;) {
     const batch = await channel.messages.fetch({
@@ -73,17 +81,25 @@ async function fetchMessagesAfter(
     if (batch.size === 0) break;
 
     let batchMax = after;
+    let reachedEnd = false;
     for (const msg of batch.values()) {
+      const id = BigInt(msg.id);
+      if (BigInt(batchMax) < id) batchMax = msg.id; // advance over ALL ids
+      if (high !== null && id >= high) {
+        reachedEnd = true; // past the range end — skip but note we're done
+        continue;
+      }
       collected.push(msg);
-      if (BigInt(msg.id) > BigInt(batchMax)) batchMax = msg.id;
+      if (BigInt(maxInRange) < id) maxInRange = msg.id;
     }
 
     if (batchMax === after) break; // no forward progress — safety against loops
     after = batchMax;
+    if (reachedEnd) break; // saw messages past the range end
     if (batch.size < DISCORD_FETCH_LIMIT) break;
   }
 
-  return { messages: collected, newWatermark: after };
+  return { messages: collected, newWatermark: maxInRange };
 }
 
 // Processes one claimed fetch request: incrementally backfills each channel,
@@ -95,7 +111,20 @@ async function processRequest(client: Client, cfg: BotConfig, claim: ClaimRespon
     return;
   }
   const channels = resolveChannels(claim);
-  console.log(`[backfill] claimed ${requestId} repo=${repoId} date=${date} channels=${channels.length}`);
+
+  // High cursor (exclusive upper bound) from the repo-level range end; null when
+  // no range is configured (no upper bound → fetch up to "now").
+  let highCursor: string | null = null;
+  if (claim.endDate) {
+    try {
+      highCursor = snowflakeForTaipeiDayEnd(claim.endDate);
+    } catch (e) {
+      console.error(`[backfill] bad endDate ${claim.endDate}: ${String(e)}`);
+    }
+  }
+  console.log(
+    `[backfill] claimed ${requestId} repo=${repoId} range=${claim.startDate ?? '-'}..${claim.endDate ?? '-'} channels=${channels.length}`,
+  );
 
   let ingestedCount = 0;
   const watermarks: Array<{ channelId: string; lastMessageId: string }> = [];
@@ -113,17 +142,32 @@ async function processRequest(client: Client, cfg: BotConfig, claim: ClaimRespon
         continue;
       }
 
-      // Cursor: explicit watermark wins; else the configured start date; else
-      // fall back to the request's day so an unconfigured channel still works.
+      // Low cursor: explicit per-channel watermark wins; else the repo-level
+      // range start; else the per-channel start date; else the request's day.
+      // Each channel resolves its OWN watermark — there is no shared watermark.
+      const lowDate = claim.startDate ?? ch.startDate ?? date;
       let after: string;
       try {
-        after = ch.lastMessageId ?? snowflakeForTaipeiDate(ch.startDate ?? date);
+        after = ch.lastMessageId ?? snowflakeForTaipeiDate(lowDate);
       } catch (e) {
         console.error(`[backfill] bad start date for channel ${ch.channelId}: ${String(e)}`);
         continue;
       }
+      // Per-channel cursor trace: confirms each channel reads from its own
+      // marker. If two channels log the same cursor, that channel's stored
+      // watermark is stale (clear it via the app's "Start date" button).
+      const cursorSource = ch.lastMessageId
+        ? 'watermark'
+        : claim.startDate
+          ? 'rangeStart'
+          : ch.startDate
+            ? 'startDate'
+            : 'requestDate';
+      console.log(
+        `[backfill] channel ${ch.channelId} cursor=${after} (${cursorSource}) high=${highCursor ?? '-'}`,
+      );
 
-      const { messages, newWatermark } = await fetchMessagesAfter(channel, after);
+      const { messages, newWatermark } = await fetchMessagesAfter(channel, after, highCursor);
       for (const msg of messages) {
         if (
           !shouldKeepMessage({

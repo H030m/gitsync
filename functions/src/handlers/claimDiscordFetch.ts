@@ -92,16 +92,27 @@ export const claimDiscordFetch = onRequest(
     }
     const channels = [...byId.values()];
 
+    // Repo-level backfill range (set via setDiscordRange). The bot derives the
+    // low/high snowflake cursors from these; null falls back to per-channel
+    // startDate / the request day.
+    const repoData = repoSnap.data() ?? {};
+    const startDate = (repoData.discordStartDate as string | undefined) ?? null;
+    const endDate = (repoData.discordEndDate as string | undefined) ?? null;
+
     logger.info('claimDiscordFetch claimed request', {
       requestId: claimed.requestId,
       repoId: claimed.repoId,
       date: claimed.date,
       channelCount: channels.length,
+      startDate,
+      endDate,
     });
     res.status(200).send({
       requestId: claimed.requestId,
       repoId: claimed.repoId,
       date: claimed.date,
+      startDate,
+      endDate,
       channels,
       channelIds: channels.map((c) => c.channelId), // legacy field
     });

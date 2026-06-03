@@ -75,6 +75,16 @@ abstract class FunctionsService {
     required String startDate,
   });
 
+  /// Sets the Discord backfill date range ([startDate]..[endDate], both
+  /// YYYY-MM-DD) for every channel bound to [repoId] and resets their
+  /// watermarks so the next fetch re-pulls the range (existing messages are
+  /// deduped, not duplicated).
+  Future<void> setDiscordRange({
+    required String repoId,
+    required String startDate,
+    required String endDate,
+  });
+
   /// Asks the AI to rewrite the digest for [date] (YYYY-MM-DD) per
   /// [instruction]. Returns the new markdown. Throws if the digest is locked.
   Future<String> editDiscordDigest({
@@ -225,6 +235,19 @@ class _LiveFunctionsService implements FunctionsService {
     await _callable('setDiscordStartDate').call({
       'repoId': repoId,
       'startDate': startDate,
+    });
+  }
+
+  @override
+  Future<void> setDiscordRange({
+    required String repoId,
+    required String startDate,
+    required String endDate,
+  }) async {
+    await _callable('setDiscordRange').call({
+      'repoId': repoId,
+      'startDate': startDate,
+      'endDate': endDate,
     });
   }
 

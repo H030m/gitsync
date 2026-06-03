@@ -154,6 +154,15 @@ class FakeFunctionsService implements FunctionsService {
   }
 
   @override
+  Future<void> setDiscordRange({
+    required String repoId,
+    required String startDate,
+    required String endDate,
+  }) async {
+    await Future.delayed(AppConfig.simulatedLatency);
+  }
+
+  @override
   Future<String> editDiscordDigest({
     required String repoId,
     required String date,

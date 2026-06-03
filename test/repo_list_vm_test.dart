@@ -95,6 +95,14 @@ class _FakeFunctionsService implements FunctionsService {
       throw UnimplementedError();
 
   @override
+  Future<void> setDiscordRange({
+    required String repoId,
+    required String startDate,
+    required String endDate,
+  }) =>
+      throw UnimplementedError();
+
+  @override
   Future<String> editDiscordDigest({
     required String repoId,
     required String date,

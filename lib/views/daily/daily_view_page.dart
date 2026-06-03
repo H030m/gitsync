@@ -150,6 +150,27 @@ class _CommitsTab extends StatelessWidget {
   }
 }
 
+// `YYYY-MM-DD` key for a date (used in the range SnackBar).
+String _dayKey(DateTime d) =>
+    '${d.year.toString().padLeft(4, '0')}-'
+    '${d.month.toString().padLeft(2, '0')}-'
+    '${d.day.toString().padLeft(2, '0')}';
+
+// `MM/dd` for a date (used in the compact range button label).
+String _monthDay(DateTime d) =>
+    '${d.month.toString().padLeft(2, '0')}/${d.day.toString().padLeft(2, '0')}';
+
+// Date-range button label: shows the saved range, the busy state, or a prompt.
+String _rangeLabel(DiscordMessagesViewModel vm) {
+  if (vm.settingRange) return 'Saving…';
+  final start = vm.rangeStart;
+  final end = vm.rangeEnd;
+  if (start != null && end != null) {
+    return '${_monthDay(start)} ~ ${_monthDay(end)}';
+  }
+  return 'Date range';
+}
+
 class _DiscordTab extends StatelessWidget {
   const _DiscordTab();
 
@@ -182,41 +203,46 @@ class _DiscordTab extends StatelessWidget {
                     runSpacing: AppDimens.spacingSm,
                     children: [
                       OutlinedButton.icon(
-                        onPressed: vm.settingStartDate
+                        onPressed: vm.settingRange
                             ? null
                             : () async {
                                 final now = DateTime.now();
-                                final picked = await showDatePicker(
+                                // Default the picker to the user's saved range
+                                // so it stays at the position they set.
+                                final initial = (vm.rangeStart != null &&
+                                        vm.rangeEnd != null)
+                                    ? DateTimeRange(
+                                        start: vm.rangeStart!,
+                                        end: vm.rangeEnd!,
+                                      )
+                                    : DateTimeRange(start: now, end: now);
+                                final picked = await showDateRangePicker(
                                   context: ctx,
-                                  initialDate: now,
                                   firstDate: DateTime(2020),
                                   lastDate: now,
+                                  initialDateRange: initial,
                                 );
                                 if (picked == null) return;
-                                await vm.setStartDate(picked);
+                                await vm.setRange(picked.start, picked.end);
                                 if (!ctx.mounted) return;
-                                final key =
-                                    '${picked.year.toString().padLeft(4, '0')}-'
-                                    '${picked.month.toString().padLeft(2, '0')}-'
-                                    '${picked.day.toString().padLeft(2, '0')}';
                                 ScaffoldMessenger.of(ctx).showSnackBar(
                                   SnackBar(
                                     content: Text(
-                                      'Start date set to $key. Tap Refresh to backfill.',
+                                      'Range set to ${_dayKey(picked.start)} ~ '
+                                      '${_dayKey(picked.end)}. '
+                                      'Tap Refresh to backfill.',
                                     ),
                                   ),
                                 );
                               },
-                        icon: vm.settingStartDate
+                        icon: vm.settingRange
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
                                 child: CircularProgressIndicator(strokeWidth: 2),
                               )
-                            : const Icon(Icons.event_outlined),
-                        label: Text(
-                          vm.settingStartDate ? 'Saving…' : 'Start date',
-                        ),
+                            : const Icon(Icons.date_range_outlined),
+                        label: Text(_rangeLabel(vm)),
                       ),
                       FilledButton.icon(
                         onPressed: vm.refreshing ? null : vm.refresh,
@@ -368,7 +394,14 @@ class _DigestCardState extends State<_DigestCard> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        MarkdownView(data: digest.markdown),
+                        // Long digests can overflow the card; cap the height
+                        // and let the markdown scroll within it.
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 360),
+                          child: SingleChildScrollView(
+                            child: MarkdownView(data: digest.markdown),
+                          ),
+                        ),
                         const SizedBox(height: AppDimens.spacingSm),
                         const Divider(height: 1),
                         const SizedBox(height: AppDimens.spacingSm),

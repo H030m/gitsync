@@ -14,6 +14,7 @@ export { setDiscordWebhook } from './handlers/setDiscordWebhook';
 export { subscribeToTopic } from './handlers/subscribeToTopic';
 export { requestDiscordFetch } from './handlers/requestDiscordFetch';
 export { setDiscordStartDate } from './handlers/setDiscordStartDate';
+export { setDiscordRange } from './handlers/setDiscordRange';
 export { discordChat } from './handlers/discordChat';
 export { editDiscordDigest } from './handlers/editDiscordDigest';
 export { setDigestLock } from './handlers/setDigestLock';
