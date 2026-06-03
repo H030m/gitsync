@@ -193,6 +193,13 @@ apps/gitsync/
 │   │   ├── messageCount: number
 │   │   └── generatedAt: Timestamp
 │   │
+│   ├── discordChannels/{channelId}             # per-channel 增量回補設定 (§7.2)
+│   │   ├── guildId: string
+│   │   ├── startDate: string?                  # YYYY-MM-DD，app date picker 設
+│   │   ├── lastMessageId: string?              # 增量 watermark（最後抓到的 snowflake）
+│   │   ├── startDateSetAt: Timestamp?
+│   │   └── lastFetchedAt: Timestamp?
+│   │
 │   └── dailyReports/{YYYY-MM-DD}
 │       ├── repoId: string
 │       ├── summary: string                     # AI 生成
@@ -767,7 +774,14 @@ read:user       # 讀 user info
 
 **第二層防護**：`discordMessageIngest` 端再過一次相同雜訊規則（`functions/src/tools/discordFilter.ts`，與 bot 端 `filter.ts` 同步維護）——防 bot 規則有漏或兩邊不一致。
 
-### 7.3 頻道設定 — `/gitsync-listen` slash command
+**增量回補 + 起始日期（per-channel watermark）**：每個綁定頻道在 `repos/{repoId}/discordChannels/{channelId}` 存 `startDate`（app date picker 設）+ `lastMessageId`（watermark）。
+
+- `claimDiscordFetch` 回傳改成 per-channel `[{ channelId, startDate, lastMessageId }]`（相容舊 `channelIds`，缺設定的頻道 startDate/lastMessageId 為 null）。
+- bot 對每個頻道用 `channel.messages.fetch({ after })` **往新方向**分頁，cursor = `lastMessageId ?? snowflake(startDate ?? 今天)`，只抓 watermark 之後的新訊息（不再重抓整批；已進 Firestore 的靠 messageId 去重）。snowflake 由日期換算 `((unixMs-1420070400000)<<22)`，`functions/src/tools/discordSnowflake.ts` ↔ `discord-bot/src/snowflake.ts` 須同步。
+- bot 把每頻道抓到的最新 messageId 隨 `completeDiscordFetch` 回報 → 更新各頻道 `lastMessageId`（watermark 前進）。
+- 起始日期由 callable **`setDiscordStartDate({repoId, startDate})`**（auth）設定：對該 repo 所有頻道寫 `startDate` 並 reset `lastMessageId`，下次從新起點補抓缺口（不重複）。
+
+### 7.3 頻道設定 — `/gitsync-listen` slash command + 起始日期
 
 頻道對照從靜態 `.env` 改成在 Discord 內動態綁定：
 

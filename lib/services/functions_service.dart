@@ -66,6 +66,14 @@ abstract class FunctionsService {
     required String date,
   });
 
+  /// Sets the Discord backfill start date (YYYY-MM-DD) for every channel bound
+  /// to [repoId] and resets their watermarks so the next fetch re-pulls from
+  /// the new start (existing messages are deduped, not duplicated).
+  Future<void> setDiscordStartDate({
+    required String repoId,
+    required String startDate,
+  });
+
   // ---- FCM ---------------------------------------------------------------
 
   Future<void> subscribeToTopic({
@@ -180,6 +188,17 @@ class _LiveFunctionsService implements FunctionsService {
     });
     final data = Map<String, dynamic>.from(res.data as Map);
     return data['requestId'] as String;
+  }
+
+  @override
+  Future<void> setDiscordStartDate({
+    required String repoId,
+    required String startDate,
+  }) async {
+    await _callable('setDiscordStartDate').call({
+      'repoId': repoId,
+      'startDate': startDate,
+    });
   }
 
   @override

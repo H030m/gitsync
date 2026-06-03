@@ -144,6 +144,14 @@ class FakeFunctionsService implements FunctionsService {
     return 'fake-fetch-req-001';
   }
 
+  @override
+  Future<void> setDiscordStartDate({
+    required String repoId,
+    required String startDate,
+  }) async {
+    await Future.delayed(AppConfig.simulatedLatency);
+  }
+
   // ---- FCM ---------------------------------------------------------------
 
   @override

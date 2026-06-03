@@ -28,6 +28,7 @@ export const completeDiscordFetch = onRequest(
       repoId?: string;
       requestId?: string;
       ingestedCount?: number;
+      watermarks?: Array<{ channelId?: string; lastMessageId?: string }>;
     };
     const { repoId, requestId } = body;
     if (!repoId || typeof repoId !== 'string') {
@@ -61,6 +62,23 @@ export const completeDiscordFetch = onRequest(
       ingestedCount,
       ingestedAt: FieldValue.serverTimestamp(),
     });
+
+    // 1b. Advance each channel's watermark to the newest message the bot saw,
+    //     so the next backfill only fetches messages after it.
+    const watermarks = Array.isArray(body.watermarks) ? body.watermarks : [];
+    if (watermarks.length > 0) {
+      const batch = db.batch();
+      for (const w of watermarks) {
+        if (w && typeof w.channelId === 'string' && typeof w.lastMessageId === 'string') {
+          batch.set(
+            db.doc(`apps/gitsync/repos/${repoId}/discordChannels/${w.channelId}`),
+            { lastMessageId: w.lastMessageId, lastFetchedAt: FieldValue.serverTimestamp() },
+            { merge: true },
+          );
+        }
+      }
+      await batch.commit();
+    }
 
     // 2. Run the digest flow. A digest failure must not crash the request —
     //    the messages are already ingested, so flag it and let the user retry.
