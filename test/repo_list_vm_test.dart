@@ -87,6 +87,13 @@ class _FakeFunctionsService implements FunctionsService {
       throw UnimplementedError();
 
   @override
+  Future<void> setDiscordStartDate({
+    required String repoId,
+    required String startDate,
+  }) =>
+      throw UnimplementedError();
+
+  @override
   Future<void> subscribeToTopic({
     required String token,
     required String topic,

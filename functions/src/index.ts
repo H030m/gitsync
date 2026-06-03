@@ -13,6 +13,7 @@ export { summarizeDay } from './handlers/summarizeDay';
 export { setDiscordWebhook } from './handlers/setDiscordWebhook';
 export { subscribeToTopic } from './handlers/subscribeToTopic';
 export { requestDiscordFetch } from './handlers/requestDiscordFetch';
+export { setDiscordStartDate } from './handlers/setDiscordStartDate';
 
 // ---- HTTP (webhooks + Cloud Tasks workers) -------------------------------
 export { githubWebhook } from './handlers/githubWebhook';

@@ -51,6 +51,9 @@ class DiscordMessagesViewModel with ChangeNotifier {
   bool _refreshing = false;
   bool get refreshing => _refreshing;
 
+  bool _settingStartDate = false;
+  bool get settingStartDate => _settingStartDate;
+
   String get _dateKey =>
       '${_date.year.toString().padLeft(4, '0')}-'
       '${_date.month.toString().padLeft(2, '0')}-'
@@ -66,6 +69,28 @@ class DiscordMessagesViewModel with ChangeNotifier {
       await _functions.requestDiscordFetch(repoId: _repoId, date: _dateKey);
     } finally {
       _refreshing = false;
+      notifyListeners();
+    }
+  }
+
+  String _keyOf(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
+
+  // Sets the backfill start date for this repo's Discord channels. After this,
+  // the next refresh re-pulls from [date] (already-ingested messages dedupe).
+  Future<void> setStartDate(DateTime date) async {
+    if (_settingStartDate) return;
+    _settingStartDate = true;
+    notifyListeners();
+    try {
+      await _functions.setDiscordStartDate(
+        repoId: _repoId,
+        startDate: _keyOf(date),
+      );
+    } finally {
+      _settingStartDate = false;
       notifyListeners();
     }
   }

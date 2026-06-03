@@ -6,6 +6,7 @@ import '../../view_models/commits_vm.dart';
 import '../../view_models/daily_report_vm.dart';
 import '../../view_models/discord_messages_vm.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/markdown_view.dart';
 
 // DailyViewPage — three tabs: Summary / Commits / Discord.
 // TODO: implement per prototype `daily/DailyView.tsx`.
@@ -172,19 +173,60 @@ class _DiscordTab extends StatelessWidget {
                     _DigestCard(markdown: vm.digest!.markdown),
                     const SizedBox(height: AppDimens.spacingMd),
                   ],
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: FilledButton.icon(
-                      onPressed: vm.refreshing ? null : vm.refresh,
-                      icon: vm.refreshing
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.refresh),
-                      label: Text(vm.refreshing ? 'Fetching…' : 'Refresh'),
-                    ),
+                  Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: AppDimens.spacingSm,
+                    runSpacing: AppDimens.spacingSm,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: vm.settingStartDate
+                            ? null
+                            : () async {
+                                final now = DateTime.now();
+                                final picked = await showDatePicker(
+                                  context: ctx,
+                                  initialDate: now,
+                                  firstDate: DateTime(2020),
+                                  lastDate: now,
+                                );
+                                if (picked == null) return;
+                                await vm.setStartDate(picked);
+                                if (!ctx.mounted) return;
+                                final key =
+                                    '${picked.year.toString().padLeft(4, '0')}-'
+                                    '${picked.month.toString().padLeft(2, '0')}-'
+                                    '${picked.day.toString().padLeft(2, '0')}';
+                                ScaffoldMessenger.of(ctx).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Start date set to $key. Tap Refresh to backfill.',
+                                    ),
+                                  ),
+                                );
+                              },
+                        icon: vm.settingStartDate
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.event_outlined),
+                        label: Text(
+                          vm.settingStartDate ? 'Saving…' : 'Start date',
+                        ),
+                      ),
+                      FilledButton.icon(
+                        onPressed: vm.refreshing ? null : vm.refresh,
+                        icon: vm.refreshing
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.refresh),
+                        label: Text(vm.refreshing ? 'Fetching…' : 'Refresh'),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -222,7 +264,7 @@ class _DigestCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: AppDimens.spacingSm),
-            Text(markdown, style: theme.textTheme.bodyMedium),
+            MarkdownView(data: markdown),
           ],
         ),
       ),

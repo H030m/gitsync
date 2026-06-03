@@ -19,6 +19,7 @@ jest.mock('firebase-functions/v2', () => ({
 
 const store = new Map<string, Record<string, unknown>>();
 const updateSpy = jest.fn();
+const setSpy = jest.fn();
 
 function makeDocRef(path: string) {
   return {
@@ -30,6 +31,19 @@ function makeDocRef(path: string) {
     async update(data: Record<string, unknown>) {
       updateSpy(path, data);
       store.set(path, { ...(store.get(path) ?? {}), ...data });
+    },
+    collection(name: string) {
+      return {
+        doc(id: string) {
+          const subPath = `${path}/${name}/${id}`;
+          return {
+            async set(data: Record<string, unknown>) {
+              setSpy(subPath, data);
+              store.set(subPath, { ...(store.get(subPath) ?? {}), ...data });
+            },
+          };
+        },
+      };
     },
   };
 }
@@ -44,7 +58,10 @@ jest.mock('../config', () => ({
 }));
 
 jest.mock('firebase-admin/firestore', () => ({
-  FieldValue: { arrayUnion: (v: unknown) => ({ __arrayUnion: v }) },
+  FieldValue: {
+    arrayUnion: (v: unknown) => ({ __arrayUnion: v }),
+    serverTimestamp: () => ({ __serverTimestamp: true }),
+  },
 }));
 
 import { setRepoChannel } from '../handlers/setRepoChannel';
@@ -91,6 +108,7 @@ function makeReq(opts: {
 beforeEach(() => {
   store.clear();
   updateSpy.mockReset();
+  setSpy.mockReset();
 });
 
 describe('setRepoChannel', () => {
@@ -150,5 +168,10 @@ describe('setRepoChannel', () => {
       discordChannelIds: { __arrayUnion: 'c1' },
       discordGuildId: 'g1',
     });
+    // Also seeds the per-channel config doc (holds startDate + watermark later).
+    expect(setSpy).toHaveBeenCalledWith(
+      'apps/gitsync/repos/H030m_gitsync/discordChannels/c1',
+      expect.objectContaining({ guildId: 'g1' }),
+    );
   });
 });
