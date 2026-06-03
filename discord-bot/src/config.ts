@@ -14,6 +14,7 @@ export interface BotConfig {
   claimUrl: string; // claimDiscordFetch
   completeUrl: string; // completeDiscordFetch
   setRepoChannelUrl: string; // setRepoChannel
+  editDigestUrl: string; // botEditDigest
   // Backfill poll interval in milliseconds.
   pollIntervalMs: number;
 }
@@ -68,6 +69,7 @@ export function loadConfig(): BotConfig {
     claimUrl: endpoint('claimDiscordFetch'),
     completeUrl: endpoint('completeDiscordFetch'),
     setRepoChannelUrl: endpoint('setRepoChannel'),
+    editDigestUrl: endpoint('botEditDigest'),
     pollIntervalMs,
   };
 }

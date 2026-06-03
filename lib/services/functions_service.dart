@@ -1,6 +1,7 @@
 import 'package:cloud_functions/cloud_functions.dart';
 
 import '../config/app_config.dart';
+import '../models/discord_chat.dart';
 import '../models/sub_task.dart';
 import 'fake/fake_functions_service.dart';
 
@@ -72,6 +73,32 @@ abstract class FunctionsService {
   Future<void> setDiscordStartDate({
     required String repoId,
     required String startDate,
+  });
+
+  /// Asks the AI to rewrite the digest for [date] (YYYY-MM-DD) per
+  /// [instruction]. Returns the new markdown. Throws if the digest is locked.
+  Future<String> editDiscordDigest({
+    required String repoId,
+    required String date,
+    required String instruction,
+  });
+
+  /// Locks (freezes) or unlocks the digest for [date]. A locked digest is not
+  /// changed by auto-regeneration or AI edits.
+  Future<void> setDigestLock({
+    required String repoId,
+    required String date,
+    required bool locked,
+  });
+
+  /// Asks the AI a question about this repo's Discord chat. The backend runs an
+  /// agentic loop: it searches the ingested messages, then answers. Returns the
+  /// answer plus the messages it surfaced (for the scrollable "sources" panel).
+  /// [history] is prior turns, oldest first, for follow-up context.
+  Future<DiscordChatReply> discordChat({
+    required String repoId,
+    required String question,
+    List<DiscordChatTurn> history = const [],
   });
 
   // ---- FCM ---------------------------------------------------------------
@@ -199,6 +226,48 @@ class _LiveFunctionsService implements FunctionsService {
       'repoId': repoId,
       'startDate': startDate,
     });
+  }
+
+  @override
+  Future<String> editDiscordDigest({
+    required String repoId,
+    required String date,
+    required String instruction,
+  }) async {
+    final res = await _callable('editDiscordDigest').call({
+      'repoId': repoId,
+      'date': date,
+      'instruction': instruction,
+    });
+    final data = Map<String, dynamic>.from(res.data as Map);
+    return data['markdown'] as String;
+  }
+
+  @override
+  Future<void> setDigestLock({
+    required String repoId,
+    required String date,
+    required bool locked,
+  }) async {
+    await _callable('setDigestLock').call({
+      'repoId': repoId,
+      'date': date,
+      'locked': locked,
+    });
+  }
+
+  @override
+  Future<DiscordChatReply> discordChat({
+    required String repoId,
+    required String question,
+    List<DiscordChatTurn> history = const [],
+  }) async {
+    final res = await _callable('discordChat').call({
+      'repoId': repoId,
+      'question': question,
+      'history': history.map((t) => t.toMap()).toList(),
+    });
+    return DiscordChatReply.fromMap(Map<String, dynamic>.from(res.data as Map));
   }
 
   @override

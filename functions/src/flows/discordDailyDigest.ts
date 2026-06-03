@@ -91,15 +91,26 @@ export async function discordDailyDigestFlow(
   const markdown = completion.choices[0]?.message?.content?.trim() ?? '';
 
   // ---- Step 4: write the digest doc ----------------------------------------
-  logger.info('Step 4: write digest doc', { repoId, date });
-  await db
-    .doc(`apps/gitsync/repos/${repoId}/discordDigests/${date}`)
-    .set({
+  // A locked digest is frozen — never overwrite it (the user pinned it). The
+  // lock is the single gate every digest-write path checks (see ARCHITECTURE §7).
+  const ref = db.doc(`apps/gitsync/repos/${repoId}/discordDigests/${date}`);
+  const existing = await ref.get();
+  if (existing.exists && existing.data()?.locked === true) {
+    logger.info('Step 4: digest locked; skipping regeneration', { repoId, date });
+    return {
       date,
-      markdown,
       messageCount: snap.size,
-      generatedAt: FieldValue.serverTimestamp(),
-    });
+      markdown: (existing.data()?.markdown as string | undefined) ?? null,
+    };
+  }
+
+  logger.info('Step 4: write digest doc', { repoId, date });
+  await ref.set({
+    date,
+    markdown,
+    messageCount: snap.size,
+    generatedAt: FieldValue.serverTimestamp(),
+  });
 
   return { date, messageCount: snap.size, markdown };
 }

@@ -9,6 +9,10 @@ class DiscordDigest {
   final String date; // YYYY-MM-DD (also the doc id)
   final String markdown;
   final int messageCount;
+
+  /// When true the digest is pinned: no backend path (auto-regen or AI edit)
+  /// will change it. Toggled via `setDigestLock`.
+  final bool locked;
   Timestamp? _generatedAt;
   Timestamp get generatedAt => _generatedAt ?? Timestamp.now();
 
@@ -16,6 +20,7 @@ class DiscordDigest {
     required this.date,
     required this.markdown,
     required this.messageCount,
+    this.locked = false,
     Timestamp? generatedAt,
   }) : _generatedAt = generatedAt;
 
@@ -24,6 +29,7 @@ class DiscordDigest {
       date: map['date'] as String? ?? id,
       markdown: map['markdown'] as String? ?? '',
       messageCount: map['messageCount'] as int? ?? 0,
+      locked: map['locked'] as bool? ?? false,
       generatedAt: map['generatedAt'] as Timestamp?,
     );
   }

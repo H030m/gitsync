@@ -54,6 +54,15 @@ class DiscordMessagesViewModel with ChangeNotifier {
   bool _settingStartDate = false;
   bool get settingStartDate => _settingStartDate;
 
+  bool _editingDigest = false;
+  bool get editingDigest => _editingDigest;
+
+  bool _togglingLock = false;
+  bool get togglingLock => _togglingLock;
+
+  String? _digestError;
+  String? get digestError => _digestError;
+
   String get _dateKey =>
       '${_date.year.toString().padLeft(4, '0')}-'
       '${_date.month.toString().padLeft(2, '0')}-'
@@ -91,6 +100,49 @@ class DiscordMessagesViewModel with ChangeNotifier {
       );
     } finally {
       _settingStartDate = false;
+      notifyListeners();
+    }
+  }
+
+  // Asks the AI to adjust today's digest. The updated markdown arrives via the
+  // digest stream, so we don't set it locally. No-ops if there's no digest yet.
+  Future<void> editDigest(String instruction) async {
+    if (_editingDigest || _digest == null || instruction.trim().isEmpty) return;
+    _editingDigest = true;
+    _digestError = null;
+    notifyListeners();
+    try {
+      await _functions.editDiscordDigest(
+        repoId: _repoId,
+        date: _dateKey,
+        instruction: instruction.trim(),
+      );
+    } catch (e) {
+      _digestError = '$e';
+    } finally {
+      _editingDigest = false;
+      notifyListeners();
+    }
+  }
+
+  // Toggles the lock on today's digest. When locked, the backend won't change
+  // it (auto-regen and AI edits are both refused).
+  Future<void> toggleLock() async {
+    final digest = _digest;
+    if (_togglingLock || digest == null) return;
+    _togglingLock = true;
+    _digestError = null;
+    notifyListeners();
+    try {
+      await _functions.setDigestLock(
+        repoId: _repoId,
+        date: _dateKey,
+        locked: !digest.locked,
+      );
+    } catch (e) {
+      _digestError = '$e';
+    } finally {
+      _togglingLock = false;
       notifyListeners();
     }
   }

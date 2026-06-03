@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitsync/models/discord_chat.dart';
 import 'package:gitsync/models/repo.dart';
 import 'package:gitsync/models/sub_task.dart';
 import 'package:gitsync/repositories/repo_repo.dart';
@@ -90,6 +91,30 @@ class _FakeFunctionsService implements FunctionsService {
   Future<void> setDiscordStartDate({
     required String repoId,
     required String startDate,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<String> editDiscordDigest({
+    required String repoId,
+    required String date,
+    required String instruction,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> setDigestLock({
+    required String repoId,
+    required String date,
+    required bool locked,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<DiscordChatReply> discordChat({
+    required String repoId,
+    required String question,
+    List<DiscordChatTurn> history = const [],
   }) =>
       throw UnimplementedError();
 
