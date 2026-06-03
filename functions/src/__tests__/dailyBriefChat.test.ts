@@ -16,7 +16,8 @@ jest.mock('firebase-functions/v2', () => ({
 }));
 jest.mock('firebase-admin/firestore', () => ({
   FieldValue: { serverTimestamp: () => '__ts__' },
-  Timestamp: { fromMillis: (ms: number) => ({ __ms__: ms }) },
+  // taipeiRangeBounds compares bounds via toMillis().
+  Timestamp: { fromMillis: (ms: number) => ({ __ms__: ms, toMillis: () => ms }) },
 }));
 
 const store = new Map<string, Record<string, unknown>>();

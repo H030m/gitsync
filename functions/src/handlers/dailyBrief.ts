@@ -13,9 +13,10 @@ export const dailyBrief = onCall(
     if (!request.auth) {
       throw new HttpsError('failed-precondition', 'Please log in first.');
     }
-    const { repoId, date, question, history } = request.data as {
+    const { repoId, date, endDate, question, history } = request.data as {
       repoId?: string;
       date?: string;
+      endDate?: string;
       question?: string;
       history?: BriefChatTurn[];
     };
@@ -25,6 +26,9 @@ export const dailyBrief = onCall(
         'repoId, date (YYYY-MM-DD) and question are required',
       );
     }
-    return dailyBriefChatFlow({ repoId, date, question, history });
+    if (endDate && endDate < date) {
+      throw new HttpsError('invalid-argument', 'endDate must be >= date');
+    }
+    return dailyBriefChatFlow({ repoId, date, endDate, question, history });
   },
 );

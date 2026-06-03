@@ -22,7 +22,8 @@ jest.mock('firebase-functions/v2', () => ({
 }));
 jest.mock('firebase-admin/firestore', () => ({
   FieldValue: { serverTimestamp: () => '__ts__' },
-  Timestamp: { fromMillis: (ms: number) => ({ __ms__: ms }) },
+  // taipeiRangeBounds compares bounds via toMillis().
+  Timestamp: { fromMillis: (ms: number) => ({ __ms__: ms, toMillis: () => ms }) },
 }));
 
 // ---- Fake Firestore -------------------------------------------------------
@@ -187,7 +188,7 @@ describe('summarizeDayFlow', () => {
 
     createQueue.push(finalizeTurn(NARRATIVE));
 
-    const res = await summarizeDayFlow({ repoId: REPO, date: DATE });
+    const res = await summarizeDayFlow({ repoId: REPO, startDate: DATE, endDate: DATE });
 
     expect(res.summary).toBe(NARRATIVE.summary);
     expect(res.commitCount).toBe(3);
@@ -218,12 +219,12 @@ describe('summarizeDayFlow', () => {
     });
 
     // Round 0: read digest. Round 1: finalize using it.
-    createQueue.push(toolTurn('getDayDigest', {}));
+    createQueue.push(toolTurn('listRangeDigests', {}));
     createQueue.push(
       finalizeTurn({ ...NARRATIVE, blockers: ['callback URL on Windows'] }),
     );
 
-    const res = await summarizeDayFlow({ repoId: REPO, date: DATE });
+    const res = await summarizeDayFlow({ repoId: REPO, startDate: DATE, endDate: DATE });
 
     expect(mockCreate).toHaveBeenCalledTimes(2);
     expect(res.blockers).toEqual(['callback URL on Windows']);
@@ -234,9 +235,9 @@ describe('summarizeDayFlow', () => {
     seedTask('t1', { assigneeId: 'x', title: 'Did a thing' });
 
     // 4 rounds (MAX_ROUNDS) that only read, never finalize.
-    for (let i = 0; i < 4; i++) createQueue.push(toolTurn('getDayDigest', {}, `tc${i}`));
+    for (let i = 0; i < 4; i++) createQueue.push(toolTurn('listRangeDigests', {}, `tc${i}`));
 
-    const res = await summarizeDayFlow({ repoId: REPO, date: DATE });
+    const res = await summarizeDayFlow({ repoId: REPO, startDate: DATE, endDate: DATE });
 
     expect(res.summary).toContain('1 commit');
     expect(res.highlights).toEqual(['Completed: Did a thing']);
@@ -252,7 +253,31 @@ describe('summarizeDayFlow', () => {
       }),
     );
 
-    const res = await summarizeDayFlow({ repoId: REPO, date: DATE });
+    const res = await summarizeDayFlow({ repoId: REPO, startDate: DATE, endDate: DATE });
     expect(res.commitThemes[0].commitCount).toBe(0);
+  });
+
+  it('writes a multi-day report under {start}_{end} with both range fields', async () => {
+    seedCommit('c1', { author: { login: 'x', name: 'X' } });
+    createQueue.push(finalizeTurn(NARRATIVE));
+
+    const res = await summarizeDayFlow({
+      repoId: REPO,
+      startDate: '2026-06-01',
+      endDate: '2026-06-04',
+    });
+
+    expect(res.startDate).toBe('2026-06-01');
+    expect(res.endDate).toBe('2026-06-04');
+    const path =
+      `apps/gitsync/repos/${REPO}/dailyReports/2026-06-01_2026-06-04`;
+    expect(setSpy).toHaveBeenCalledWith(
+      path,
+      expect.objectContaining({
+        date: '2026-06-01_2026-06-04',
+        startDate: '2026-06-01',
+        endDate: '2026-06-04',
+      }),
+    );
   });
 });

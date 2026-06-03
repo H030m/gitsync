@@ -36,8 +36,9 @@ export const dailyReportWorker = onTaskDispatched(
       return;
     }
     // Throwing here makes Cloud Tasks retry per retryConfig (transient failures
-    // like a flaky OpenAI call get a second chance).
-    await summarizeDayFlow({ repoId, date });
+    // like a flaky OpenAI call get a second chance). The scheduler always fans
+    // out single days: startDate == endDate == date.
+    await summarizeDayFlow({ repoId, startDate: date, endDate: date });
     logger.info('dailyReportWorker: report done', { repoId, date });
   },
 );

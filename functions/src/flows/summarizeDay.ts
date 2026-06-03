@@ -1,15 +1,17 @@
-// summarizeDayFlow — produces an agentic daily report for one repo + day from
-// commits + completed tasks + Discord discussion. See ARCHITECTURE.md §5.4.
-// Invoked by Cloud Tasks (fan-out from `scheduledDailyReport`) and by the
-// `summarizeDay` callable (the Summary tab's Regenerate button).
+// summarizeDayFlow — produces an agentic report for one repo over an inclusive
+// Asia/Taipei day range (a single day when startDate == endDate) from commits +
+// completed tasks + Discord discussion. See ARCHITECTURE.md §5.4. Invoked by
+// Cloud Tasks (fan-out from `scheduledDailyReport`, always single-day) and by
+// the `summarizeDay` callable (the Summary tab's Regenerate button, which may
+// pass a user-picked range).
 //
-// AGENTIC (upgrades the doc's "非 Agentic 單次" note): an OpenAI function-calling
-// loop. The day's commits / tasks / roster are pre-fetched deterministically
-// (so the per-member counts are exact — counting is never delegated to the LLM,
-// AGENTIC_CONCEPTS §4 "pruning"); the agent then freely drills deeper via tools
-// (`getDayDigest`, `searchPastCommits`) before calling `finalizeReport` with the
-// narrative (summary / highlights / blockers / commit themes). Mirrors the
-// `discordChatFlow` / `assignTaskFlow` loop pattern.
+// AGENTIC: an OpenAI function-calling loop. The range's commits / tasks /
+// roster are pre-fetched deterministically (so the per-member counts are exact
+// — counting is never delegated to the LLM, AGENTIC_CONCEPTS §4 "pruning");
+// the agent then freely drills deeper via tools (`listRangeDigests`,
+// `listRangeDiscordMessages`, `searchPastCommits`) before calling
+// `finalizeReport` with the narrative (summary / highlights / blockers /
+// commit themes). Mirrors the `discordChatFlow` / `assignTaskFlow` loop.
 import { logger } from 'firebase-functions/v2';
 import { FieldValue } from 'firebase-admin/firestore';
 import type OpenAI from 'openai';
@@ -18,9 +20,10 @@ import { db } from '../admin';
 import { getOpenAI, MODELS } from '../config';
 import { summarizeDaySystem, summarizeDayContext } from '../prompts/summarizeDay';
 import {
-  listDayCommits,
-  listCompletedTasks,
-  getDayDigest,
+  listRangeCommits,
+  listRangeCompletedTasks,
+  listRangeDigests,
+  listRangeDiscordMessages,
   searchPastCommits,
   computeContributions,
   readRoster,
@@ -30,7 +33,8 @@ import type { CommitTheme, DailyReportNarrative } from '../types';
 
 export interface SummarizeDayInput {
   repoId: string;
-  date: string; // YYYY-MM-DD
+  startDate: string; // YYYY-MM-DD, inclusive
+  endDate: string; // YYYY-MM-DD, inclusive (== startDate for a single day)
 }
 
 export interface SummarizeDayResult {
@@ -41,6 +45,13 @@ export interface SummarizeDayResult {
   memberContributions: MemberContributions;
   completedTaskIds: string[];
   commitCount: number;
+  startDate: string;
+  endDate: string;
+}
+
+/** Report doc id: the date for a single day, `{start}_{end}` for a range. */
+export function reportDocId(startDate: string, endDate: string): string {
+  return startDate === endDate ? startDate : `${startDate}_${endDate}`;
 }
 
 const MAX_ROUNDS = 4;
@@ -49,12 +60,30 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
-      name: 'getDayDigest',
+      name: 'listRangeDigests',
       description:
-        "Get the AI digest (markdown) of the day's Discord discussion, to mine " +
-        'for blockers, decisions, and context the commits alone do not show. ' +
-        'Returns null when there is no digest for that day.',
+        "Read the per-day AI digests of the period's Discord discussion, to " +
+        'mine for blockers, decisions, and context the commits alone do not ' +
+        'show. CHEAP — start here for "what was discussed". Returns [] when ' +
+        'no day in the period has a digest.',
       parameters: { type: 'object', properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'listRangeDiscordMessages',
+      description:
+        "Read the period's RAW Discord messages (capped). Use ONLY when " +
+        'listRangeDigests returned nothing for days that matter — raw messages ' +
+        'are much more expensive to read than digests.',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: { type: 'number', description: 'Max messages (default 200).' },
+        },
+        additionalProperties: false,
+      },
     },
   },
   {
@@ -62,9 +91,9 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: 'searchPastCommits',
       description:
-        'Keyword search the repo history (across days) to ground a theme — e.g. ' +
-        'find when a feature was last touched. Use sparingly; the day context is ' +
-        'already provided.',
+        'Keyword search the repo history (across all time) to ground a theme — ' +
+        'e.g. find when a feature was last touched. Use sparingly; the period ' +
+        'context is already provided.',
       parameters: {
         type: 'object',
         properties: {
@@ -81,19 +110,20 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: 'finalizeReport',
       description:
-        'Submit the finished daily report. Call this exactly once, after you ' +
-        'have read the context, to end the task.',
+        'Submit the finished report. Call this exactly once, after you have ' +
+        'read the context, to end the task.',
       parameters: {
         type: 'object',
         properties: {
           summary: {
             type: 'string',
-            description: '2-3 plain-English sentences for a non-technical reader.',
+            description:
+              '2-3 plain-English sentences for a non-technical reader.',
           },
           highlights: {
             type: 'array',
             items: { type: 'string' },
-            description: "Today's key achievements, most important first.",
+            description: "The period's key achievements, most important first.",
           },
           blockers: {
             type: 'array',
@@ -102,7 +132,7 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           },
           commitThemes: {
             type: 'array',
-            description: "The day's commits grouped into themes.",
+            description: "The period's commits grouped into themes.",
             items: {
               type: 'object',
               properties: {
@@ -125,20 +155,26 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
 export async function summarizeDayFlow(
   input: SummarizeDayInput,
 ): Promise<SummarizeDayResult> {
-  const { repoId, date } = input;
-  logger.info('summarizeDayFlow: start', { repoId, date });
+  const { repoId, startDate, endDate } = input;
+  logger.info('summarizeDayFlow: start', { repoId, startDate, endDate });
 
   // ---- Step 1: deterministic context (exact counts, not LLM-guessed) -------
   const [commits, tasks, roster] = await Promise.all([
-    listDayCommits(repoId, date),
-    listCompletedTasks(repoId, date),
+    listRangeCommits(repoId, startDate, endDate),
+    listRangeCompletedTasks(repoId, startDate, endDate),
     readRoster(repoId),
   ]);
   const memberContributions = computeContributions(commits, tasks, roster);
   const completedTaskIds = tasks.map((t) => t.id);
 
   // ---- Step 2: agentic narrative loop --------------------------------------
-  const narrative = await runReportAgent(repoId, date, commits, tasks);
+  const narrative = await runReportAgent(
+    repoId,
+    startDate,
+    endDate,
+    commits,
+    tasks,
+  );
 
   // commitThemes counts come from the model's grouping; clamp to >= 0.
   const commitThemes = narrative.commitThemes.map((t) => ({
@@ -154,11 +190,16 @@ export async function summarizeDayFlow(
     memberContributions,
     completedTaskIds,
     commitCount: commits.length,
+    startDate,
+    endDate,
   };
 
   // ---- Step 3: persist (Cloud Functions are the only writer; clients RO) ----
-  await db.doc(`apps/gitsync/repos/${repoId}/dailyReports/${date}`).set({
-    date,
+  const docId = reportDocId(startDate, endDate);
+  await db.doc(`apps/gitsync/repos/${repoId}/dailyReports/${docId}`).set({
+    date: docId,
+    startDate,
+    endDate,
     repoId,
     summary: result.summary,
     highlights: result.highlights,
@@ -172,7 +213,7 @@ export async function summarizeDayFlow(
 
   logger.info('summarizeDayFlow: wrote report', {
     repoId,
-    date,
+    docId,
     commits: commits.length,
     tasks: tasks.length,
   });
@@ -182,14 +223,18 @@ export async function summarizeDayFlow(
 /** The OpenAI function-calling loop that authors the report narrative. */
 async function runReportAgent(
   repoId: string,
-  date: string,
-  commits: Awaited<ReturnType<typeof listDayCommits>>,
-  tasks: Awaited<ReturnType<typeof listCompletedTasks>>,
+  startDate: string,
+  endDate: string,
+  commits: Awaited<ReturnType<typeof listRangeCommits>>,
+  tasks: Awaited<ReturnType<typeof listRangeCompletedTasks>>,
 ): Promise<DailyReportNarrative> {
   const openai = getOpenAI();
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: 'system', content: summarizeDaySystem },
-    { role: 'user', content: summarizeDayContext({ date, commits, tasks }) },
+    {
+      role: 'user',
+      content: summarizeDayContext({ startDate, endDate, commits, tasks }),
+    },
   ];
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -219,12 +264,18 @@ async function runReportAgent(
         }
         const args = safeParse(call.function.arguments);
         switch (call.function.name) {
-          case 'getDayDigest': {
-            const digest = await getDayDigest(repoId, date);
-            return {
-              id: call.id,
-              content: JSON.stringify(digest ?? { markdown: null }),
-            };
+          case 'listRangeDigests': {
+            const digests = await listRangeDigests(repoId, startDate, endDate);
+            return { id: call.id, content: JSON.stringify(digests) };
+          }
+          case 'listRangeDiscordMessages': {
+            const msgs = await listRangeDiscordMessages(
+              repoId,
+              startDate,
+              endDate,
+              typeof args.limit === 'number' ? args.limit : 200,
+            );
+            return { id: call.id, content: JSON.stringify(msgs) };
           }
           case 'searchPastCommits': {
             const hits = await searchPastCommits(
@@ -254,7 +305,8 @@ async function runReportAgent(
   // it). Degrade to a deterministic summary so the report is never empty.
   logger.warn('summarizeDayFlow: agent did not finalize; using fallback', {
     repoId,
-    date,
+    startDate,
+    endDate,
   });
   return fallbackNarrative(commits, tasks);
 }
@@ -281,12 +333,12 @@ function normalizeNarrative(args: Record<string, unknown>): DailyReportNarrative
 
 /** Deterministic narrative used only if the agent never finalizes. */
 function fallbackNarrative(
-  commits: Awaited<ReturnType<typeof listDayCommits>>,
-  tasks: Awaited<ReturnType<typeof listCompletedTasks>>,
+  commits: Awaited<ReturnType<typeof listRangeCommits>>,
+  tasks: Awaited<ReturnType<typeof listRangeCompletedTasks>>,
 ): DailyReportNarrative {
   const summary =
     commits.length === 0 && tasks.length === 0
-      ? 'No commits or completed tasks were recorded for this day.'
+      ? 'No commits or completed tasks were recorded for this period.'
       : `${commits.length} commit(s) landed and ${tasks.length} task(s) were ` +
         'completed.';
   return {

@@ -11,6 +11,7 @@
 // Day boundaries are Asia/Taipei (UTC+8), reusing `taipeiDayBounds` so the
 // daily report and the Discord digest agree on what "one day" means.
 import { logger } from 'firebase-functions/v2';
+import type { Timestamp } from 'firebase-admin/firestore';
 
 import { db } from '../admin';
 import { taipeiDayBounds } from '../flows/discordDailyDigest';
@@ -23,6 +24,33 @@ export {
   listDaySummaries as listDayDigests,
   type DaySummary as DayDigest,
 } from './discordSearch';
+
+import type { DaySummary } from './discordSearch';
+
+// ---- Range bounds -----------------------------------------------------------
+
+/** Inclusive day range, both ends YYYY-MM-DD (Asia/Taipei). */
+export interface DayRange {
+  startDate: string;
+  endDate: string;
+}
+
+/**
+ * [startInclusive, endExclusive) Firestore Timestamps covering the inclusive
+ * Asia/Taipei day range `startDate..endDate`. Throws on malformed dates or a
+ * reversed range (callers validate user input before reaching here).
+ */
+export function taipeiRangeBounds(
+  startDate: string,
+  endDate: string,
+): { start: Timestamp; end: Timestamp } {
+  const start = taipeiDayBounds(startDate).start;
+  const end = taipeiDayBounds(endDate).end;
+  if (end.toMillis() <= start.toMillis()) {
+    throw new Error(`invalid range: ${startDate}..${endDate}`);
+  }
+  return { start, end };
+}
 
 // ---- listDayCommits --------------------------------------------------------
 
@@ -38,34 +66,44 @@ export interface DayCommit {
   deletions: number;
 }
 
-const DAY_COMMIT_LIMIT = 200;
+const RANGE_COMMIT_LIMIT = 500;
 
 /**
- * Commits committed on the given Asia/Taipei calendar day, oldest first.
- * Returns [] on a malformed date or a read failure (best-effort).
+ * Commits committed within the inclusive Asia/Taipei day range, oldest first.
+ * Returns [] on a malformed range or a read failure (best-effort).
  */
-export async function listDayCommits(
+export async function listRangeCommits(
   repoId: string,
-  date: string,
+  startDate: string,
+  endDate: string,
 ): Promise<DayCommit[]> {
   try {
-    const { start, end } = taipeiDayBounds(date);
+    const { start, end } = taipeiRangeBounds(startDate, endDate);
     const snap = await db
       .collection(`apps/gitsync/repos/${repoId}/commits`)
       .where('committedAt', '>=', start)
       .where('committedAt', '<', end)
       .orderBy('committedAt', 'asc')
-      .limit(DAY_COMMIT_LIMIT)
+      .limit(RANGE_COMMIT_LIMIT)
       .get();
     return snap.docs.map((d) => toDayCommit(d.id, d.data() ?? {}));
   } catch (err) {
-    logger.warn('listDayCommits failed; returning [] (best-effort)', {
+    logger.warn('listRangeCommits failed; returning [] (best-effort)', {
       repoId,
-      date,
+      startDate,
+      endDate,
       err: String(err),
     });
     return [];
   }
+}
+
+/** Single-day convenience wrapper over {@link listRangeCommits}. */
+export function listDayCommits(
+  repoId: string,
+  date: string,
+): Promise<DayCommit[]> {
+  return listRangeCommits(repoId, date, date);
 }
 
 function toDayCommit(sha: string, data: Record<string, unknown>): DayCommit {
@@ -93,25 +131,27 @@ export interface DayTask {
   description: string;
 }
 
-const DAY_TASK_LIMIT = 100;
+const RANGE_TASK_LIMIT = 200;
 
 /**
- * Tasks whose status is `done` and whose `updatedAt` lands on the given
- * Asia/Taipei day. (Tasks carry no dedicated `completedAt`; a done task's
- * last update is its completion — see models/task.dart.) Best-effort → [].
+ * Tasks whose status is `done` and whose `updatedAt` lands inside the
+ * inclusive Asia/Taipei day range. (Tasks carry no dedicated `completedAt`; a
+ * done task's last update is its completion — see models/task.dart.) Requires
+ * the `tasks status+updatedAt` composite index in live mode. Best-effort → [].
  */
-export async function listCompletedTasks(
+export async function listRangeCompletedTasks(
   repoId: string,
-  date: string,
+  startDate: string,
+  endDate: string,
 ): Promise<DayTask[]> {
   try {
-    const { start, end } = taipeiDayBounds(date);
+    const { start, end } = taipeiRangeBounds(startDate, endDate);
     const snap = await db
       .collection(`apps/gitsync/repos/${repoId}/tasks`)
       .where('status', '==', 'done')
       .where('updatedAt', '>=', start)
       .where('updatedAt', '<', end)
-      .limit(DAY_TASK_LIMIT)
+      .limit(RANGE_TASK_LIMIT)
       .get();
     return snap.docs.map((d) => {
       const t = d.data() ?? {};
@@ -123,9 +163,116 @@ export async function listCompletedTasks(
       };
     });
   } catch (err) {
-    logger.warn('listCompletedTasks failed; returning [] (best-effort)', {
+    logger.warn('listRangeCompletedTasks failed; returning [] (best-effort)', {
       repoId,
-      date,
+      startDate,
+      endDate,
+      err: String(err),
+    });
+    return [];
+  }
+}
+
+/** Single-day convenience wrapper over {@link listRangeCompletedTasks}. */
+export function listCompletedTasks(
+  repoId: string,
+  date: string,
+): Promise<DayTask[]> {
+  return listRangeCompletedTasks(repoId, date, date);
+}
+
+// ---- Discord across a range -------------------------------------------------
+
+const RANGE_DIGEST_LIMIT = 92; // mirrors the Discord backfill cap
+const RANGE_MESSAGE_LIMIT = 500;
+
+/**
+ * The per-day AI Discord digests whose date falls inside the inclusive range,
+ * oldest first. This is the cheap O(days) way to read "what was discussed"
+ * across a period. Best-effort → [].
+ */
+export async function listRangeDigests(
+  repoId: string,
+  startDate: string,
+  endDate: string,
+): Promise<DaySummary[]> {
+  try {
+    const snap = await db
+      .collection(`apps/gitsync/repos/${repoId}/discordDigests`)
+      .where('date', '>=', startDate)
+      .where('date', '<=', endDate)
+      .orderBy('date', 'asc')
+      .limit(RANGE_DIGEST_LIMIT)
+      .get();
+    return snap.docs.map((d) => {
+      const data = d.data() ?? {};
+      return {
+        date: (data.date as string | undefined) ?? d.id,
+        messageCount: (data.messageCount as number | undefined) ?? 0,
+        markdown: (data.markdown as string | undefined) ?? '',
+      };
+    });
+  } catch (err) {
+    logger.warn('listRangeDigests failed; returning [] (best-effort)', {
+      repoId,
+      startDate,
+      endDate,
+      err: String(err),
+    });
+    return [];
+  }
+}
+
+/** A raw Discord message as the range tools expose it (compact). */
+export interface RangeDiscordMessage {
+  authorName: string;
+  content: string;
+  timestamp: string | null; // ISO 8601
+}
+
+/**
+ * Raw Discord messages inside the inclusive Asia/Taipei day range, oldest
+ * first, capped at {@link RANGE_MESSAGE_LIMIT}. The fallback when a day has no
+ * digest (e.g. it was never backfilled). Best-effort → [].
+ */
+export async function listRangeDiscordMessages(
+  repoId: string,
+  startDate: string,
+  endDate: string,
+  limit = RANGE_MESSAGE_LIMIT,
+): Promise<RangeDiscordMessage[]> {
+  const cap = Math.max(1, Math.min(limit, RANGE_MESSAGE_LIMIT));
+  try {
+    const { start, end } = taipeiRangeBounds(startDate, endDate);
+    const snap = await db
+      .collection(`apps/gitsync/repos/${repoId}/discordMessages`)
+      .where('timestamp', '>=', start)
+      .where('timestamp', '<', end)
+      .orderBy('timestamp', 'asc')
+      .limit(cap)
+      .get();
+    return snap.docs.map((d) => {
+      const m = d.data() ?? {};
+      const ts = m.timestamp;
+      return {
+        authorName:
+          (m.authorName as string | undefined) ??
+          (m.authorId as string | undefined) ??
+          'unknown',
+        content: (m.content as string | undefined) ?? '',
+        timestamp:
+          ts && typeof (ts as { toDate?: unknown }).toDate === 'function'
+            ? (ts as { toDate: () => Date }).toDate().toISOString()
+            : typeof ts === 'string'
+              ? ts
+              : null,
+      };
+    });
+  } catch (err) {
+    logger.warn('listRangeDiscordMessages failed; returning [] (best-effort)', {
+      repoId,
+      startDate,
+      endDate,
       err: String(err),
     });
     return [];

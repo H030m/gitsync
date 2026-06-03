@@ -11,6 +11,7 @@ export { assignTask } from './handlers/assignTask';
 export { generateHandoff } from './handlers/generateHandoff';
 export { summarizeDay } from './handlers/summarizeDay';
 export { dailyBrief } from './handlers/dailyBrief';
+export { explainCommit } from './handlers/explainCommit';
 export { setDiscordWebhook } from './handlers/setDiscordWebhook';
 export { subscribeToTopic } from './handlers/subscribeToTopic';
 export { requestDiscordFetch } from './handlers/requestDiscordFetch';

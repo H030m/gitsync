@@ -14,9 +14,9 @@ import type OpenAI from 'openai';
 import { getOpenAI, MODELS } from '../config';
 import { dailyBriefSystem } from '../prompts/dailyBrief';
 import {
-  listDayCommits,
-  listCompletedTasks,
-  getDayDigest,
+  listRangeCommits,
+  listRangeCompletedTasks,
+  listRangeDigests,
   searchPastCommits,
   type DayCommit,
 } from '../tools/dailyIntel';
@@ -29,7 +29,8 @@ export interface BriefChatTurn {
 
 export interface DailyBriefInput {
   repoId: string;
-  date: string; // the day the chat is scoped to (YYYY-MM-DD)
+  date: string; // start of the period the chat is scoped to (YYYY-MM-DD)
+  endDate?: string; // inclusive end; defaults to `date` (single day)
   question: string;
   history?: BriefChatTurn[];
 }
@@ -48,8 +49,9 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: 'listDayCommits',
       description:
-        "List every commit committed on the scoped day (author, message, " +
-        'one-line AI summary, linked tasks). Start here for "what landed today".',
+        'List every commit committed inside the scoped period (author, ' +
+        'message, one-line AI summary, linked tasks). Start here for "what ' +
+        'landed".',
       parameters: { type: 'object', properties: {}, additionalProperties: false },
     },
   },
@@ -57,17 +59,17 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'listCompletedTasks',
-      description: 'List the tasks that reached done on the scoped day.',
+      description: 'List the tasks that reached done inside the scoped period.',
       parameters: { type: 'object', properties: {}, additionalProperties: false },
     },
   },
   {
     type: 'function',
     function: {
-      name: 'getDayDigest',
+      name: 'listRangeDigests',
       description:
-        "Read the AI digest of the scoped day's Discord discussion (decisions, " +
-        'blockers). Returns null when there is none.',
+        "Read the per-day AI digests of the scoped period's Discord discussion " +
+        '(decisions, blockers). Returns [] when no day has a digest.',
       parameters: { type: 'object', properties: {}, additionalProperties: false },
     },
   },
@@ -95,11 +97,12 @@ export async function dailyBriefChatFlow(
   input: DailyBriefInput,
 ): Promise<DailyBriefResult> {
   const { repoId, date, question } = input;
+  const endDate = input.endDate ?? date;
   const history = Array.isArray(input.history) ? input.history : [];
 
   const openai = getOpenAI();
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: 'system', content: dailyBriefSystem(date) },
+    { role: 'system', content: dailyBriefSystem(date, endDate) },
     ...history
       .slice(-MAX_HISTORY_TURNS)
       .filter((t) => t && (t.role === 'user' || t.role === 'assistant') && t.content)
@@ -139,17 +142,17 @@ export async function dailyBriefChatFlow(
         const args = safeParse(call.function.arguments);
         switch (call.function.name) {
           case 'listDayCommits': {
-            const cs = await listDayCommits(repoId, date);
+            const cs = await listRangeCommits(repoId, date, endDate);
             collect(cs);
             return { id: call.id, content: JSON.stringify(cs) };
           }
           case 'listCompletedTasks': {
-            const ts = await listCompletedTasks(repoId, date);
+            const ts = await listRangeCompletedTasks(repoId, date, endDate);
             return { id: call.id, content: JSON.stringify(ts) };
           }
-          case 'getDayDigest': {
-            const d = await getDayDigest(repoId, date);
-            return { id: call.id, content: JSON.stringify(d ?? { markdown: null }) };
+          case 'listRangeDigests': {
+            const ds = await listRangeDigests(repoId, date, endDate);
+            return { id: call.id, content: JSON.stringify(ds) };
           }
           case 'searchPastCommits': {
             const cs = await searchPastCommits(
