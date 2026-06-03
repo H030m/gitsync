@@ -52,34 +52,57 @@ class _SummaryTab extends StatelessWidget {
           return const Center(child: CircularProgressIndicator());
         }
         final report = vm.report;
-        final theme = Theme.of(ctx);
+        final scheme = Theme.of(ctx).colorScheme;
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        final cardBg = isDark
+            ? const Color(0xFF222630)
+            : scheme.surface;
         return ListView(
           padding: const EdgeInsets.all(AppDimens.spacingMd),
           children: [
-            Card(
-              margin: EdgeInsets.zero,
-              child: Padding(
-                padding: const EdgeInsets.all(AppDimens.spacingMd),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.auto_awesome_outlined,
-                            size: 20, color: theme.colorScheme.primary),
-                        const SizedBox(width: AppDimens.spacingSm),
-                        Text('日報摘要',
-                            style: theme.textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w600)),
-                      ],
+            Container(
+              padding: const EdgeInsets.all(AppDimens.spacingMd),
+              decoration: BoxDecoration(
+                color: cardBg,
+                borderRadius: BorderRadius.circular(AppDimens.radiusLg),
+                boxShadow: [
+                  BoxShadow(
+                    color: isDark
+                        ? Colors.black.withValues(alpha: 0.3)
+                        : const Color(0xFF1565C0).withValues(alpha: 0.14),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '日報',
+                    style: TextStyle(fontSize: 14, color: scheme.primary),
+                  ),
+                  const SizedBox(height: AppDimens.spacingSm),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(AppDimens.radiusSm),
+                      border: Border.all(
+                        color: scheme.outlineVariant.withValues(alpha: 0.4),
+                        style: BorderStyle.solid,
+                      ),
                     ),
-                    const SizedBox(height: AppDimens.spacingSm),
-                    Text(
+                    child: Text(
                       report?.summary ?? '尚無日報',
-                      style: theme.textTheme.bodyMedium,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: scheme.onSurface,
+                        height: 1.5,
+                      ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: AppDimens.spacingMd),
@@ -119,25 +142,38 @@ class _CommitsTab extends StatelessWidget {
           );
         }
         final scheme = Theme.of(ctx).colorScheme;
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        final cardBg = isDark ? const Color(0xFF222630) : scheme.surface;
         return ListView.builder(
-          padding: const EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
+          padding: const EdgeInsets.all(AppDimens.spacingMd),
           itemCount: vm.commits.length,
           itemBuilder: (_, i) {
             final c = vm.commits[i];
-            return Card(
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: scheme.tertiaryContainer,
-                  foregroundColor: scheme.onTertiaryContainer,
-                  child: const Icon(Icons.commit_outlined, size: 20),
+            return Padding(
+              padding: const EdgeInsets.only(bottom: AppDimens.spacingSm),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: cardBg,
+                  borderRadius: BorderRadius.circular(AppDimens.radiusLg),
+                  boxShadow: [
+                    BoxShadow(
+                      color: isDark
+                          ? Colors.black.withValues(alpha: 0.2)
+                          : const Color(0xFF1565C0).withValues(alpha: 0.09),
+                      blurRadius: 3,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
                 ),
-                title: Text(
-                  c.message.split('\n').first,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _kvRow('commit:', c.sha.substring(0, 7), scheme),
+                    _kvRow('author:', c.author.login, scheme),
+                    _kvRow('message:', c.message.split('\n').first, scheme),
+                  ],
                 ),
-                subtitle: Text('${c.author.login} · ${c.sha.substring(0, 7)}'),
               ),
             );
           },
@@ -165,28 +201,63 @@ class _DiscordTab extends StatelessWidget {
           );
         }
         final scheme = Theme.of(ctx).colorScheme;
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        final cardBg = isDark ? const Color(0xFF222630) : scheme.surface;
         return ListView.builder(
-          padding: const EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
+          padding: const EdgeInsets.all(AppDimens.spacingMd),
           itemCount: vm.messages.length,
           itemBuilder: (_, i) {
             final m = vm.messages[i];
-            return Card(
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: scheme.secondaryContainer,
-                  foregroundColor: scheme.onSecondaryContainer,
-                  child: Text(
-                    m.authorName.isEmpty
-                        ? '?'
-                        : m.authorName.substring(0, 1).toUpperCase(),
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
+            final isEdge = i == 0 || i == vm.messages.length - 1;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: AppDimens.spacingSm),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: cardBg,
+                  borderRadius: BorderRadius.circular(AppDimens.radiusLg),
+                  boxShadow: [
+                    BoxShadow(
+                      color: isDark
+                          ? Colors.black.withValues(alpha: isEdge ? 0.3 : 0.2)
+                          : Color(0xFF1565C0).withValues(alpha: isEdge ? 0.14 : 0.09),
+                      blurRadius: isEdge ? 8 : 3,
+                      offset: Offset(0, isEdge ? 2 : 1),
+                    ),
+                  ],
                 ),
-                title: Text(
-                  m.authorName,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      m.authorName,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(AppDimens.radiusSm),
+                        border: Border.all(
+                          color: scheme.outlineVariant.withValues(alpha: 0.4),
+                        ),
+                      ),
+                      child: Text(
+                        m.content,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: scheme.onSurface,
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                subtitle: Text(m.content),
               ),
             );
           },
@@ -194,4 +265,28 @@ class _DiscordTab extends StatelessWidget {
       },
     );
   }
+}
+
+Widget _kvRow(String label, String value, ColorScheme scheme) {
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 4),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 64,
+          child: Text(
+            label,
+            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: TextStyle(fontSize: 12, color: scheme.onSurface, height: 1.4),
+          ),
+        ),
+      ],
+    ),
+  );
 }
