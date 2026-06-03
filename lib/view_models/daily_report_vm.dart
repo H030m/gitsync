@@ -6,6 +6,10 @@ import '../models/daily_report.dart';
 import '../repositories/daily_report_repo.dart';
 import '../services/functions_service.dart';
 
+/// Streams the AI report for the selected period (a single day by default,
+/// today) and triggers regeneration. The user can widen the period via
+/// [setRange] — multi-day reports live under the `{start}_{end}` doc id
+/// (see functions/src/flows/summarizeDay.ts `reportDocId`).
 class DailyReportViewModel with ChangeNotifier {
   DailyReportViewModel({
     required String repoId,
@@ -13,18 +17,16 @@ class DailyReportViewModel with ChangeNotifier {
     DailyReportRepository? reportRepository,
     FunctionsService? functionsService,
   })  : _repoId = repoId,
-        _date = date ?? DateTime.now(),
+        _start = date ?? DateTime.now(),
+        _end = date ?? DateTime.now(),
         _repo = reportRepository ?? DailyReportRepository(),
         _functions = functionsService ?? FunctionsService() {
-    _sub = _repo.streamReport(_repoId, _dateKey).listen((report) {
-      _report = report;
-      _loading = false;
-      notifyListeners();
-    });
+    _subscribe();
   }
 
   final String _repoId;
-  final DateTime _date;
+  DateTime _start;
+  DateTime _end;
   final DailyReportRepository _repo;
   final FunctionsService _functions;
   StreamSubscription<DailyReport?>? _sub;
@@ -38,18 +40,53 @@ class DailyReportViewModel with ChangeNotifier {
   bool _regenerating = false;
   bool get regenerating => _regenerating;
 
-  String get _dateKey =>
-      '${_date.year.toString().padLeft(4, '0')}-'
-      '${_date.month.toString().padLeft(2, '0')}-'
-      '${_date.day.toString().padLeft(2, '0')}';
+  DateTime get rangeStart => _start;
+  DateTime get rangeEnd => _end;
 
-  // Manual trigger for AI-generated daily summary.
+  /// True when the selected period is a single calendar day.
+  bool get isSingleDay => _dayKey(_start) == _dayKey(_end);
+
+  static String _dayKey(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
+
+  String get startKey => _dayKey(_start);
+  String get endKey => _dayKey(_end);
+
+  /// Report doc id for the current period (mirrors the backend's contract).
+  String get docKey => isSingleDay ? startKey : '${startKey}_$endKey';
+
+  void _subscribe() {
+    _sub?.cancel();
+    _loading = true;
+    _report = null;
+    _sub = _repo.streamReport(_repoId, docKey).listen((report) {
+      _report = report;
+      _loading = false;
+      notifyListeners();
+    });
+  }
+
+  /// Re-points the stream at the report for [start]..[end] (inclusive days).
+  void setRange(DateTime start, DateTime end) {
+    _start = start;
+    _end = end;
+    _subscribe();
+    notifyListeners();
+  }
+
+  // Manual trigger for the AI-generated period report.
   Future<void> regenerate() async {
     if (_regenerating) return;
     _regenerating = true;
     notifyListeners();
     try {
-      await _functions.summarizeDay(repoId: _repoId, date: _dateKey);
+      await _functions.summarizeDay(
+        repoId: _repoId,
+        startDate: startKey,
+        endDate: endKey,
+      );
     } finally {
       _regenerating = false;
       notifyListeners();

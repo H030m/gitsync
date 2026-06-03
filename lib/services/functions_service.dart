@@ -47,20 +47,33 @@ abstract class FunctionsService {
     required String repoId,
     required String taskId,
   });
+  /// Generates the Summary tab report for the inclusive day range
+  /// [startDate]..[endDate] (both YYYY-MM-DD; omit [endDate] for one day).
   Future<String> summarizeDay({
     required String repoId,
-    required String date,
+    required String startDate,
+    String? endDate,
   });
 
-  /// Asks the AI a question about a given day's activity (commits / completed
-  /// tasks / Discord discussion + repo history). The backend runs an agentic
+  /// Asks the AI a question about a period's activity (commits / completed
+  /// tasks / Discord discussion + repo history). [date]..[endDate] is the
+  /// inclusive scope (omit [endDate] for one day). The backend runs an agentic
   /// loop and returns the answer plus the commits it surfaced. [history] is
   /// prior turns, oldest first, for follow-up context.
   Future<DailyBriefReply> dailyBrief({
     required String repoId,
     required String date,
+    String? endDate,
     required String question,
     List<DailyBriefTurn> history = const [],
+  });
+
+  /// Asks the AI to explain the work behind one commit (the commit tree map's
+  /// tap action). Returns markdown; the backend caches it on the commit doc.
+  Future<String> explainCommit({
+    required String repoId,
+    required String sha,
+    bool force = false,
   });
 
   // ---- Discord -----------------------------------------------------------
@@ -203,11 +216,13 @@ class _LiveFunctionsService implements FunctionsService {
   @override
   Future<String> summarizeDay({
     required String repoId,
-    required String date,
+    required String startDate,
+    String? endDate,
   }) async {
     final res = await _callable('summarizeDay').call({
       'repoId': repoId,
-      'date': date,
+      'startDate': startDate,
+      'endDate': endDate ?? startDate,
     });
     final data = Map<String, dynamic>.from(res.data as Map);
     return data['summary'] as String;
@@ -217,16 +232,33 @@ class _LiveFunctionsService implements FunctionsService {
   Future<DailyBriefReply> dailyBrief({
     required String repoId,
     required String date,
+    String? endDate,
     required String question,
     List<DailyBriefTurn> history = const [],
   }) async {
     final res = await _callable('dailyBrief').call({
       'repoId': repoId,
       'date': date,
+      'endDate': ?endDate,
       'question': question,
       'history': history.map((t) => t.toMap()).toList(),
     });
     return DailyBriefReply.fromMap(Map<String, dynamic>.from(res.data as Map));
+  }
+
+  @override
+  Future<String> explainCommit({
+    required String repoId,
+    required String sha,
+    bool force = false,
+  }) async {
+    final res = await _callable('explainCommit').call({
+      'repoId': repoId,
+      'sha': sha,
+      'force': force,
+    });
+    final data = Map<String, dynamic>.from(res.data as Map);
+    return data['markdown'] as String;
   }
 
   @override

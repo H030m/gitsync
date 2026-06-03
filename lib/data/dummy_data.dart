@@ -207,6 +207,7 @@ class DummyData {
           deletions: 12,
           linkedTaskIds: const ['task-001'],
           aiSummary: 'Initial Flutter MVVM scaffolding committed.',
+          committedAt: _daysAgo(2, hours: 5),
         ),
         Commit(
           sha: 'b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3',
@@ -223,6 +224,7 @@ class DummyData {
           deletions: 3,
           linkedTaskIds: const ['task-002'],
           aiSummary: 'GitHub OAuth flow added; access token persisted.',
+          committedAt: _daysAgo(1, hours: 8),
         ),
         Commit(
           sha: 'c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
@@ -242,6 +244,44 @@ class DummyData {
           deletions: 5,
           linkedTaskIds: const ['task-003'],
           aiSummary: 'Initial OpenAI flow scaffold without the live call.',
+          committedAt: _daysAgo(1, hours: 3),
+        ),
+        Commit(
+          sha: 'd4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5',
+          repoId: demoRepoId,
+          message: 'OAuth callback URL fix for Windows + sign-in error states',
+          author: const CommitAuthor(
+            login: 'alice-dev',
+            name: 'Alice Chen',
+            email: 'alice@gitsync.local',
+          ),
+          url: 'https://github.com/team17/gitsync/commit/d4e5f6a',
+          filesChanged: const [
+            'lib/services/authentication.dart',
+            'lib/views/sign_in/sign_in_page.dart',
+          ],
+          additions: 38,
+          deletions: 9,
+          linkedTaskIds: const ['task-002'],
+          aiSummary: 'Fixed the Windows OAuth callback and surfaced errors.',
+          committedAt: _daysAgo(0, hours: 7),
+        ),
+        Commit(
+          sha: 'e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6',
+          repoId: demoRepoId,
+          message: 'TaskBoard drag-and-drop between columns',
+          author: const CommitAuthor(
+            login: 'demo-user',
+            name: 'Demo User',
+            email: 'demo@gitsync.local',
+          ),
+          url: 'https://github.com/team17/gitsync/commit/e5f6a1b',
+          filesChanged: const ['lib/views/tasks/tasks_board_page.dart'],
+          additions: 86,
+          deletions: 14,
+          linkedTaskIds: const ['task-001'],
+          aiSummary: 'Kanban columns now support drag-and-drop.',
+          committedAt: _daysAgo(0, hours: 2),
         ),
       ];
 

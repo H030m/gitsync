@@ -14,11 +14,13 @@ class DailyBriefChatViewModel with ChangeNotifier {
     DateTime? date,
     FunctionsService? functionsService,
   })  : _repoId = repoId,
-        _date = date ?? DateTime.now(),
+        _start = date ?? DateTime.now(),
+        _end = date ?? DateTime.now(),
         _functions = functionsService ?? FunctionsService();
 
   final String _repoId;
-  final DateTime _date;
+  DateTime _start;
+  DateTime _end;
   final FunctionsService _functions;
 
   final List<DailyBriefTurn> _turns = [];
@@ -30,10 +32,19 @@ class DailyBriefChatViewModel with ChangeNotifier {
   String? _error;
   String? get error => _error;
 
-  String get _dateKey =>
-      '${_date.year.toString().padLeft(4, '0')}-'
-      '${_date.month.toString().padLeft(2, '0')}-'
-      '${_date.day.toString().padLeft(2, '0')}';
+  static String _key(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
+
+  /// Re-scopes future questions to [start]..[end] (inclusive days). Kept in
+  /// sync with the report VM's range by the Summary tab's range picker. The
+  /// transcript is preserved — only the scope of new questions changes.
+  void setRange(DateTime start, DateTime end) {
+    _start = start;
+    _end = end;
+    notifyListeners();
+  }
 
   /// Sends [question] to the AI. Appends a user turn immediately, then an
   /// assistant turn once the callable returns. No-ops on empty input or while a
@@ -57,7 +68,8 @@ class DailyBriefChatViewModel with ChangeNotifier {
     try {
       final reply = await _functions.dailyBrief(
         repoId: _repoId,
-        date: _dateKey,
+        date: _key(_start),
+        endDate: _key(_end) == _key(_start) ? null : _key(_end),
         question: trimmed,
         history: history,
       );

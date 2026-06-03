@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/commit.dart';
 import '../../models/daily_brief.dart';
 import '../../models/daily_report.dart';
 import '../../models/discord_chat.dart';
@@ -36,11 +38,7 @@ class DailyViewPage extends StatelessWidget {
           ),
         ),
         body: const TabBarView(
-          children: [
-            _SummaryTab(),
-            _CommitsTab(),
-            _DiscordTab(),
-          ],
+          children: [_SummaryTab(), _CommitsTab(), _DiscordTab()],
         ),
       ),
     );
@@ -101,6 +99,8 @@ class _SummaryTabState extends State<_SummaryTab> {
                 controller: _scrollController,
                 padding: const EdgeInsets.all(AppDimens.spacingMd),
                 children: [
+                  _PeriodBar(report: report, chat: chat),
+                  const SizedBox(height: AppDimens.spacingSm),
                   _ReportCard(vm: report),
                   if (report.report != null && !report.report!.isEmpty) ...[
                     _HighlightsCard(report: report.report!),
@@ -130,6 +130,55 @@ class _SummaryTabState extends State<_SummaryTab> {
   }
 }
 
+// Period picker for the intelligence hub. Re-points BOTH the report stream and
+// the "ask AI" chat scope at the picked inclusive day range.
+class _PeriodBar extends StatelessWidget {
+  const _PeriodBar({required this.report, required this.chat});
+  final DailyReportViewModel report;
+  final DailyBriefChatViewModel chat;
+
+  String get _label => report.isSingleDay
+      ? (_dayKey(report.rangeStart) == _dayKey(DateTime.now())
+            ? 'Today'
+            : _monthDay(report.rangeStart))
+      : '${_monthDay(report.rangeStart)} ~ ${_monthDay(report.rangeEnd)}';
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Text(
+          'Period',
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const Spacer(),
+        OutlinedButton.icon(
+          onPressed: () async {
+            final now = DateTime.now();
+            final picked = await showDateRangePicker(
+              context: context,
+              firstDate: DateTime(2020),
+              lastDate: now,
+              initialDateRange: DateTimeRange(
+                start: report.rangeStart,
+                end: report.rangeEnd,
+              ),
+            );
+            if (picked == null) return;
+            report.setRange(picked.start, picked.end);
+            chat.setRange(picked.start, picked.end);
+          },
+          icon: const Icon(Icons.date_range_outlined, size: 18),
+          label: Text(_label),
+        ),
+      ],
+    );
+  }
+}
+
 // AI daily-summary card with the regenerate action. Shows an empty state when
 // no report exists yet for the day.
 class _ReportCard extends StatelessWidget {
@@ -150,12 +199,18 @@ class _ReportCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.auto_awesome_outlined,
-                    size: 20, color: theme.colorScheme.primary),
+                Icon(
+                  Icons.auto_awesome_outlined,
+                  size: 20,
+                  color: theme.colorScheme.primary,
+                ),
                 const SizedBox(width: AppDimens.spacingSm),
-                Text('Daily summary',
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w600)),
+                Text(
+                  'Daily summary',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const Spacer(),
                 if (report != null && report.commitCount > 0)
                   _CountChip(
@@ -168,8 +223,9 @@ class _ReportCard extends StatelessWidget {
             Text(
               hasReport
                   ? report.summary
-                  : 'No report generated for today yet. Tap Regenerate to let '
-                      'the AI summarize the day’s commits, tasks and chat.',
+                  : 'No report generated for this period yet. Tap Regenerate '
+                        'to let the AI summarize the period’s commits, tasks '
+                        'and chat.',
               style: theme.textTheme.bodyMedium,
             ),
             const SizedBox(height: AppDimens.spacingMd),
@@ -259,12 +315,18 @@ class _CommitRollupCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Icon(Icons.merge_type_outlined,
-                      size: 20, color: scheme.tertiary),
+                  Icon(
+                    Icons.merge_type_outlined,
+                    size: 20,
+                    color: scheme.tertiary,
+                  ),
                   const SizedBox(width: AppDimens.spacingSm),
-                  Text('Commit rollup',
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w600)),
+                  Text(
+                    'Commit rollup',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: AppDimens.spacingSm),
@@ -278,13 +340,19 @@ class _CommitRollupCard extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(t.theme,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                    fontWeight: FontWeight.w600)),
+                            Text(
+                              t.theme,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                             if (t.summary.isNotEmpty)
-                              Text(t.summary,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                      color: scheme.onSurfaceVariant)),
+                              Text(
+                                t.summary,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
                           ],
                         ),
                       ),
@@ -331,11 +399,18 @@ class _ContributionsCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Icon(Icons.groups_outlined, size: 20, color: scheme.secondary),
+                  Icon(
+                    Icons.groups_outlined,
+                    size: 20,
+                    color: scheme.secondary,
+                  ),
                   const SizedBox(width: AppDimens.spacingSm),
-                  Text('Contributions',
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w600)),
+                  Text(
+                    'Contributions',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: AppDimens.spacingSm),
@@ -390,7 +465,11 @@ class _ContributionsCard extends StatelessWidget {
 }
 
 class _BulletRow extends StatelessWidget {
-  const _BulletRow({required this.icon, required this.color, required this.text});
+  const _BulletRow({
+    required this.icon,
+    required this.color,
+    required this.text,
+  });
   final IconData icon;
   final Color color;
   final String text;
@@ -404,7 +483,9 @@ class _BulletRow extends StatelessWidget {
         children: [
           Icon(icon, size: 18, color: color),
           const SizedBox(width: AppDimens.spacingSm),
-          Expanded(child: Text(text, style: Theme.of(context).textTheme.bodyMedium)),
+          Expanded(
+            child: Text(text, style: Theme.of(context).textTheme.bodyMedium),
+          ),
         ],
       ),
     );
@@ -448,9 +529,12 @@ class _BriefHeader extends StatelessWidget {
       children: [
         Icon(Icons.forum_outlined, size: 20, color: theme.colorScheme.primary),
         const SizedBox(width: AppDimens.spacingSm),
-        Text('Ask AI about today',
-            style: theme.textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.w600)),
+        Text(
+          'Ask AI about today',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ],
     );
   }
@@ -471,8 +555,9 @@ class _BriefHint extends StatelessWidget {
       child: Text(
         'e.g. 「今天有哪些 commit 跟 OAuth 有關？」、「有沒有人提到 blocker？」、'
         '「breakdownTask 最近誰改的？」',
-        style: theme.textTheme.bodySmall
-            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
       ),
     );
   }
@@ -492,7 +577,9 @@ class _BriefTurnView extends StatelessWidget {
     if (turn.isUser) {
       return Padding(
         padding: const EdgeInsets.only(
-            top: AppDimens.spacingMd, bottom: AppDimens.spacingXs),
+          top: AppDimens.spacingMd,
+          bottom: AppDimens.spacingXs,
+        ),
         child: Align(
           alignment: Alignment.centerRight,
           child: Container(
@@ -505,8 +592,10 @@ class _BriefTurnView extends StatelessWidget {
               color: scheme.primaryContainer,
               borderRadius: BorderRadius.circular(16),
             ),
-            child: Text(turn.content,
-                style: TextStyle(color: scheme.onPrimaryContainer)),
+            child: Text(
+              turn.content,
+              style: TextStyle(color: scheme.onPrimaryContainer),
+            ),
           ),
         ),
       );
@@ -519,11 +608,18 @@ class _BriefTurnView extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.auto_awesome_outlined, size: 18, color: scheme.primary),
+              Icon(
+                Icons.auto_awesome_outlined,
+                size: 18,
+                color: scheme.primary,
+              ),
               const SizedBox(width: AppDimens.spacingSm),
-              Text('AI',
-                  style: theme.textTheme.labelLarge
-                      ?.copyWith(fontWeight: FontWeight.w600)),
+              Text(
+                'AI',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: AppDimens.spacingSm),
@@ -569,9 +665,12 @@ class _BriefSourcesPanel extends StatelessWidget {
               children: [
                 Icon(Icons.commit_outlined, size: 16, color: scheme.tertiary),
                 const SizedBox(width: AppDimens.spacingXs),
-                Text('Source commits (${sources.length})',
-                    style: theme.textTheme.labelMedium
-                        ?.copyWith(fontWeight: FontWeight.w600)),
+                Text(
+                  'Source commits (${sources.length})',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ],
             ),
           ),
@@ -591,18 +690,25 @@ class _BriefSourcesPanel extends StatelessWidget {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(s.message,
-                        style: theme.textTheme.bodySmall
-                            ?.copyWith(fontWeight: FontWeight.w600)),
+                    Text(
+                      s.message,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                     if (s.aiSummary != null && s.aiSummary!.isNotEmpty)
-                      Text(s.aiSummary!,
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: scheme.onSurfaceVariant)),
+                      Text(
+                        s.aiSummary!,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
                     Text(
                       '${s.authorName.isEmpty ? s.authorLogin : s.authorName}'
                       ' · ${s.shortSha}',
-                      style: theme.textTheme.labelSmall
-                          ?.copyWith(color: scheme.onSurfaceVariant),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 );
@@ -676,6 +782,10 @@ class _BriefInputBar extends StatelessWidget {
   }
 }
 
+// Commits tab — a scrollable commit tree map. One lane (column + color) per
+// author, day separators, and tap-a-commit → an AI explanation of the work
+// (the `explainCommit` callable, cached per sha). A range button filters the
+// map to an inclusive day range.
 class _CommitsTab extends StatelessWidget {
   const _CommitsTab();
 
@@ -686,36 +796,454 @@ class _CommitsTab extends StatelessWidget {
         if (vm.loading) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (vm.commits.isEmpty) {
-          return const EmptyState(
-            icon: Icons.commit_outlined,
-            title: 'No commits yet',
-            message: 'Recent commits on this repo will show up here.',
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppDimens.spacingMd,
+                AppDimens.spacingMd,
+                AppDimens.spacingMd,
+                AppDimens.spacingSm,
+              ),
+              child: Row(
+                children: [
+                  Text(
+                    'Commit map',
+                    style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (vm.hasRange)
+                    IconButton(
+                      tooltip: 'Clear range',
+                      onPressed: vm.clearRange,
+                      icon: const Icon(Icons.close, size: 18),
+                    ),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final now = DateTime.now();
+                      final picked = await showDateRangePicker(
+                        context: ctx,
+                        firstDate: DateTime(2020),
+                        lastDate: now,
+                        initialDateRange: vm.hasRange
+                            ? DateTimeRange(
+                                start: vm.rangeStart!,
+                                end: vm.rangeEnd!,
+                              )
+                            : DateTimeRange(start: now, end: now),
+                      );
+                      if (picked == null) return;
+                      vm.setRange(picked.start, picked.end);
+                    },
+                    icon: const Icon(Icons.date_range_outlined, size: 18),
+                    label: Text(
+                      vm.hasRange
+                          ? '${_monthDay(vm.rangeStart!)} ~ ${_monthDay(vm.rangeEnd!)}'
+                          : 'Recent 50',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: vm.commits.isEmpty
+                  ? const EmptyState(
+                      icon: Icons.commit_outlined,
+                      title: 'No commits',
+                      message:
+                          'No commits in this period. Pick another range or '
+                          'clear the filter.',
+                    )
+                  : _CommitTree(vm: vm),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// Lane palette for the tree map (index = lane). Wraps around if the team is
+// larger than the palette.
+const List<Color> _laneColors = [
+  Color(0xFF4C9AFF), // blue
+  Color(0xFF36B37E), // green
+  Color(0xFFFF8B00), // orange
+  Color(0xFF9C5FFF), // purple
+  Color(0xFFFF5B7A), // pink
+  Color(0xFF00B8D9), // teal
+];
+
+// One row of the flattened tree: either a day header or a commit with its
+// precomputed lane geometry.
+class _TreeRow {
+  _TreeRow.header(this.dayLabel)
+    : commit = null,
+      lane = 0,
+      activeLanes = const [];
+  _TreeRow.commit(Commit this.commit, this.lane, this.activeLanes)
+    : dayLabel = null;
+
+  final String? dayLabel;
+  final Commit? commit;
+  final int lane;
+
+  /// For each lane: whether a vertical line passes through this row.
+  final List<bool> activeLanes;
+
+  bool get isHeader => dayLabel != null;
+}
+
+// Hard cap on rail lanes — authors beyond this share the last lane so the
+// rail never paints over the text column (bots can inflate author counts).
+const int _maxLanes = 6;
+
+// Builds the flattened row list: day headers + commits with lane geometry.
+// Lanes are assigned per author in order of first (newest) appearance; a
+// lane's line spans from its newest to its oldest commit.
+List<_TreeRow> _buildTreeRows(List<Commit> commits) {
+  final laneOf = <String, int>{};
+  for (final c in commits) {
+    laneOf.putIfAbsent(
+      c.author.login,
+      () => laneOf.length.clamp(0, _maxLanes - 1),
+    );
+  }
+  final laneCount = laneOf.isEmpty
+      ? 0
+      : (laneOf.values.reduce((a, b) => a > b ? a : b) + 1);
+
+  // First/last (newest/oldest) flat index of each lane, over commits only.
+  final firstIdx = List<int>.filled(laneCount, -1);
+  final lastIdx = List<int>.filled(laneCount, -1);
+  for (var i = 0; i < commits.length; i++) {
+    final lane = laneOf[commits[i].author.login]!;
+    if (firstIdx[lane] == -1) firstIdx[lane] = i;
+    lastIdx[lane] = i;
+  }
+
+  final rows = <_TreeRow>[];
+  String? lastDay;
+  for (var i = 0; i < commits.length; i++) {
+    final c = commits[i];
+    final day = _dayKey(c.committedAt.toDate());
+    if (day != lastDay) {
+      rows.add(_TreeRow.header(day));
+      lastDay = day;
+    }
+    final active = List<bool>.generate(
+      laneCount,
+      (l) => firstIdx[l] <= i && i <= lastIdx[l],
+    );
+    rows.add(_TreeRow.commit(c, laneOf[c.author.login]!, active));
+  }
+  return rows;
+}
+
+class _CommitTree extends StatelessWidget {
+  const _CommitTree({required this.vm});
+  final CommitsViewModel vm;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = _buildTreeRows(vm.commits);
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: AppDimens.spacingMd),
+      itemCount: rows.length,
+      itemBuilder: (ctx, i) {
+        final row = rows[i];
+        if (row.isHeader) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppDimens.spacingMd,
+              AppDimens.spacingSm,
+              AppDimens.spacingMd,
+              AppDimens.spacingXs,
+            ),
+            child: Row(
+              children: [
+                Text(
+                  row.dayLabel!,
+                  style: Theme.of(ctx).textTheme.labelMedium?.copyWith(
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(width: AppDimens.spacingSm),
+                const Expanded(child: Divider(height: 1)),
+              ],
+            ),
           );
         }
-        final scheme = Theme.of(ctx).colorScheme;
-        return ListView.builder(
-          padding: const EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
-          itemCount: vm.commits.length,
-          itemBuilder: (_, i) {
-            final c = vm.commits[i];
-            return Card(
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: scheme.tertiaryContainer,
-                  foregroundColor: scheme.onTertiaryContainer,
-                  child: const Icon(Icons.commit_outlined, size: 20),
+        return _CommitTreeRow(row: row, vm: vm);
+      },
+    );
+  }
+}
+
+class _CommitTreeRow extends StatelessWidget {
+  const _CommitTreeRow({required this.row, required this.vm});
+  final _TreeRow row;
+  final CommitsViewModel vm;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final c = row.commit!;
+    final color = _laneColors[row.lane % _laneColors.length];
+    final laneWidth = 16.0;
+    final railWidth =
+        (row.activeLanes.length.clamp(1, 6)) * laneWidth + AppDimens.spacingSm;
+
+    return InkWell(
+      onTap: () => _showCommitSheet(context, c, vm),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppDimens.spacingMd),
+        // IntrinsicHeight bounds the stretch axis so the rail painter gets the
+        // row's real height (a ListView child otherwise has unbounded height).
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                width: railWidth,
+                child: CustomPaint(
+                  painter: _LanePainter(
+                    lane: row.lane,
+                    activeLanes: row.activeLanes,
+                    laneWidth: laneWidth,
+                    color: color,
+                    lineColor: scheme.outlineVariant,
+                  ),
                 ),
-                title: Text(
-                  c.message.split('\n').first,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                subtitle: Text('${c.author.login} · ${c.sha.substring(0, 7)}'),
               ),
-            );
-          },
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: AppDimens.spacingSm,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        c.message.split('\n').first,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: color,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: AppDimens.spacingXs),
+                          Flexible(
+                            child: Text(
+                              '${c.author.name.isEmpty ? c.author.login : c.author.name}'
+                              ' · ${c.sha.substring(0, 7)}'
+                              ' · ${_hhmm(c.committedAt.toDate())}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          if (c.aiSummary != null) ...[
+                            const SizedBox(width: AppDimens.spacingXs),
+                            Icon(
+                              Icons.auto_awesome_outlined,
+                              size: 12,
+                              color: scheme.primary,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Icon(Icons.chevron_right, size: 18, color: scheme.outline),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Paints the tree rail for one commit row: a vertical line for every lane
+// whose span covers this row, and a node dot on the commit's own lane.
+class _LanePainter extends CustomPainter {
+  _LanePainter({
+    required this.lane,
+    required this.activeLanes,
+    required this.laneWidth,
+    required this.color,
+    required this.lineColor,
+  });
+
+  final int lane;
+  final List<bool> activeLanes;
+  final double laneWidth;
+  final Color color;
+  final Color lineColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final linePaint = Paint()
+      ..color = lineColor
+      ..strokeWidth = 2;
+    for (var l = 0; l < activeLanes.length; l++) {
+      if (!activeLanes[l]) continue;
+      final x = laneWidth / 2 + l * laneWidth;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), linePaint);
+    }
+    // Node dot (ring + fill) on this commit's lane, vertically centered.
+    final x = laneWidth / 2 + lane * laneWidth;
+    final y = size.height / 2;
+    canvas.drawCircle(Offset(x, y), 5.5, Paint()..color = lineColor);
+    canvas.drawCircle(Offset(x, y), 4, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_LanePainter old) =>
+      old.lane != lane ||
+      old.color != color ||
+      old.lineColor != lineColor ||
+      !listEquals(old.activeLanes, activeLanes);
+}
+
+// Bottom sheet: commit details + the AI work explanation (auto-fetched, cached
+// by the VM and on the backend commit doc).
+void _showCommitSheet(
+  BuildContext context,
+  Commit commit,
+  CommitsViewModel vm,
+) {
+  // Kick off the explanation fetch before the sheet builds.
+  vm.explain(commit.sha);
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (_) => ChangeNotifierProvider<CommitsViewModel>.value(
+      value: vm,
+      child: _CommitDetailSheet(commit: commit),
+    ),
+  );
+}
+
+class _CommitDetailSheet extends StatelessWidget {
+  const _CommitDetailSheet({required this.commit});
+  final Commit commit;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final c = commit;
+    return Consumer<CommitsViewModel>(
+      builder: (ctx, vm, _) {
+        final explanation = vm.explanationFor(c.sha);
+        final explaining = vm.isExplaining(c.sha);
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.6,
+          maxChildSize: 0.92,
+          builder: (_, scrollController) => ListView(
+            controller: scrollController,
+            padding: const EdgeInsets.fromLTRB(
+              AppDimens.spacingMd,
+              0,
+              AppDimens.spacingMd,
+              AppDimens.spacingMd,
+            ),
+            children: [
+              Text(
+                c.message.split('\n').first,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: AppDimens.spacingXs),
+              Text(
+                '${c.author.name.isEmpty ? c.author.login : c.author.name}'
+                ' · ${c.sha.substring(0, 7)}'
+                ' · +${c.additions} −${c.deletions}',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+              if (c.filesChanged.isNotEmpty) ...[
+                const SizedBox(height: AppDimens.spacingSm),
+                Wrap(
+                  spacing: AppDimens.spacingXs,
+                  runSpacing: AppDimens.spacingXs,
+                  children: [
+                    for (final f in c.filesChanged.take(8))
+                      Chip(
+                        label: Text(f, style: theme.textTheme.labelSmall),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: AppDimens.spacingMd),
+              Row(
+                children: [
+                  Icon(
+                    Icons.auto_awesome_outlined,
+                    size: 18,
+                    color: scheme.primary,
+                  ),
+                  const SizedBox(width: AppDimens.spacingSm),
+                  Text(
+                    'AI work summary',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (explanation != null && !explaining)
+                    IconButton(
+                      tooltip: 'Regenerate',
+                      onPressed: () => vm.explain(c.sha, force: true),
+                      icon: const Icon(Icons.refresh, size: 18),
+                    ),
+                ],
+              ),
+              const SizedBox(height: AppDimens.spacingSm),
+              if (explaining)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: AppDimens.spacingMd),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (explanation != null)
+                MarkdownView(data: explanation)
+              else if (vm.explainError != null)
+                Text(
+                  'Could not generate the summary. Please try again.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.error,
+                  ),
+                )
+              else
+                const SizedBox.shrink(),
+            ],
+          ),
         );
       },
     );
@@ -758,9 +1286,9 @@ class _DiscordTab extends StatelessWidget {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!ctx.mounted) return;
             vm.acknowledgeUpdated();
-            ScaffoldMessenger.of(ctx).showSnackBar(
-              const SnackBar(content: Text('Updated ✓')),
-            );
+            ScaffoldMessenger.of(
+              ctx,
+            ).showSnackBar(const SnackBar(content: Text('Updated ✓')));
           });
         }
         return Column(
@@ -789,9 +1317,8 @@ class _DiscordTab extends StatelessWidget {
                         Text(
                           'Updated ${_hhmm(vm.lastUpdatedAt!)}',
                           style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
-                                color:
-                                    Theme.of(ctx).colorScheme.onSurfaceVariant,
-                              ),
+                            color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       OutlinedButton.icon(
                         onPressed: vm.settingRange
@@ -800,7 +1327,8 @@ class _DiscordTab extends StatelessWidget {
                                 final now = DateTime.now();
                                 // Default the picker to the user's saved range
                                 // so it stays at the position they set.
-                                final initial = (vm.rangeStart != null &&
+                                final initial =
+                                    (vm.rangeStart != null &&
                                         vm.rangeEnd != null)
                                     ? DateTimeRange(
                                         start: vm.rangeStart!,
@@ -830,7 +1358,9 @@ class _DiscordTab extends StatelessWidget {
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : const Icon(Icons.date_range_outlined),
                         label: Text(_rangeLabel(vm)),
@@ -841,7 +1371,9 @@ class _DiscordTab extends StatelessWidget {
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : const Icon(Icons.refresh),
                         label: Text(vm.refreshing ? 'Fetching…' : 'Refresh'),
@@ -924,12 +1456,18 @@ class _DigestCardState extends State<_DigestCard> {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.auto_awesome_outlined,
-                      size: 20, color: scheme.primary),
+                  Icon(
+                    Icons.auto_awesome_outlined,
+                    size: 20,
+                    color: scheme.primary,
+                  ),
                   const SizedBox(width: AppDimens.spacingSm),
-                  Text('Discord digest',
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w600)),
+                  Text(
+                    'Discord digest',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   if (locked) ...[
                     const SizedBox(width: AppDimens.spacingSm),
                     Icon(Icons.lock, size: 16, color: scheme.primary),
@@ -950,7 +1488,9 @@ class _DigestCardState extends State<_DigestCard> {
                             transitionBuilder: (child, anim) => ScaleTransition(
                               scale: anim,
                               child: RotationTransition(
-                                  turns: anim, child: child),
+                                turns: anim,
+                                child: child,
+                              ),
                             ),
                             child: Icon(
                               locked ? Icons.lock : Icons.lock_open,
@@ -999,14 +1539,18 @@ class _DigestCardState extends State<_DigestCard> {
                         if (locked)
                           Row(
                             children: [
-                              Icon(Icons.lock_outline,
-                                  size: 16, color: scheme.outline),
+                              Icon(
+                                Icons.lock_outline,
+                                size: 16,
+                                color: scheme.outline,
+                              ),
                               const SizedBox(width: AppDimens.spacingXs),
                               Expanded(
                                 child: Text(
                                   'Locked — unlock to let AI adjust this summary.',
-                                  style: theme.textTheme.bodySmall
-                                      ?.copyWith(color: scheme.outline),
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: scheme.outline,
+                                  ),
                                 ),
                               ),
                             ],
@@ -1024,8 +1568,7 @@ class _DigestCardState extends State<_DigestCard> {
                                   textInputAction: TextInputAction.send,
                                   onSubmitted: (_) => _submitAdjust(),
                                   decoration: const InputDecoration(
-                                    hintText:
-                                        'Ask AI to adjust this summary…',
+                                    hintText: 'Ask AI to adjust this summary…',
                                     border: OutlineInputBorder(),
                                     isDense: true,
                                   ),
@@ -1034,14 +1577,16 @@ class _DigestCardState extends State<_DigestCard> {
                               const SizedBox(width: AppDimens.spacingSm),
                               IconButton.filledTonal(
                                 tooltip: 'Adjust with AI',
-                                onPressed:
-                                    vm.editingDigest ? null : _submitAdjust,
+                                onPressed: vm.editingDigest
+                                    ? null
+                                    : _submitAdjust,
                                 icon: vm.editingDigest
                                     ? const SizedBox(
                                         width: 18,
                                         height: 18,
                                         child: CircularProgressIndicator(
-                                            strokeWidth: 2),
+                                          strokeWidth: 2,
+                                        ),
                                       )
                                     : const Icon(Icons.auto_fix_high),
                               ),
@@ -1051,8 +1596,9 @@ class _DigestCardState extends State<_DigestCard> {
                           const SizedBox(height: AppDimens.spacingXs),
                           Text(
                             'Could not update the digest. Please try again.',
-                            style: theme.textTheme.bodySmall
-                                ?.copyWith(color: scheme.error),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.error,
+                            ),
                           ),
                         ],
                       ],
@@ -1120,8 +1666,9 @@ class _DiscordChatState extends State<_DiscordChat> {
                   ? LayoutBuilder(
                       builder: (ctx, constraints) => SingleChildScrollView(
                         child: ConstrainedBox(
-                          constraints:
-                              BoxConstraints(minHeight: constraints.maxHeight),
+                          constraints: BoxConstraints(
+                            minHeight: constraints.maxHeight,
+                          ),
                           child: const Center(
                             child: EmptyState(
                               icon: Icons.auto_awesome_outlined,
@@ -1205,8 +1752,9 @@ class _ChatTurnView extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 2, right: 4),
                 child: Text(
                   _hhmm(turn.createdAt!),
-                  style: theme.textTheme.labelSmall
-                      ?.copyWith(color: scheme.onSurfaceVariant),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
               ),
           ],
@@ -1222,18 +1770,25 @@ class _ChatTurnView extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.auto_awesome_outlined,
-                  size: 18, color: scheme.primary),
+              Icon(
+                Icons.auto_awesome_outlined,
+                size: 18,
+                color: scheme.primary,
+              ),
               const SizedBox(width: AppDimens.spacingSm),
-              Text('AI',
-                  style: theme.textTheme.labelLarge
-                      ?.copyWith(fontWeight: FontWeight.w600)),
+              Text(
+                'AI',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               if (turn.createdAt != null) ...[
                 const SizedBox(width: AppDimens.spacingSm),
                 Text(
                   _hhmm(turn.createdAt!),
-                  style: theme.textTheme.labelSmall
-                      ?.copyWith(color: scheme.onSurfaceVariant),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ],
@@ -1286,8 +1841,9 @@ class _SourcesPanel extends StatelessWidget {
                 const SizedBox(width: AppDimens.spacingXs),
                 Text(
                   'Related conversations (${snippets.length})',
-                  style: theme.textTheme.labelMedium
-                      ?.copyWith(fontWeight: FontWeight.w600),
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -1305,8 +1861,7 @@ class _SourcesPanel extends StatelessWidget {
               // Visible divider so distinct conversations read as separate
               // clusters.
               separatorBuilder: (_, _) => const Padding(
-                padding:
-                    EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
+                padding: EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
                 child: Divider(height: 1),
               ),
               itemBuilder: (_, i) => _SnippetBlock(snippet: snippets[i]),
@@ -1379,8 +1934,9 @@ class _SnippetMessage extends StatelessWidget {
               const SizedBox(width: AppDimens.spacingSm),
               Text(
                 time,
-                style: theme.textTheme.labelSmall
-                    ?.copyWith(color: scheme.onSurfaceVariant),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
             ],
           ],

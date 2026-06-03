@@ -55,7 +55,8 @@ class Commit {
     this.deletions = 0,
     this.linkedTaskIds = const [],
     this.aiSummary,
-  });
+    Timestamp? committedAt,
+  }) : _committedAt = committedAt;
 
   Commit._({
     required this.sha,

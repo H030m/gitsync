@@ -117,16 +117,35 @@ class FakeFunctionsService implements FunctionsService {
   @override
   Future<String> summarizeDay({
     required String repoId,
-    required String date,
+    required String startDate,
+    String? endDate,
   }) async {
     await Future.delayed(AppConfig.simulatedLatency * 4);
     return DummyData.todayReport.summary;
   }
 
   @override
+  Future<String> explainCommit({
+    required String repoId,
+    required String sha,
+    bool force = false,
+  }) async {
+    await Future.delayed(AppConfig.simulatedLatency * 3);
+    final commit =
+        DummyData.commits.where((c) => c.sha == sha).firstOrNull;
+    final message = commit?.message ?? sha.substring(0, 7);
+    return '**What was done** — ${commit?.aiSummary ?? message}\n\n'
+        '**Why / context** — part of the Sprint 1 push; pairs with the linked '
+        'task(s) ${commit?.linkedTaskIds.join(", ") ?? ""}.\n\n'
+        '**Where** — ${commit?.filesChanged.join(", ") ?? "(not recorded)"}\n\n'
+        '*(這是 fake backend 的示範回覆。)*';
+  }
+
+  @override
   Future<DailyBriefReply> dailyBrief({
     required String repoId,
     required String date,
+    String? endDate,
     required String question,
     List<DailyBriefTurn> history = const [],
   }) async {

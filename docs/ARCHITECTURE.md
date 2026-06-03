@@ -336,8 +336,9 @@ service cloud.firestore {
 | `forceUnlockBreakdown` | `{ repoId }` | `{}` | 強制解 `isBreakingDown` 鎖（卡 > 5min 時前端顯示「重置」按鈕呼叫）|
 | `assignTask` | `{ repoId, taskId }` | `{ assigneeId, reason }` | AI Flow — 動態分派 |
 | `generateHandoff` | `{ repoId, taskId }` | `{ handoffMarkdown }` | AI Flow — 交接文件 |
-| `summarizeDay` | `{ repoId, date: string }` | `{ summary, highlights, blockers, commitThemes, memberContributions, ... }` | AI Flow — 日報生成（agentic，§5.4）|
-| `dailyBrief` | `{ repoId, date, question, history? }` | `{ answer, commits[] }` | AI Flow — Summary tab「問 AI 今天」agentic 聊天（§5.4）|
+| `summarizeDay` | `{ repoId, date }` 或 `{ repoId, startDate, endDate }` | `{ summary, highlights, blockers, commitThemes, memberContributions, ... }` | AI Flow — 時段報告生成（agentic，§5.4；上限 92 天）|
+| `dailyBrief` | `{ repoId, date, endDate?, question, history? }` | `{ answer, commits[] }` | AI Flow — Summary tab「問 AI 這段期間」agentic 聊天（§5.4）|
+| `explainCommit` | `{ repoId, sha, force? }` | `{ markdown, cached }` | AI Flow — commit tree 地圖點擊的工作總結（§5.4；cache 在 `commits/{sha}.workSummary`）|
 | `setDiscordWebhook` | `{ repoId, webhookUrl, channelIds[] }` | `{}` | 設定 Discord outbound webhook + 監聽頻道 |
 | `subscribeToTopic` | `{ token, topic }` | `{}` | FCM web push（同課程） |
 
@@ -540,33 +541,41 @@ Phase 2 — Self Review (1 round):
 
 **自動觸發**：由 Firestore `onTaskUpdated` trigger 在 task 變 done 時自動呼叫此 flow，結果寫回 `tasks/{taskId}.handoffDoc`。
 
-### 5.4 Flow 4 — `summarizeDayFlow`（日報生成）+ Summary「情報總站」
+### 5.4 Flow 4 — `summarizeDayFlow`（時段報告）+ Summary「情報總站」+ Commit Tree
 
-Summary tab 是**開發者每日情報總站**：把當天 commits + completed tasks + Discord 討論彙整成「人話日報 + 重點 + 阻礙 + commit 訊息整理 + 成員貢獻」，並提供一個 agentic 聊天框讓開發者自然語言追問。後端兩支 flow：
+Summary tab 是**開發者情報總站**：把**自選時段**（預設今天；range picker 可選任意區間，上限 92 天）內的 commits + completed tasks + Discord 討論彙整成「人話報告 + 重點 + 阻礙 + commit 訊息整理 + 成員貢獻」，並提供一個 agentic 聊天框讓開發者自然語言追問。Commits tab 則是**commit tree 地圖**（lane-per-author、日期分隔、可滑動），**點任一 commit 由 AI 總結該筆工作**。後端三支 flow：
 
 **(a) `summarizeDayFlow`（agentic — 升級自原本的「非 Agentic 單次」）**
 
-**Input**: `{ repoId, date }`
-**Output**: `{ summary, highlights[], blockers[], commitThemes[], memberContributions, completedTaskIds[], commitCount }`
+**Input**: `{ repoId, startDate, endDate }`（單日＝兩者相同；callable 相容舊版 `{date}`）
+**Output**: `{ summary, highlights[], blockers[], commitThemes[], memberContributions, completedTaskIds[], commitCount, startDate, endDate }`
 
 ```
 Step 1 — 純 TS 先抓 context（精確計數，不交給 LLM 數）
-  ├─ listDayCommits / listCompletedTasks / readRoster（tools/dailyIntel.ts）
+  ├─ listRangeCommits / listRangeCompletedTasks / readRoster（tools/dailyIntel.ts）
   └─ computeContributions()：author.login → userId 對齊，算每人 tasksDone / commits
 
 Step 2 — agentic function-calling loop（MODELS.fast）
-  ├─ tools: getDayDigest（讀當日 Discord digest 找 blocker）、searchPastCommits
-  │         （跨日 grounding）、finalizeReport（一次性繳交敘事）
+  ├─ tools: listRangeDigests（讀時段內逐日 Discord digest 找 blocker，O(days) 便宜）、
+  │         listRangeDiscordMessages（digest 缺漏時的 raw 訊息兜底，cap 500）、
+  │         searchPastCommits（跨時段 grounding）、finalizeReport（一次性繳交敘事）
   ├─ agent 自由 drill-down，最後 commit 一份 narrative（summary/highlights/
-  │   blockers/commitThemes＝commit 訊息整理）
+  │   blockers/commitThemes＝commit 訊息整理；prompt 內 commits cap 200 行）
   └─ 最後一輪 tool_choice 強制 finalizeReport；萬一沒繳交 → 退回 deterministic fallback
 
-Step 3 — 寫 dailyReports/{date}（只有 Cloud Functions 寫得進；前端唯讀）
+Step 3 — 寫 dailyReports/{docId}：單日 docId = date、跨日 = `{start}_{end}`，
+         欄位含 startDate / endDate（只有 Cloud Functions 寫得進；前端唯讀）
 ```
 
-**(b) `dailyBriefChatFlow` / `dailyBrief` callable（agentic 聊天 — 「問 AI 今天」）**
+**(b) `dailyBriefChatFlow` / `dailyBrief` callable（agentic 聊天 — 「問 AI 這段期間」）**
 
-仿 `discordChatFlow`：function-calling loop（`listDayCommits` / `listCompletedTasks` / `getDayDigest` / `searchPastCommits`），把 agent 在過程中撈到的 commits 去重後連同答案一起回傳，前端在答案下方顯示「來源 commit」面板。
+仿 `discordChatFlow`：function-calling loop（`listDayCommits` / `listCompletedTasks` / `listRangeDigests` / `searchPastCommits`，前三者以使用者選的時段為界），把 agent 在過程中撈到的 commits 去重後連同答案一起回傳，前端在答案下方顯示「來源 commit」面板。時段由 Summary tab 的 range picker 同步給 report VM 與聊天 VM。
+
+**(c) `explainCommitFlow` / `explainCommit` callable（commit tree 點擊 → AI 工作總結）**
+
+讀 commit doc + linked tasks + 同作者鄰近 commits → 一次 `gpt-4o-mini` 呼叫產出三段式 markdown（做了什麼／脈絡／改了哪裡）。**結果 cache 在 `commits/{sha}.workSummary`**（commits 只有 Cloud Functions 寫得進），重複點擊零成本；`force=true` 重生。前端 Commits tab 的 tree 地圖（lane-per-author CustomPaint、日期分隔）點 row 開 bottom sheet 顯示。
+
+> tasks 的 `status == done` + `updatedAt` range 複合查詢需要 `firestore.indexes.json` 新增的 `tasks status+updatedAt` 索引（live 模式 `firebase deploy --only firestore:indexes`）。
 
 **排程觸發 — 用 Cloud Tasks 扇出，不要 for-loop**
 

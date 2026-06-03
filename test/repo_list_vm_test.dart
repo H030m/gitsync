@@ -69,7 +69,8 @@ class _FakeFunctionsService implements FunctionsService {
   @override
   Future<String> summarizeDay({
     required String repoId,
-    required String date,
+    required String startDate,
+    String? endDate,
   }) =>
       throw UnimplementedError();
 
@@ -77,8 +78,17 @@ class _FakeFunctionsService implements FunctionsService {
   Future<DailyBriefReply> dailyBrief({
     required String repoId,
     required String date,
+    String? endDate,
     required String question,
     List<DailyBriefTurn> history = const [],
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<String> explainCommit({
+    required String repoId,
+    required String sha,
+    bool force = false,
   }) =>
       throw UnimplementedError();
 

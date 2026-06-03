@@ -9,23 +9,24 @@ class FakeDailyReportRepository implements DailyReportRepository {
   static final FakeDailyReportRepository _instance =
       FakeDailyReportRepository._internal();
 
+  // Serves today's demo report for today's key AND for any `{start}_{end}`
+  // range key (so the range picker shows content in fake mode). Other single
+  // days have no report — mirrors live, where most days are ungenerated.
+  DailyReport? _lookup(String repoId, String date) {
+    if (repoId != DummyData.demoRepoId) return null;
+    if (date == DummyData.todayReport.date) return DummyData.todayReport;
+    if (date.contains('_')) return DummyData.todayReport;
+    return null;
+  }
+
   @override
   Stream<DailyReport?> streamReport(String repoId, String date) async* {
-    if (repoId != DummyData.demoRepoId ||
-        date != DummyData.todayReport.date) {
-      yield null;
-      return;
-    }
-    yield DummyData.todayReport;
+    yield _lookup(repoId, date);
   }
 
   @override
   Future<DailyReport?> getReport(String repoId, String date) async {
     await Future.delayed(AppConfig.simulatedLatency);
-    if (repoId != DummyData.demoRepoId ||
-        date != DummyData.todayReport.date) {
-      return null;
-    }
-    return DummyData.todayReport;
+    return _lookup(repoId, date);
   }
 }
