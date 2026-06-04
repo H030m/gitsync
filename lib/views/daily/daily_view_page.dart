@@ -435,7 +435,7 @@ class _ContributionsCard extends StatelessWidget {
                             radius: 10,
                             backgroundColor: scheme.primaryContainer,
                             child: Text(
-                              _initial(e.key),
+                              _initial(_memberLabel(e)),
                               style: theme.textTheme.labelSmall?.copyWith(
                                 color: scheme.onPrimaryContainer,
                                 fontWeight: FontWeight.w700,
@@ -444,7 +444,7 @@ class _ContributionsCard extends StatelessWidget {
                           ),
                           const SizedBox(width: AppDimens.spacingXs),
                           Text(
-                            '${e.key}  ·  ${e.value.tasksDone}✓ '
+                            '${_memberLabel(e)}  ·  ${e.value.tasksDone}✓ '
                             '${e.value.commits}⎇',
                             style: theme.textTheme.labelMedium,
                           ),
@@ -462,6 +462,17 @@ class _ContributionsCard extends StatelessWidget {
 
   static String _initial(String key) =>
       key.isEmpty ? '?' : key.substring(0, 1).toUpperCase();
+
+  /// GitHub username, falling back to display name, then the raw map key
+  /// (legacy reports written before the backend persisted names — that key is
+  /// a Firebase UID for roster members or a login for unmatched authors).
+  static String _memberLabel(MapEntry<String, MemberContribution> e) {
+    final login = e.value.githubLogin;
+    if (login != null && login.isNotEmpty) return login;
+    final name = e.value.displayName;
+    if (name != null && name.isNotEmpty) return name;
+    return e.key;
+  }
 }
 
 class _BulletRow extends StatelessWidget {

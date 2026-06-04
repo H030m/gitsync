@@ -184,6 +184,8 @@ describe('summarizeDayFlow', () => {
     seedCommit('c1', { author: { login: 'alice-dev', name: 'Alice' } });
     seedCommit('c2', { author: { login: 'alice-dev', name: 'Alice' } });
     seedCommit('c3', { author: { login: 'bob-ml', name: 'Bob' } });
+    // Author with no roster match — bucketed under the login itself.
+    seedCommit('c4', { author: { login: 'drive-by', name: 'Stranger' } });
     seedTask('t1', { assigneeId: 'alice', title: 'OAuth' });
 
     createQueue.push(finalizeTurn(NARRATIVE));
@@ -191,12 +193,24 @@ describe('summarizeDayFlow', () => {
     const res = await summarizeDayFlow({ repoId: REPO, startDate: DATE, endDate: DATE });
 
     expect(res.summary).toBe(NARRATIVE.summary);
-    expect(res.commitCount).toBe(3);
+    expect(res.commitCount).toBe(4);
     expect(res.completedTaskIds).toEqual(['t1']);
     // Counts are computed in TS (login → userId), not taken from the LLM.
+    // Names are resolved from the roster at generation time (PRD D3).
     expect(res.memberContributions).toEqual({
-      alice: { tasksDone: 1, commits: 2 },
-      bob: { tasksDone: 0, commits: 1 },
+      alice: {
+        tasksDone: 1,
+        commits: 2,
+        githubLogin: 'alice-dev',
+        displayName: 'Alice',
+      },
+      bob: { tasksDone: 0, commits: 1, githubLogin: 'bob-ml', displayName: 'Bob' },
+      'drive-by': {
+        tasksDone: 0,
+        commits: 1,
+        githubLogin: 'drive-by',
+        displayName: 'drive-by',
+      },
     });
 
     // Report persisted at dailyReports/{date}.
@@ -204,7 +218,7 @@ describe('summarizeDayFlow', () => {
     expect(setSpy).toHaveBeenCalledWith(path, expect.objectContaining({
       date: DATE,
       summary: NARRATIVE.summary,
-      commitCount: 3,
+      commitCount: 4,
       generatedAt: '__ts__',
     }));
   });

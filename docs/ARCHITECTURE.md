@@ -204,7 +204,9 @@ apps/gitsync/
 │       ├── repoId: string
 │       ├── summary: string                     # AI 生成
 │       ├── completedTasks: string[]
-│       ├── memberContributions: { [userId]: { tasksDone, commits } }
+│       ├── memberContributions: { [userId]: { tasksDone, commits, githubLogin, displayName } }
+│       │                                       # 名字由後端產生報告時從 roster 解析寫入；
+│       │                                       # 舊報告缺名字欄位 → 前端 fallback 顯示 key
 │       └── generatedAt: Timestamp
 │
 └── idempotencyKeys/{eventId}                   # Functions trigger 防重

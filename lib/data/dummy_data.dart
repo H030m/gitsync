@@ -402,9 +402,24 @@ No blockers raised in chat today.''';
         commitCount: 3,
         completedTaskIds: const ['task-001'],
         memberContributions: const {
-          demoUserId: MemberContribution(tasksDone: 1, commits: 1),
-          aliceId: MemberContribution(tasksDone: 0, commits: 1),
-          bobId: MemberContribution(tasksDone: 0, commits: 1),
+          demoUserId: MemberContribution(
+            tasksDone: 1,
+            commits: 1,
+            githubLogin: 'demo-dev',
+            displayName: 'Demo User',
+          ),
+          aliceId: MemberContribution(
+            tasksDone: 0,
+            commits: 1,
+            githubLogin: 'alice-dev',
+            displayName: 'Alice',
+          ),
+          bobId: MemberContribution(
+            tasksDone: 0,
+            commits: 1,
+            githubLogin: 'bob-ml',
+            displayName: 'Bob',
+          ),
         },
       );
 }

@@ -343,7 +343,12 @@ export async function searchPastCommits(
 /** Per-member tallies for one day, keyed by userId. */
 export type MemberContributions = Record<
   string,
-  { tasksDone: number; commits: number }
+  {
+    tasksDone: number;
+    commits: number;
+    githubLogin: string | null;
+    displayName: string;
+  }
 >;
 
 /**
@@ -354,6 +359,11 @@ export type MemberContributions = Record<
  *     commits whose author maps to no member are bucketed under their login so
  *     they are still surfaced.
  *   - tasksDone is counted per `assigneeId`.
+ *
+ * Each entry also carries `githubLogin`/`displayName` resolved from the roster
+ * at generation time, so the Flutter Contributions card can render a human
+ * name instead of the raw Firebase UID key (legacy reports lack these fields —
+ * the client falls back to the key).
  */
 export function computeContributions(
   commits: DayCommit[],
@@ -361,14 +371,24 @@ export function computeContributions(
   roster: TeamMemberState[],
 ): MemberContributions {
   const loginToUser = new Map<string, string>();
+  const userById = new Map<string, TeamMemberState>();
   for (const m of roster) {
+    userById.set(m.userId, m);
     if (m.githubLogin) loginToUser.set(m.githubLogin.toLowerCase(), m.userId);
   }
 
   const out: MemberContributions = {};
   const bump = (key: string, field: 'tasksDone' | 'commits') => {
     if (!key) return;
-    const cur = out[key] ?? { tasksDone: 0, commits: 0 };
+    // Resolve identity once, on first sight of the key. A key that isn't a
+    // roster userId is an unmatched commit author's GitHub login.
+    const member = userById.get(key);
+    const cur = out[key] ?? {
+      tasksDone: 0,
+      commits: 0,
+      githubLogin: member ? member.githubLogin : key,
+      displayName: member ? (member.name ?? member.githubLogin ?? key) : key,
+    };
     cur[field] += 1;
     out[key] = cur;
   };

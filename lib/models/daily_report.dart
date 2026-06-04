@@ -7,17 +7,32 @@ class MemberContribution {
   final int tasksDone;
   final int commits;
 
-  const MemberContribution({this.tasksDone = 0, this.commits = 0});
+  /// GitHub username resolved by the backend at report-generation time.
+  /// Null on legacy reports written before names were persisted — the UI
+  /// falls back to the map key.
+  final String? githubLogin;
+  final String? displayName;
+
+  const MemberContribution({
+    this.tasksDone = 0,
+    this.commits = 0,
+    this.githubLogin,
+    this.displayName,
+  });
 
   factory MemberContribution.fromMap(Map<String, dynamic> map) =>
       MemberContribution(
         tasksDone: (map['tasksDone'] as num?)?.toInt() ?? 0,
         commits: (map['commits'] as num?)?.toInt() ?? 0,
+        githubLogin: map['githubLogin'] as String?,
+        displayName: map['displayName'] as String?,
       );
 
   Map<String, dynamic> toMap() => {
         'tasksDone': tasksDone,
         'commits': commits,
+        if (githubLogin != null) 'githubLogin': githubLogin,
+        if (displayName != null) 'displayName': displayName,
       };
 }
 
