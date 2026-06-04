@@ -102,7 +102,8 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    // The report VM took the range → exactly 3 day cards.
+    // The report VM took the range → exactly 3 day cards, rendered inside the
+    // upper day-report panel.
     expect(report.rangeDays.length, 3);
     expect(find.byKey(ValueKey(DailyReportViewModel.dayKeyOf(now))),
         findsOneWidget);
@@ -117,9 +118,63 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.widgetWithText(FilledButton, 'Regenerate'), findsNothing);
     expect(find.text('Commit rollup'), findsNothing);
+  });
 
-    // Drain the fake Discord backfill timer (intel.setRange → discord.setRange).
-    await tester.pump(const Duration(seconds: 1));
+  testWidgets('the day-report panel collapses to a single header row',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 3000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    final intel =
+        tester.element(find.byType(DailyViewPage)).read<IntelRangeViewModel>();
+    final now = DateTime.now();
+    intel.setRange(DateTimeRange(
+      start: now.subtract(const Duration(days: 2)),
+      end: now,
+    ));
+    await tester.pumpAndSettle();
+
+    // The panel header is present and the day cards render inside it.
+    expect(find.text('日報'), findsOneWidget);
+    expect(find.byKey(ValueKey(DailyReportViewModel.dayKeyOf(now))),
+        findsOneWidget);
+
+    // Collapsing the whole panel via its header hides every day card.
+    await tester.tap(find.text('日報'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(ValueKey(DailyReportViewModel.dayKeyOf(now))),
+        findsNothing);
+    expect(find.text('日報'), findsOneWidget);
+  });
+
+  testWidgets('the new-session button clears the chat thread', (tester) async {
+    tester.view.physicalSize = const Size(1200, 3000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    // Seed a turn by asking a question.
+    final field = find.byWidgetPredicate(
+      (w) =>
+          w is TextField && w.decoration?.hintText == 'Ask AI about today…',
+    );
+    await tester.enterText(field, 'OAuth 進度?');
+    await tester.testTextInput.receiveAction(TextInputAction.send);
+    await tester.pumpAndSettle();
+    expect(find.text('OAuth 進度?'), findsOneWidget);
+
+    // Tap "開啟新 session" → the thread empties immediately.
+    await tester.tap(find.byTooltip('開啟新 session'));
+    await tester.pumpAndSettle();
+    expect(find.text('OAuth 進度?'), findsNothing);
   });
 
   testWidgets('a day with no report offers a generate button that fires '
@@ -165,8 +220,8 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('the shared range picker propagates to all three tabs and '
-      'clearing resets them', (tester) async {
+  testWidgets('the shared range scopes the other tabs but NEVER triggers the '
+      'Discord backfill callable, on set OR clear', (tester) async {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
@@ -184,35 +239,60 @@ void main() {
       start: now.subtract(const Duration(days: 2)),
       end: now,
     ));
-    // Pump once (not settle) so the in-flight Discord backfill is observable:
-    // intel.setRange → discord.setRange flips settingRange before it resolves,
-    // proving the shared range reached the Discord VM too (D2 side effect).
+    // The shared range only re-points the Discord DISPLAY (view range); it must
+    // never call the destructive setDiscordRange callable. settingRange staying
+    // false proves no callable fired (D1 decouple).
     await tester.pump();
-    expect(discord.settingRange, isTrue);
+    expect(discord.settingRange, isFalse);
+    expect(discord.viewEnd, isNotNull);
     await tester.pumpAndSettle();
 
     // Commits + report VMs both took the shared range.
     expect(commits.hasRange, isTrue);
     expect(report.hasRange, isTrue);
-
-    // Let the SET backfill's delayed timer resolve so the Discord VM goes idle
-    // again — a clean baseline for the clear assertion below.
-    await tester.pump(const Duration(seconds: 1));
     expect(discord.settingRange, isFalse);
 
-    // Clearing resets the other three tabs to their default…
+    // Clearing resets the other three tabs and clears the Discord view scope —
+    // still no callable, still no prune.
     intel.clear();
     await tester.pump();
     expect(commits.hasRange, isFalse);
     expect(report.hasRange, isFalse);
-    // …but must NOT touch the Discord VM: clearing the shared *view* scope must
-    // not overwrite the team's saved backfill range (setRange == a persistent
-    // setDiscordRange write). settingRange staying false proves clear() never
-    // called discord.setRange (which would flip it true synchronously).
     expect(discord.settingRange, isFalse);
+    expect(discord.viewEnd, isNull);
 
-    // Drain any remaining fake-backend delayed timers so the harness doesn't
-    // flag a pending timer at dispose.
+    // Drain any fake-backend delayed timers (e.g. the commits-graph reload that
+    // clearRange kicks off) so the harness doesn't flag a pending timer.
     await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('the Discord tab backfill button still drives setRange '
+      '(the destructive callable)', (tester) async {
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    final ctx = tester.element(find.byType(DailyViewPage));
+    final discord = ctx.read<DiscordMessagesViewModel>();
+
+    // Switch to the Discord tab.
+    await tester.tap(find.text('Discord'));
+    await tester.pumpAndSettle();
+
+    // The explicit backfill picker is present.
+    final button = find.widgetWithText(OutlinedButton, '設定回補範圍');
+    expect(button, findsOneWidget);
+
+    // Open the range picker and confirm a window. showDateRangePicker opens
+    // with a Save action; the default selection is today..today.
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+
+    // The explicit path DOES call vm.setRange (the persistent callable) — its
+    // in-flight flag flips true before the fake resolves.
+    expect(discord.settingRange, isTrue);
+    await tester.pumpAndSettle();
+    expect(discord.settingRange, isFalse);
   });
 }

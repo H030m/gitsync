@@ -46,6 +46,16 @@ class DailyBriefChatViewModel with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Starts a fresh conversation: clears the transcript and any error, keeping
+  /// the current range scope. No-ops while a question is in flight.
+  void newSession() {
+    if (_sending) return;
+    if (_turns.isEmpty && _error == null) return;
+    _turns.clear();
+    _error = null;
+    notifyListeners();
+  }
+
   /// Sends [question] to the AI. Appends a user turn immediately, then an
   /// assistant turn once the callable returns. No-ops on empty input or while a
   /// previous question is still in flight.

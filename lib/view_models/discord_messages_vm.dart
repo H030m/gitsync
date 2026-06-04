@@ -68,6 +68,19 @@ class DiscordMessagesViewModel with ChangeNotifier {
   /// Range end parsed from the repo doc's `discordEndDate`, null if unset.
   DateTime? get rangeEnd => _rangeEnd;
 
+  // Display-only view range (the shared AppBar scope). Decoupled from the saved
+  // backfill range: it never calls the destructive `setDiscordRange` callable —
+  // it only re-points the digest day (precedence below). Null when no shared
+  // scope is active (falls back to the saved range / today).
+  DateTime? _viewStart;
+  DateTime? _viewEnd;
+
+  /// View-range start (the shared scope), null when not scoped.
+  DateTime? get viewStart => _viewStart;
+
+  /// View-range end (the shared scope), null when not scoped.
+  DateTime? get viewEnd => _viewEnd;
+
   List<DiscordMessage> _messages = [];
   List<DiscordMessage> get messages => _messages;
 
@@ -126,19 +139,44 @@ class DiscordMessagesViewModel with ChangeNotifier {
     });
   }
 
-  // Reacts to repo doc changes: updates the saved range and, when the range's
-  // end date changes, re-points the digest stream at that latest day.
+  // Reacts to repo doc changes: updates the saved range and, when the resolved
+  // digest day changes, re-points the digest stream at it.
   void _onRepo(Repo? repo) {
     _rangeStart = _parseKey(repo?.discordStartDate);
     _rangeEnd = _parseKey(repo?.discordEndDate);
+    _repointDigest();
+    notifyListeners();
+  }
 
-    // Digest follows the end date (latest day), defaulting to today.
-    final newKey =
-        _rangeEnd != null ? _keyOf(_rangeEnd!) : _keyOf(_date);
+  // The day the digest card shows, by precedence: the display view-range end →
+  // the saved backfill range end → today.
+  DateTime get _digestDay => _viewEnd ?? _rangeEnd ?? _date;
+
+  // Re-points the digest stream at the resolved digest day if it changed.
+  void _repointDigest() {
+    final newKey = _keyOf(_digestDay);
     if (newKey != _digestDateKey) {
       _digestDateKey = newKey;
       _subscribeDigest(_digestDateKey);
     }
+  }
+
+  // Display-only: re-points what the Discord tab SHOWS (the digest day) to the
+  // shared view range. Never calls the `setDiscordRange` callable and never
+  // prunes — purely a view scope. Pairs with [clearViewRange].
+  void setViewRange(DateTime start, DateTime end) {
+    _viewStart = start;
+    _viewEnd = end;
+    _repointDigest();
+    notifyListeners();
+  }
+
+  // Clears the display-only view range; the digest day falls back to the saved
+  // backfill range end (or today). No callable, no prune.
+  void clearViewRange() {
+    _viewStart = null;
+    _viewEnd = null;
+    _repointDigest();
     notifyListeners();
   }
 
