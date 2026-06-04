@@ -152,3 +152,40 @@ Range-scoped summarizeDayFlow ({start}_{end} reports, range Discord digests + ra
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Fix range filter (data migration) + GitHub usernames + real branch graph
+
+**Date**: 2026-06-05
+**Task**: Fix range filter (data migration) + GitHub usernames + real branch graph
+**Branch**: `feature/summary-intel-hub`
+
+### Summary
+
+Root-caused the empty range filter: 37 legacy commit docs had string committedAt (type-strict Firestore queries match nothing); ran normalize-commits.mjs on prod (37→0) and deployed githubWebhook/summarizeDay/getCommitGraph. Contributions now persist githubLogin/displayName backend-side with frontend fallback. New getCommitGraph callable (one GraphQL round trip, 90s cache) + Commits-tab branch-graph view (active-lanes algorithm, fork/merge edges, avatars, PR badges, view toggle) + visible Recent 50 reset. Spec Rule H captured.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6cc925c` | (see git log) |
+| `0b5d23e` | (see git log) |
+| `3ab0eb3` | (see git log) |
+| `3a139b6` | (see git log) |
+| `65bfded` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

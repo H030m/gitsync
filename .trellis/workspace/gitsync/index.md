@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 4
-- **Last Active**: 2026-06-04
+- **Total Sessions**: 5
+- **Last Active**: 2026-06-05
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~154 | Active |
+| `journal-1.md` | ~191 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 5 | 2026-06-05 | Fix range filter (data migration) + GitHub usernames + real branch graph | `6cc925c`, `0b5d23e`, `3ab0eb3`, `3a139b6`, `65bfded` | `feature/summary-intel-hub` |
 | 4 | 2026-06-04 | Summary range reports + commit tree map with AI explain | `c8aa096` | `feature/summary-intel-hub` |
 | 3 | 2026-06-04 | Summary intelligence hub — agentic daily report + brief chat | `e31641a` | `feature/summary-intel-hub` |
 | 2 | 2026-06-03 | Unified TARGET switch + cloud deployment runbook + live-deploy fixes | `6fb4fd8` | `feature/target-switch-deploy-docs` |
