@@ -355,3 +355,36 @@ Regression from unified-range task: clearing the shared range called discord.set
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: Decouple Discord from shared range + reports panel + chat new session
+
+**Date**: 2026-06-05
+**Task**: Decouple Discord from shared range + reports panel + chat new session
+**Branch**: `feature/summary-intel-hub`
+
+### Summary
+
+Incident: bound clear branch had called setDiscordRange(today,today) whose designed prune deleted all discordMessages/digests (recoverable via bot re-backfill). Decoupled: shared range is display-only for Discord; destructive backfill only via the explicit Discord-tab button. Summary day cards now in a collapsible <=42vh internally-scrolling panel; dailyBrief chat gained newSession(). 41 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ee1bd3a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

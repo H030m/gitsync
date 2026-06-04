@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 10
+- **Total Sessions**: 11
 - **Last Active**: 2026-06-05
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~357 | Active |
+| `journal-1.md` | ~390 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 11 | 2026-06-05 | Decouple Discord from shared range + reports panel + chat new session | `ee1bd3a` | `feature/summary-intel-hub` |
 | 10 | 2026-06-05 | Fix Discord digest disappearing on shared-range clear | `0134ca6` | `feature/summary-intel-hub` |
 | 9 | 2026-06-05 | Fix getCommitGraph intermittent 502 | `15029e0` | `feature/summary-intel-hub` |
 | 8 | 2026-06-05 | Unified date range + per-day collapsible report cards | `cdccf72` | `feature/summary-intel-hub` |
