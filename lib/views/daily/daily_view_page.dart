@@ -66,7 +66,14 @@ class _DailyViewPageState extends State<DailyViewPage> {
       report.clearRange();
       chat.setRange(now, now);
       commits.clearRange();
-      discord.setRange(now, now);
+      // Deliberately do NOT touch the Discord VM on clear.
+      // DiscordMessagesViewModel.setRange persists the team's saved backfill
+      // range (setDiscordRange callable + watermark reset) and the digest card
+      // follows that saved range's end day. Clearing the shared *view* scope
+      // must not overwrite that team state — doing so re-pointed the digest at
+      // today (which has no digest doc), so the digest "disappeared". The
+      // Discord display follows the repo-doc-saved range via its own stream,
+      // which is already the correct default.
     }
   }
 

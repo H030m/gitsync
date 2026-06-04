@@ -195,14 +195,24 @@ void main() {
     expect(commits.hasRange, isTrue);
     expect(report.hasRange, isTrue);
 
-    // Clearing resets every tab to its default.
+    // Let the SET backfill's delayed timer resolve so the Discord VM goes idle
+    // again — a clean baseline for the clear assertion below.
+    await tester.pump(const Duration(seconds: 1));
+    expect(discord.settingRange, isFalse);
+
+    // Clearing resets the other three tabs to their default…
     intel.clear();
-    await tester.pumpAndSettle();
+    await tester.pump();
     expect(commits.hasRange, isFalse);
     expect(report.hasRange, isFalse);
+    // …but must NOT touch the Discord VM: clearing the shared *view* scope must
+    // not overwrite the team's saved backfill range (setRange == a persistent
+    // setDiscordRange write). settingRange staying false proves clear() never
+    // called discord.setRange (which would flip it true synchronously).
+    expect(discord.settingRange, isFalse);
 
-    // Drain the fake Discord backfill's delayed timer so the harness doesn't
-    // flag a pending timer at dispose (intel changes call discord.setRange).
+    // Drain any remaining fake-backend delayed timers so the harness doesn't
+    // flag a pending timer at dispose.
     await tester.pump(const Duration(seconds: 1));
   });
 }
