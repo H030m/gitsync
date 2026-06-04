@@ -289,3 +289,36 @@ Single shared IntelRangeViewModel in the ShellRoute drives all three Daily tabs 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: Fix getCommitGraph intermittent 502
+
+**Date**: 2026-06-05
+**Task**: Fix getCommitGraph intermittent 502
+**Branch**: `feature/summary-intel-hub`
+
+### Summary
+
+Dropped associatedPullRequests from the bulk GraphQL query (2000 nested PR lookups rode GitHub's ~10s limit), guarded undefined responses, added one transient-failure retry. Deployed. PR numbers on merge nodes now come from the message regex only (squash/rebase PR resolution noted as out of scope).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `15029e0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

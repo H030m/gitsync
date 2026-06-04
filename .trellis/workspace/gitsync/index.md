@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 8
+- **Total Sessions**: 9
 - **Last Active**: 2026-06-05
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~291 | Active |
+| `journal-1.md` | ~324 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 9 | 2026-06-05 | Fix getCommitGraph intermittent 502 | `15029e0` | `feature/summary-intel-hub` |
 | 8 | 2026-06-05 | Unified date range + per-day collapsible report cards | `cdccf72` | `feature/summary-intel-hub` |
 | 7 | 2026-06-05 | All-branch ingest + branch identity UX + in-app backfill | `d043f46`, `2afa1f0` | `feature/summary-intel-hub` |
 | 6 | 2026-06-05 | Branch graph manual refresh (force bypass cache) | `e157991` | `feature/summary-intel-hub` |
