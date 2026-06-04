@@ -184,6 +184,11 @@ describe('assembleGraph', () => {
     expect(res.truncated).toBe(false);
   });
 
+  // NOTE: this feeds associatedPrNumber directly into assembleGraph to exercise
+  // the fallback branch. In production the bulk query no longer populates
+  // associatedPrNumber (dropped in 06-05 to fix the 502); only the merge-message
+  // regex path fires there. The flow logic itself is unchanged, so the fallback
+  // still works for any caller that does supply a PR number.
   it('falls back to associatedPullRequests for squash/rebase merge messages', () => {
     const squash = rawCommit('s1', ['m3', 'f9'], '2026-06-04T02:00:00Z', {
       message: 'feat: squashed feature (#34)',

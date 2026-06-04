@@ -108,10 +108,12 @@ const GRAPH_BRANCH_LIMIT = 20;
 /** Per-branch history page size (no pagination beyond the first page). */
 const GRAPH_HISTORY_LIMIT = 100;
 
-// One round trip: every branch tip + its in-window history with parent SHAs,
-// author avatar and the associated PR (squash/rebase merges have no
-// "Merge pull request #N" message — associatedPullRequests still resolves
-// them). See task research `github-api-commit-graph.md`.
+// One round trip: every branch tip + its in-window history with parent SHAs
+// and author avatar. PR numbers come from the merge-commit message regex in
+// the flow (`^Merge pull request #N`) — we deliberately do NOT fetch
+// associatedPullRequests here: at refs(first:20) × history(first:100) it was
+// ~2000 nested PR lookups per call, riding GitHub's ~10s GraphQL limit and
+// returning 502s (06-05). See task research `github-api-commit-graph.md`.
 const COMMIT_GRAPH_QUERY = `
   query ($owner: String!, $name: String!, $since: GitTimestamp, $until: GitTimestamp) {
     repository(owner: $owner, name: $name) {
@@ -143,7 +145,6 @@ const COMMIT_GRAPH_QUERY = `
             name
             user { login }
           }
-          associatedPullRequests(first: 1) { nodes { number } }
         }
         pageInfo { hasNextPage }
       }
@@ -161,7 +162,6 @@ interface GraphQlCommitNode {
     name: string | null;
     user: { login: string } | null;
   } | null;
-  associatedPullRequests: { nodes: Array<{ number: number }> };
 }
 
 interface GraphQlRefTarget {
@@ -191,8 +191,24 @@ function toGraphCommitRaw(n: GraphQlCommitNode): GraphCommitRaw {
     authorLogin: n.author?.user?.login ?? null,
     authorName: n.author?.name ?? '',
     avatarUrl: n.author?.avatarUrl ?? null,
-    associatedPrNumber: n.associatedPullRequests.nodes[0]?.number ?? null,
+    // Bulk query no longer fetches associatedPullRequests (it was the dominant
+    // cost behind the 502s). Kept on the raw shape so the flow/payload contract
+    // is unchanged; merge PR numbers now come from the message regex in the flow.
+    associatedPrNumber: null,
   };
+}
+
+/** Delay (ms) before the single retry in {@link fetchCommitGraph}. */
+const GRAPH_RETRY_DELAY_MS = 500;
+
+/**
+ * True for transient GraphQL failures worth one retry: an HTTP 5xx (GitHub's
+ * ~10s GraphQL limit surfaces as a 502) or a network-ish error with no status.
+ */
+function isTransientGraphError(err: unknown): boolean {
+  const status = (err as { status?: number } | null)?.status;
+  if (typeof status === 'number') return status >= 500;
+  return true; // no status → network/abort error → retry once
 }
 
 /**
@@ -200,6 +216,9 @@ function toGraphCommitRaw(n: GraphQlCommitNode): GraphCommitRaw {
  * history with parent SHAs) in a single GraphQL round trip. Dedupe/lane
  * attribution is the flow's job (`flows/getCommitGraph.ts`) — this stays a
  * pure fetch, like every other helper in this file.
+ *
+ * Retries the GraphQL call once on a transient (5xx/network) failure with a
+ * short delay — GitHub's ~10s limit returns intermittent 502s under load.
  */
 export async function fetchCommitGraph(
   owner: string,
@@ -213,17 +232,32 @@ export async function fetchCommitGraph(
   branchesTruncated: boolean;
 }> {
   const octokit = getOctokit(accessToken);
-  const data = await octokit.graphql<CommitGraphQueryResult>(
-    COMMIT_GRAPH_QUERY,
-    {
-      owner,
-      name: repo,
-      since: options.since ?? null,
-      until: options.until ?? null,
-    },
-  );
+  const variables = {
+    owner,
+    name: repo,
+    since: options.since ?? null,
+    until: options.until ?? null,
+  };
 
-  const repository = data.repository;
+  let data: CommitGraphQueryResult;
+  try {
+    data = await octokit.graphql<CommitGraphQueryResult>(
+      COMMIT_GRAPH_QUERY,
+      variables,
+    );
+  } catch (err) {
+    if (!isTransientGraphError(err)) throw err;
+    await new Promise((resolve) => setTimeout(resolve, GRAPH_RETRY_DELAY_MS));
+    data = await octokit.graphql<CommitGraphQueryResult>(
+      COMMIT_GRAPH_QUERY,
+      variables,
+    );
+  }
+
+  // A partial/abnormal GraphQL response can arrive with `data` (or
+  // `data.repository`) undefined — treat that as an empty result, never a
+  // TypeError (06-05).
+  const repository = data?.repository;
   if (!repository) {
     return { branches: [], defaultBranch: null, branchesTruncated: false };
   }
