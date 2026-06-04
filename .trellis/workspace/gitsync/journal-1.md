@@ -256,3 +256,36 @@ Root cause of missing 6/4-6/5 commits: webhook skipped non-default branches by d
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: Unified date range + per-day collapsible report cards
+
+**Date**: 2026-06-05
+**Task**: Unified date range + per-day collapsible report cards
+**Branch**: `feature/summary-intel-hub`
+
+### Summary
+
+Single shared IntelRangeViewModel in the ShellRoute drives all three Daily tabs (Summary/Commits/Discord incl. backfill side effect, user-bound). Summary upper section is now one collapsible report card per day in range with per-day generate; repo gains streamReportsInRange (documentId range, composite docs filtered). 38 flutter + 157 functions tests green. 502 hardening recorded as known-risk, deprioritized by user.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cdccf72` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
