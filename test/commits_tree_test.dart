@@ -169,8 +169,11 @@ void main() {
     await tester.pumpAndSettle();
 
     // Reset affordance is one tap away and goes back to the recent stream.
+    // (warnIfMissed silenced: the chip's tap centroid is reported as obscured
+    // by the test harness overlay, but the tap lands and the assertion below
+    // is the behavior that matters.)
     expect(find.byIcon(Icons.restore), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.restore));
+    await tester.tap(find.byIcon(Icons.restore), warnIfMissed: false);
     await tester.pumpAndSettle();
     expect(vm.hasRange, isFalse);
   });
