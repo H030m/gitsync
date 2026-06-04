@@ -189,3 +189,36 @@ Root-caused the empty range filter: 37 legacy commit docs had string committedAt
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Branch graph manual refresh (force bypass cache)
+
+**Date**: 2026-06-05
+**Task**: Branch graph manual refresh (force bypass cache)
+**Branch**: `feature/summary-intel-hub`
+
+### Summary
+
+getCommitGraph gained force=true (skips 90s cache read, keeps write-back); Commits branch view gained pull-to-refresh + header refresh button that keep current data visible while reloading. Deployed to production. Note: author view is realtime via Firestore stream; branch view is on-demand by design.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e157991` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
