@@ -29,4 +29,22 @@ class FakeDailyReportRepository implements DailyReportRepository {
     await Future.delayed(AppConfig.simulatedLatency);
     return _lookup(repoId, date);
   }
+
+  @override
+  Stream<List<DailyReport>> streamReportsInRange(
+    String repoId,
+    String startDate,
+    String endDate,
+  ) async* {
+    if (repoId != DummyData.demoRepoId) {
+      yield const [];
+      return;
+    }
+    // Mirrors live: most days are ungenerated, so the range only contains the
+    // demo report when its day falls inside [startDate]..[endDate] inclusive.
+    final today = DummyData.todayReport.date;
+    final inRange = startDate.compareTo(today) <= 0 &&
+        endDate.compareTo(today) >= 0;
+    yield inRange ? [DummyData.todayReport] : const [];
+  }
 }

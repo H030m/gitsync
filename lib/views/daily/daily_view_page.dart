@@ -15,14 +15,66 @@ import '../../view_models/daily_brief_vm.dart';
 import '../../view_models/daily_report_vm.dart';
 import '../../view_models/discord_chat_vm.dart';
 import '../../view_models/discord_messages_vm.dart';
+import '../../view_models/intel_range_vm.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/markdown_view.dart';
 
-// DailyViewPage — three tabs: Summary / Commits / Discord.
-// TODO: implement per prototype `daily/DailyView.tsx`.
-class DailyViewPage extends StatelessWidget {
+// DailyViewPage — three tabs: Summary / Commits / Discord, all driven by ONE
+// shared date range (IntelRangeViewModel). A single picker in the AppBar (shown
+// from every tab) re-scopes all three tabs at once; clearing it returns each to
+// its default. The page subscribes to the shared range and fans changes out to
+// the per-tab ViewModels.
+class DailyViewPage extends StatefulWidget {
   const DailyViewPage({super.key, required this.repoId});
   final String repoId;
+
+  @override
+  State<DailyViewPage> createState() => _DailyViewPageState();
+}
+
+class _DailyViewPageState extends State<DailyViewPage> {
+  IntelRangeViewModel? _rangeVm;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final vm = context.read<IntelRangeViewModel>();
+    if (!identical(vm, _rangeVm)) {
+      _rangeVm?.removeListener(_onRangeChanged);
+      _rangeVm = vm;
+      _rangeVm!.addListener(_onRangeChanged);
+    }
+  }
+
+  // Fans the shared range out to every tab's ViewModel. Setting a range scopes
+  // Summary (per-day cards), the daily-brief chat, the Commits list+graph, and
+  // the Discord display — AND triggers the Discord backfill (intended, D2).
+  // Clearing returns each tab to its default.
+  void _onRangeChanged() {
+    final range = _rangeVm?.range;
+    final report = context.read<DailyReportViewModel>();
+    final chat = context.read<DailyBriefChatViewModel>();
+    final commits = context.read<CommitsViewModel>();
+    final discord = context.read<DiscordMessagesViewModel>();
+    if (range != null) {
+      report.setRange(range.start, range.end);
+      chat.setRange(range.start, range.end);
+      commits.setRange(range.start, range.end);
+      discord.setRange(range.start, range.end);
+    } else {
+      final now = DateTime.now();
+      report.clearRange();
+      chat.setRange(now, now);
+      commits.clearRange();
+      discord.setRange(now, now);
+    }
+  }
+
+  @override
+  void dispose() {
+    _rangeVm?.removeListener(_onRangeChanged);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,6 +83,7 @@ class DailyViewPage extends StatelessWidget {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Daily'),
+          actions: const [_SharedRangeAction()],
           bottom: const TabBar(
             tabs: [
               Tab(text: 'Summary'),
@@ -43,6 +96,55 @@ class DailyViewPage extends StatelessWidget {
           children: [_SummaryTab(), _CommitsTab(), _DiscordTab()],
         ),
       ),
+    );
+  }
+}
+
+// The one shared date-range picker for all three tabs, pinned in the AppBar so
+// it's reachable from Summary / Commits / Discord alike. Picking sets the
+// shared range; the reset icon (shown only while a range is active) clears it.
+class _SharedRangeAction extends StatelessWidget {
+  const _SharedRangeAction();
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<IntelRangeViewModel>(
+      builder: (ctx, vm, _) {
+        final range = vm.range;
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextButton.icon(
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(ctx).colorScheme.onSurface,
+              ),
+              onPressed: () async {
+                final now = DateTime.now();
+                final picked = await showDateRangePicker(
+                  context: ctx,
+                  firstDate: DateTime(2020),
+                  lastDate: now,
+                  initialDateRange: range ?? DateTimeRange(start: now, end: now),
+                );
+                if (picked == null) return;
+                vm.setRange(picked);
+              },
+              icon: const Icon(Icons.date_range_outlined, size: 18),
+              label: Text(
+                range == null
+                    ? 'Today'
+                    : '${_monthDay(range.start)} ~ ${_monthDay(range.end)}',
+              ),
+            ),
+            if (range != null)
+              IconButton(
+                tooltip: 'Reset range',
+                icon: const Icon(Icons.restore, size: 20),
+                onPressed: vm.clear,
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -87,6 +189,25 @@ class _SummaryTabState extends State<_SummaryTab> {
     });
   }
 
+  // Builds one collapsible report card per day in the selected range. With no
+  // range (single day) it's just today's card; with a range it's one card per
+  // day, today expanded by default and the rest collapsed.
+  List<Widget> _dayCards(DailyReportViewModel report) {
+    final todayKey = DailyReportViewModel.dayKeyOf(DateTime.now());
+    return [
+      for (final day in report.rangeDays) ...[
+        _DayReportCard(
+          key: ValueKey(DailyReportViewModel.dayKeyOf(day)),
+          vm: report,
+          day: day,
+          initiallyExpanded:
+              DailyReportViewModel.dayKeyOf(day) == todayKey,
+        ),
+        const SizedBox(height: AppDimens.spacingSm),
+      ],
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer2<DailyReportViewModel, DailyBriefChatViewModel>(
@@ -101,14 +222,7 @@ class _SummaryTabState extends State<_SummaryTab> {
                 controller: _scrollController,
                 padding: const EdgeInsets.all(AppDimens.spacingMd),
                 children: [
-                  _PeriodBar(report: report, chat: chat),
-                  const SizedBox(height: AppDimens.spacingSm),
-                  _ReportCard(vm: report),
-                  if (report.report != null && !report.report!.isEmpty) ...[
-                    _HighlightsCard(report: report.report!),
-                    _CommitRollupCard(report: report.report!),
-                    _ContributionsCard(report: report.report!),
-                  ],
+                  ..._dayCards(report),
                   const SizedBox(height: AppDimens.spacingMd),
                   const _BriefHeader(),
                   const SizedBox(height: AppDimens.spacingSm),
@@ -132,122 +246,224 @@ class _SummaryTabState extends State<_SummaryTab> {
   }
 }
 
-// Period picker for the intelligence hub. Re-points BOTH the report stream and
-// the "ask AI" chat scope at the picked inclusive day range.
-class _PeriodBar extends StatelessWidget {
-  const _PeriodBar({required this.report, required this.chat});
-  final DailyReportViewModel report;
-  final DailyBriefChatViewModel chat;
+// One collapsible per-day report card (mirrors _DigestCard's interaction:
+// tappable header + animated chevron + conditional body). Collapsed shows the
+// date and a one-line summary; expanded shows the full report (summary +
+// highlights + commit rollup + contributions) with a regenerate action, or a
+// "產生日報" generate button when the day has no report yet.
+class _DayReportCard extends StatefulWidget {
+  const _DayReportCard({
+    super.key,
+    required this.vm,
+    required this.day,
+    required this.initiallyExpanded,
+  });
+  final DailyReportViewModel vm;
+  final DateTime day;
+  final bool initiallyExpanded;
 
-  String get _label => report.isSingleDay
-      ? (_dayKey(report.rangeStart) == _dayKey(DateTime.now())
-            ? 'Today'
-            : _monthDay(report.rangeStart))
-      : '${_monthDay(report.rangeStart)} ~ ${_monthDay(report.rangeEnd)}';
+  @override
+  State<_DayReportCard> createState() => _DayReportCardState();
+}
+
+class _DayReportCardState extends State<_DayReportCard> {
+  late bool _expanded = widget.initiallyExpanded;
+
+  String get _dayKeyStr => DailyReportViewModel.dayKeyOf(widget.day);
+
+  String get _headerLabel {
+    final todayKey = DailyReportViewModel.dayKeyOf(DateTime.now());
+    return _dayKeyStr == todayKey ? 'Today · $_dayKeyStr' : _dayKeyStr;
+  }
+
+  String _summaryLine(DailyReport? report) {
+    if (report == null || report.isEmpty) return '尚未產生日報';
+    final first = report.summary.split('\n').first.trim();
+    return first.isEmpty ? '尚未產生日報' : first;
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Row(
+    final scheme = theme.colorScheme;
+    final vm = widget.vm;
+    final report = vm.reportForDay(_dayKeyStr);
+    final hasReport = report != null && !report.isEmpty;
+    final generating = vm.isGeneratingDay(_dayKeyStr);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ---- Header (tap to collapse/expand) ----
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppDimens.spacingMd,
+                AppDimens.spacingSm,
+                AppDimens.spacingSm,
+                AppDimens.spacingSm,
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.auto_awesome_outlined,
+                    size: 20,
+                    color: scheme.primary,
+                  ),
+                  const SizedBox(width: AppDimens.spacingSm),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _headerLabel,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (!_expanded)
+                          Text(
+                            _summaryLine(report),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (report != null && report.commitCount > 0) ...[
+                    const SizedBox(width: AppDimens.spacingSm),
+                    _CountChip(
+                      icon: Icons.commit_outlined,
+                      label: '${report.commitCount}',
+                    ),
+                  ],
+                  AnimatedRotation(
+                    turns: _expanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: const Icon(Icons.expand_more),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // ---- Collapsible body ----
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            alignment: Alignment.topCenter,
+            child: _expanded
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppDimens.spacingMd,
+                      0,
+                      AppDimens.spacingMd,
+                      AppDimens.spacingMd,
+                    ),
+                    child: hasReport
+                        ? _DayReportBody(vm: vm, day: widget.day, report: report)
+                        : _DayReportEmpty(
+                            generating: generating,
+                            onGenerate: () => vm.generateDay(widget.day),
+                          ),
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// The expanded body of a day card that HAS a report: summary text, a
+// regenerate action, then the existing highlights / rollup / contributions
+// content widgets (reused, not duplicated).
+class _DayReportBody extends StatelessWidget {
+  const _DayReportBody({
+    required this.vm,
+    required this.day,
+    required this.report,
+  });
+  final DailyReportViewModel vm;
+  final DateTime day;
+  final DailyReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final generating = vm.isGeneratingDay(DailyReportViewModel.dayKeyOf(day));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Period',
-          style: theme.textTheme.labelLarge?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+        Text(report.summary, style: theme.textTheme.bodyMedium),
+        const SizedBox(height: AppDimens.spacingSm),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.icon(
+            onPressed: generating ? null : () => vm.generateDay(day),
+            icon: generating
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
+            label: Text(generating ? 'Generating…' : 'Regenerate'),
           ),
         ),
-        const Spacer(),
-        OutlinedButton.icon(
-          onPressed: () async {
-            final now = DateTime.now();
-            final picked = await showDateRangePicker(
-              context: context,
-              firstDate: DateTime(2020),
-              lastDate: now,
-              initialDateRange: DateTimeRange(
-                start: report.rangeStart,
-                end: report.rangeEnd,
-              ),
-            );
-            if (picked == null) return;
-            report.setRange(picked.start, picked.end);
-            chat.setRange(picked.start, picked.end);
-          },
-          icon: const Icon(Icons.date_range_outlined, size: 18),
-          label: Text(_label),
-        ),
+        _HighlightsCard(report: report),
+        _CommitRollupCard(report: report),
+        _ContributionsCard(report: report),
       ],
     );
   }
 }
 
-// AI daily-summary card with the regenerate action. Shows an empty state when
-// no report exists yet for the day.
-class _ReportCard extends StatelessWidget {
-  const _ReportCard({required this.vm});
-  final DailyReportViewModel vm;
+// The expanded body of a day card with NO report yet: a "產生日報" button.
+class _DayReportEmpty extends StatelessWidget {
+  const _DayReportEmpty({required this.generating, required this.onGenerate});
+  final bool generating;
+  final VoidCallback onGenerate;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final report = vm.report;
-    final hasReport = report != null && !report.isEmpty;
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(AppDimens.spacingMd),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.auto_awesome_outlined,
-                  size: 20,
-                  color: theme.colorScheme.primary,
-                ),
-                const SizedBox(width: AppDimens.spacingSm),
-                Text(
-                  'Daily summary',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const Spacer(),
-                if (report != null && report.commitCount > 0)
-                  _CountChip(
-                    icon: Icons.commit_outlined,
-                    label: '${report.commitCount}',
-                  ),
-              ],
-            ),
-            const SizedBox(height: AppDimens.spacingSm),
-            Text(
-              hasReport
-                  ? report.summary
-                  : 'No report generated for this period yet. Tap Regenerate '
-                        'to let the AI summarize the period’s commits, tasks '
-                        'and chat.',
-              style: theme.textTheme.bodyMedium,
-            ),
-            const SizedBox(height: AppDimens.spacingMd),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: FilledButton.icon(
-                onPressed: vm.regenerating ? null : vm.regenerate,
-                icon: vm.regenerating
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.refresh),
-                label: Text(vm.regenerating ? 'Generating…' : 'Regenerate'),
-              ),
-            ),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '這天還沒有日報。點「產生日報」讓 AI 整理當天的 commits、'
+          '任務與聊天。',
+          style: theme.textTheme.bodyMedium,
         ),
-      ),
+        const SizedBox(height: AppDimens.spacingMd),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.icon(
+            onPressed: generating ? null : onGenerate,
+            icon: generating
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.auto_awesome_outlined),
+            label: Text(generating ? 'Generating…' : '產生日報'),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -893,6 +1109,9 @@ class _CommitsTab extends StatelessWidget {
                 ],
               ),
             ),
+            // Scope row: the date range is picked once in the AppBar (shared
+            // across all tabs). This shows the current scope and offers the
+            // "Recent 50" reset, which clears the shared range.
             Padding(
               padding: const EdgeInsets.fromLTRB(
                 AppDimens.spacingMd,
@@ -902,39 +1121,29 @@ class _CommitsTab extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      final now = DateTime.now();
-                      final picked = await showDateRangePicker(
-                        context: ctx,
-                        firstDate: DateTime(2020),
-                        lastDate: now,
-                        initialDateRange: vm.hasRange
-                            ? DateTimeRange(
-                                start: vm.rangeStart!,
-                                end: vm.rangeEnd!,
-                              )
-                            : DateTimeRange(start: now, end: now),
-                      );
-                      if (picked == null) return;
-                      vm.setRange(picked.start, picked.end);
-                    },
-                    icon: const Icon(Icons.date_range_outlined, size: 18),
-                    label: Text(
-                      vm.hasRange
-                          ? '${_monthDay(vm.rangeStart!)} ~ ${_monthDay(vm.rangeEnd!)}'
-                          : 'Recent 50',
-                    ),
+                  Icon(
+                    vm.hasRange
+                        ? Icons.date_range_outlined
+                        : Icons.history_outlined,
+                    size: 16,
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                   ),
-                  // An obvious way back to the default stream — re-picking the
-                  // same dates in the picker stays on the range query (which
-                  // is NOT the same as the recent stream).
+                  const SizedBox(width: AppDimens.spacingXs),
+                  Text(
+                    vm.hasRange
+                        ? '${_monthDay(vm.rangeStart!)} ~ ${_monthDay(vm.rangeEnd!)}'
+                        : 'Recent 50',
+                    style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
                   if (vm.hasRange) ...[
                     const SizedBox(width: AppDimens.spacingSm),
                     ActionChip(
                       avatar: const Icon(Icons.restore, size: 16),
                       label: const Text('Recent 50'),
-                      onPressed: vm.clearRange,
+                      onPressed: () =>
+                          ctx.read<IntelRangeViewModel>().clear(),
                       visualDensity: VisualDensity.compact,
                     ),
                   ],
@@ -1033,7 +1242,8 @@ class _CommitListViewState extends State<_CommitListView> {
                       ? ActionChip(
                           avatar: const Icon(Icons.restore, size: 16),
                           label: const Text('Recent 50'),
-                          onPressed: vm.clearRange,
+                          onPressed: () =>
+                              context.read<IntelRangeViewModel>().clear(),
                         )
                       : null,
                 )
@@ -1420,7 +1630,7 @@ class _BranchGraphView extends StatelessWidget {
             ? ActionChip(
                 avatar: const Icon(Icons.restore, size: 16),
                 label: const Text('Recent 50'),
-                onPressed: vm.clearRange,
+                onPressed: () => context.read<IntelRangeViewModel>().clear(),
               )
             : null,
       );
@@ -2122,50 +2332,37 @@ class _DiscordTab extends StatelessWidget {
                             color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                           ),
                         ),
-                      OutlinedButton.icon(
-                        onPressed: vm.settingRange
-                            ? null
-                            : () async {
-                                final now = DateTime.now();
-                                // Default the picker to the user's saved range
-                                // so it stays at the position they set.
-                                final initial =
-                                    (vm.rangeStart != null &&
-                                        vm.rangeEnd != null)
-                                    ? DateTimeRange(
-                                        start: vm.rangeStart!,
-                                        end: vm.rangeEnd!,
-                                      )
-                                    : DateTimeRange(start: now, end: now);
-                                final picked = await showDateRangePicker(
-                                  context: ctx,
-                                  firstDate: DateTime(2020),
-                                  lastDate: now,
-                                  initialDateRange: initial,
-                                );
-                                if (picked == null) return;
-                                await vm.setRange(picked.start, picked.end);
-                                if (!ctx.mounted) return;
-                                ScaffoldMessenger.of(ctx).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Range set to ${_dayKey(picked.start)} ~ '
-                                      '${_dayKey(picked.end)}. '
-                                      'Tap Refresh to backfill.',
+                      // Read-only scope label — the range is picked once in the
+                      // AppBar (shared across tabs). Setting it triggers the
+                      // backfill; the Refresh button below re-pulls it.
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (vm.settingRange)
+                            const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child:
+                                  CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          else
+                            Icon(
+                              Icons.date_range_outlined,
+                              size: 16,
+                              color:
+                                  Theme.of(ctx).colorScheme.onSurfaceVariant,
+                            ),
+                          const SizedBox(width: AppDimens.spacingXs),
+                          Text(
+                            _rangeLabel(vm),
+                            style:
+                                Theme.of(ctx).textTheme.labelMedium?.copyWith(
+                                      color: Theme.of(ctx)
+                                          .colorScheme
+                                          .onSurfaceVariant,
                                     ),
-                                  ),
-                                );
-                              },
-                        icon: vm.settingRange
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.date_range_outlined),
-                        label: Text(_rangeLabel(vm)),
+                          ),
+                        ],
                       ),
                       FilledButton.icon(
                         onPressed: vm.refreshing ? null : vm.refresh,

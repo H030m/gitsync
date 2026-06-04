@@ -30,9 +30,26 @@ class DailyReportViewModel with ChangeNotifier {
   final DailyReportRepository _repo;
   final FunctionsService _functions;
   StreamSubscription<DailyReport?>? _sub;
+  StreamSubscription<List<DailyReport>>? _rangeSub;
 
   DailyReport? _report;
   DailyReport? get report => _report;
+
+  // Per-day reports for the selected multi-day range, keyed by YYYY-MM-DD. Only
+  // populated while a range is active; the Summary tab renders one card per day
+  // in [rangeDays] and looks the report up here.
+  Map<String, DailyReport> _reportsByDay = {};
+
+  /// The fetched report for [dayKey] (YYYY-MM-DD), or null if that day has none.
+  /// In the single-day default the report streams into [_report]; in a range it
+  /// streams into the per-day [_reportsByDay] map.
+  DailyReport? reportForDay(String dayKey) =>
+      isSingleDay ? (dayKey == startKey ? _report : null) : _reportsByDay[dayKey];
+
+  /// Whether the current selection spans more than one calendar day. When true
+  /// the Summary tab shows per-day cards; when false it shows today's single
+  /// report (the default, no-range behavior).
+  bool get hasRange => !isSingleDay;
 
   bool _loading = true;
   bool get loading => _loading;
@@ -40,8 +57,28 @@ class DailyReportViewModel with ChangeNotifier {
   bool _regenerating = false;
   bool get regenerating => _regenerating;
 
+  // YYYY-MM-DD keys currently generating via the per-day "Generate report"
+  // button, so each card can show its own spinner.
+  final Set<String> _generatingDays = {};
+  bool isGeneratingDay(String dayKey) => _generatingDays.contains(dayKey);
+
   DateTime get rangeStart => _start;
   DateTime get rangeEnd => _end;
+
+  /// The inclusive list of calendar days in the selected range, earliest first.
+  /// One [DailyReport] card is rendered per entry.
+  List<DateTime> get rangeDays {
+    final days = <DateTime>[];
+    var d = DateTime(_start.year, _start.month, _start.day);
+    final last = DateTime(_end.year, _end.month, _end.day);
+    while (!d.isAfter(last)) {
+      days.add(d);
+      d = d.add(const Duration(days: 1));
+    }
+    return days;
+  }
+
+  static String dayKeyOf(DateTime d) => _dayKey(d);
 
   /// True when the selected period is a single calendar day.
   bool get isSingleDay => _dayKey(_start) == _dayKey(_end);
@@ -59,13 +96,27 @@ class DailyReportViewModel with ChangeNotifier {
 
   void _subscribe() {
     _sub?.cancel();
+    _rangeSub?.cancel();
     _loading = true;
     _report = null;
-    _sub = _repo.streamReport(_repoId, docKey).listen((report) {
-      _report = report;
-      _loading = false;
-      notifyListeners();
-    });
+    _reportsByDay = {};
+    if (isSingleDay) {
+      // Default (no range): the single-day report card behavior.
+      _sub = _repo.streamReport(_repoId, docKey).listen((report) {
+        _report = report;
+        _loading = false;
+        notifyListeners();
+      });
+    } else {
+      // Range: one report per day, rendered as collapsible per-day cards.
+      _rangeSub = _repo
+          .streamReportsInRange(_repoId, startKey, endKey)
+          .listen((reports) {
+        _reportsByDay = {for (final r in reports) r.date: r};
+        _loading = false;
+        notifyListeners();
+      });
+    }
   }
 
   /// Re-points the stream at the report for [start]..[end] (inclusive days).
@@ -74,6 +125,12 @@ class DailyReportViewModel with ChangeNotifier {
     _end = end;
     _subscribe();
     notifyListeners();
+  }
+
+  /// Returns to the default single-day (today) view.
+  void clearRange() {
+    final now = DateTime.now();
+    setRange(now, now);
   }
 
   // Manual trigger for the AI-generated period report.
@@ -93,9 +150,29 @@ class DailyReportViewModel with ChangeNotifier {
     }
   }
 
+  /// Generates (or regenerates) the report for a single [day] — used by the
+  /// per-day cards' "產生日報" button. Calls `summarizeDay` with start == end.
+  Future<void> generateDay(DateTime day) async {
+    final key = _dayKey(day);
+    if (_generatingDays.contains(key)) return;
+    _generatingDays.add(key);
+    notifyListeners();
+    try {
+      await _functions.summarizeDay(
+        repoId: _repoId,
+        startDate: key,
+        endDate: key,
+      );
+    } finally {
+      _generatingDays.remove(key);
+      notifyListeners();
+    }
+  }
+
   @override
   void dispose() {
     _sub?.cancel();
+    _rangeSub?.cancel();
     super.dispose();
   }
 }

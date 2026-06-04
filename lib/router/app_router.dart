@@ -8,6 +8,7 @@ import '../view_models/daily_brief_vm.dart';
 import '../view_models/daily_report_vm.dart';
 import '../view_models/discord_chat_vm.dart';
 import '../view_models/discord_messages_vm.dart';
+import '../view_models/intel_range_vm.dart';
 import '../view_models/members_vm.dart';
 import '../view_models/tasks_board_vm.dart';
 import '../views/daily/daily_view_page.dart';
@@ -88,6 +89,12 @@ final GoRouter appRouter = GoRouter(
             ),
             ChangeNotifierProvider(
               create: (_) => DailyBriefChatViewModel(repoId: repoId),
+            ),
+            // One shared date range driving all three Daily tabs (see
+            // IntelRangeViewModel). Scoped here so Tasks-page navigation
+            // doesn't reset it.
+            ChangeNotifierProvider(
+              create: (_) => IntelRangeViewModel(),
             ),
           ],
           child: RepoShell(repoId: repoId, child: child),

@@ -8,6 +8,7 @@ import 'package:gitsync/view_models/daily_brief_vm.dart';
 import 'package:gitsync/view_models/daily_report_vm.dart';
 import 'package:gitsync/view_models/discord_chat_vm.dart';
 import 'package:gitsync/view_models/discord_messages_vm.dart';
+import 'package:gitsync/view_models/intel_range_vm.dart';
 import 'package:gitsync/views/daily/daily_view_page.dart';
 
 // Renders the real Commits tab (tree map) against the fake backend, drives the
@@ -26,6 +27,7 @@ Widget _harness() {
             create: (_) => DailyReportViewModel(repoId: repoId)),
         ChangeNotifierProvider(
             create: (_) => DailyBriefChatViewModel(repoId: repoId)),
+        ChangeNotifierProvider(create: (_) => IntelRangeViewModel()),
       ],
       child: const DailyViewPage(repoId: repoId),
     ),
@@ -253,24 +255,31 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await _openCommitsTab(tester);
-    final vm = tester
-        .element(find.text('Commit map'))
-        .read<CommitsViewModel>();
+    final ctx = tester.element(find.text('Commit map'));
+    final vm = ctx.read<CommitsViewModel>();
+    final intel = ctx.read<IntelRangeViewModel>();
 
-    // No range → the filter button itself reads "Recent 50", no reset chip.
+    // No range → the scope row reads "Recent 50", no reset chip.
     expect(find.byIcon(Icons.restore), findsNothing);
 
+    // The shared range drives the Commits tab; setting it shows the reset chip.
     final now = DateTime.now();
-    vm.setRange(now.subtract(const Duration(days: 1)), now);
+    intel.setRange(DateTimeRange(
+      start: now.subtract(const Duration(days: 1)),
+      end: now,
+    ));
     await tester.pumpAndSettle();
+    expect(vm.hasRange, isTrue);
 
-    // Reset affordance is one tap away and goes back to the recent stream.
-    // (warnIfMissed silenced: the chip's tap centroid is reported as obscured
-    // by the test harness overlay, but the tap lands and the assertion below
-    // is the behavior that matters.)
-    expect(find.byIcon(Icons.restore), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.restore), warnIfMissed: false);
+    // Reset affordance is one tap away and goes back to the recent stream. Two
+    // restore icons exist now (the AppBar reset action + the scope-row chip);
+    // tap the chip in the scope row.
+    expect(find.byIcon(Icons.restore), findsWidgets);
+    await tester.tap(
+        find.widgetWithText(ActionChip, 'Recent 50'),
+        warnIfMissed: false);
     await tester.pumpAndSettle();
     expect(vm.hasRange, isFalse);
+    expect(intel.hasRange, isFalse);
   });
 }
