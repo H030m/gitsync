@@ -45,6 +45,16 @@ function makeDocRef(path: string) {
         store.set(path, data);
       }
     },
+    // Mirrors Firestore's create(): rejects with ALREADY_EXISTS (gRPC code 6)
+    // when the doc already exists — drives the first-seen-wins handlePush path.
+    async create(data: Record<string, unknown>) {
+      if (store.has(path)) {
+        const err = new Error('ALREADY_EXISTS') as Error & { code: number };
+        err.code = 6;
+        throw err;
+      }
+      store.set(path, data);
+    },
   };
 }
 
@@ -216,6 +226,8 @@ describe('githubWebhook', () => {
       filesChanged: ['a.ts', 'b.ts'],
       // Stored under canonical `login` (payload's `author.username` → `login`).
       author: { name: 'Octo', login: 'octocat' },
+      // 06-05 D1: branch attribution from the push ref.
+      branch: 'main',
     });
     // committedAt is a real Timestamp parsed from the payload's ISO string —
     // string-typed values would fall out of every Timestamp range query.
@@ -279,16 +291,50 @@ describe('githubWebhook', () => {
     expect(store.get(`apps/gitsync/repos/${REPO_ID}/commits/abc123`)).toBeUndefined();
   });
 
-  it('push to non-default branch → 200, no commit doc', async () => {
+  it('push to non-default branch → 200, commit doc written with branch (06-05 D1)', async () => {
     const req = makeReq({
-      body: pushBody({ ref: 'refs/heads/feature' }),
+      body: pushBody({ ref: 'refs/heads/feature/x' }),
       event: 'push',
     });
     const res = makeRes();
     await handler(req, res);
 
     expect(res.statusCode).toBe(200);
-    expect(store.get(`apps/gitsync/repos/${REPO_ID}/commits/abc123`)).toBeUndefined();
+    const commit = store.get(`apps/gitsync/repos/${REPO_ID}/commits/abc123`);
+    expect(commit).toMatchObject({ sha: 'abc123', branch: 'feature/x' });
+  });
+
+  it('re-push of an existing sha (merge to main) does NOT overwrite the first doc', async () => {
+    // First seen on a feature branch.
+    await handler(
+      makeReq({
+        body: pushBody({ ref: 'refs/heads/feature/x' }),
+        event: 'push',
+        delivery: 'delivery-1',
+      }),
+      makeRes(),
+    );
+    // onCommitCreated later enriched the doc.
+    const path = `apps/gitsync/repos/${REPO_ID}/commits/abc123`;
+    store.set(path, { ...(store.get(path) ?? {}), aiSummary: 'enriched', workSummary: 'cached' });
+
+    // Same sha re-pushed via merge to main (new delivery id).
+    await handler(
+      makeReq({
+        body: pushBody({ ref: 'refs/heads/main' }),
+        event: 'push',
+        delivery: 'delivery-2',
+      }),
+      makeRes(),
+    );
+
+    const commit = store.get(path);
+    // First-seen branch + enrichment preserved; not clobbered by the re-push.
+    expect(commit).toMatchObject({
+      branch: 'feature/x',
+      aiSummary: 'enriched',
+      workSummary: 'cached',
+    });
   });
 
   it('PR merged → pullRequests doc written', async () => {

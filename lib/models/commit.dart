@@ -41,6 +41,11 @@ class Commit {
   final int deletions;
   final List<String> linkedTaskIds;
   final String? aiSummary;
+
+  /// The branch this commit was first pushed to (webhook `ref`). Nullable:
+  /// legacy docs ingested before all-branch ingestion lack the field.
+  final String? branch;
+
   Timestamp? _committedAt;
   Timestamp get committedAt => _committedAt ?? Timestamp.now();
 
@@ -55,6 +60,7 @@ class Commit {
     this.deletions = 0,
     this.linkedTaskIds = const [],
     this.aiSummary,
+    this.branch,
     Timestamp? committedAt,
   }) : _committedAt = committedAt;
 
@@ -69,6 +75,7 @@ class Commit {
     required this.deletions,
     required this.linkedTaskIds,
     this.aiSummary,
+    this.branch,
     required Timestamp? committedAt,
   }) : _committedAt = committedAt;
 
@@ -86,6 +93,9 @@ class Commit {
       deletions: (map['deletions'] as num?)?.toInt() ?? 0,
       linkedTaskIds: List<String>.from(map['linkedTaskIds'] as List? ?? []),
       aiSummary: map['aiSummary'] as String?,
+      branch: (map['branch'] as String?)?.isEmpty ?? true
+          ? null
+          : map['branch'] as String?,
       committedAt: _parseTimestamp(map['committedAt']),
     );
   }

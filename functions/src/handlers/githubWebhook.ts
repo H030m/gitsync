@@ -37,28 +37,31 @@ function verifySignature(
  * Writes a raw commit doc per push commit. No `#N` parsing, no embeddings, no
  * linkedTaskIds — `onCommitCreated` (Layer 2) does all of that.
  *
- * Default-branch decision: GitHub `push` payloads carry `ref`
- * (`refs/heads/<branch>`) and `repository.default_branch`. We only persist
- * commits pushed to the default branch so non-default feature-branch pushes
- * don't create noise commit docs; the matching task-completion signal comes
- * from PR merges into the default branch anyway.
+ * All-branch ingest (PRD 06-05 D1): we persist commits pushed to EVERY branch,
+ * not just the default. Feature-branch work must reach Firestore so the Commits
+ * list shows it in realtime and explainCommit can resolve branch-graph commits.
+ * The push `ref` (`refs/heads/<branch>`) is stored as `branch`.
+ *
+ * First-seen wins: when a feature branch later merges to main, GitHub re-pushes
+ * the SAME shas under the default-branch ref. We must NOT overwrite the existing
+ * doc — a plain `batch.set` would clobber the enriched fields that
+ * `onCommitCreated` wrote (aiSummary, embedding, linkedTaskIds, workSummary) and
+ * reset createdAt. So we use per-commit `create()` (fails on an existing doc)
+ * and ignore ALREADY_EXISTS, preserving the original feature-branch attribution.
+ *
+ * Note: GitHub's push payload caps `commits[]` at 20 — larger pushes are covered
+ * by the backfill script / PR-merge flows, not here.
  */
 async function handlePush(repoId: string, body: Record<string, unknown>): Promise<void> {
   const ref = body.ref as string | undefined;
-  const repository = body.repository as { default_branch?: string } | undefined;
-  const defaultBranch = repository?.default_branch;
-  if (ref && defaultBranch && ref !== `refs/heads/${defaultBranch}`) {
-    logger.info('Skipping push to non-default branch', { repoId, ref });
-    return;
-  }
+  const branch = ref ? ref.replace('refs/heads/', '') : '';
 
   const commits = (body.commits as Array<Record<string, unknown>> | undefined) ?? [];
   if (commits.length === 0) return;
 
-  const batch = db.batch();
-  for (const c of commits) {
+  const writes = commits.map(async (c) => {
     const sha = c.id as string | undefined;
-    if (!sha) continue;
+    if (!sha) return;
     const author = (c.author as Record<string, unknown> | undefined) ?? {};
     const added = (c.added as string[] | undefined) ?? [];
     const removed = (c.removed as string[] | undefined) ?? [];
@@ -73,8 +76,10 @@ async function handlePush(repoId: string, body: Record<string, unknown>): Promis
       parsedTs && !Number.isNaN(parsedTs.getTime())
         ? Timestamp.fromDate(parsedTs)
         : FieldValue.serverTimestamp();
-    const ref2 = db.doc(`apps/gitsync/repos/${repoId}/commits/${sha}`);
-    batch.set(ref2, {
+    const docRef = db.doc(`apps/gitsync/repos/${repoId}/commits/${sha}`);
+    // `create()` (not `set`) for first-seen-wins: it rejects when the doc
+    // already exists, so a merge re-push can't clobber enriched fields.
+    await docRef.create({
       repoId,
       sha,
       message: (c.message as string | undefined) ?? '',
@@ -96,10 +101,27 @@ async function handlePush(repoId: string, body: Record<string, unknown>): Promis
       removed,
       modified,
       committedAt,
+      // First-seen branch attribution (06-05 D1): the ref this sha first
+      // arrived on. Not overwritten by a later merge re-push (create-only).
+      branch,
       createdAt: FieldValue.serverTimestamp(),
     });
+  });
+
+  const results = await Promise.allSettled(writes);
+  for (const r of results) {
+    if (r.status === 'rejected') {
+      // ALREADY_EXISTS (gRPC code 6) is expected for first-seen-wins — the doc
+      // was already ingested on its original branch; skip silently. Log others.
+      const err = r.reason as { code?: number; message?: string } | undefined;
+      if (err?.code === 6) continue;
+      logger.error('handlePush: commit create failed', {
+        repoId,
+        branch,
+        err: String(r.reason),
+      });
+    }
   }
-  await batch.commit();
 }
 
 /**

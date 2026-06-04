@@ -91,6 +91,11 @@ jest.mock('../config', () => ({
   MODELS: { reasoning: 'gpt-4o', fast: 'gpt-4o-mini', embedding: 'text-embedding-3-small' },
 }));
 
+const mockGetCommit = jest.fn();
+jest.mock('../services/githubClient', () => ({
+  getCommit: (...args: unknown[]) => mockGetCommit(...args),
+}));
+
 import { explainCommitFlow } from '../flows/explainCommit';
 
 const REPO = 'team17_gitsync';
@@ -110,14 +115,63 @@ beforeEach(() => {
   store.clear();
   updateSpy.mockClear();
   mockCreate.mockClear();
+  mockGetCommit.mockReset();
   nextContent = '**What was done** — wired OAuth.';
 });
 
 describe('explainCommitFlow', () => {
-  it('throws not-found for a missing commit', async () => {
+  it('throws not-found for a missing commit (no GitHub fallback creds)', async () => {
     await expect(
       explainCommitFlow({ repoId: REPO, sha: 'nope' }),
     ).rejects.toMatchObject({ code: 'not-found' });
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockGetCommit).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the GitHub API when the doc is missing (06-05 D2)', async () => {
+    mockGetCommit.mockResolvedValue({
+      sha: 'branch1',
+      message: 'feat: branch-only work',
+      authorLogin: 'bob-dev',
+      authorName: 'Bob',
+      committedAt: '2026-06-05T00:00:00Z',
+      files: ['lib/views/commits/branch_view.dart'],
+      additions: 80,
+      deletions: 10,
+    });
+
+    const res = await explainCommitFlow({
+      repoId: REPO,
+      sha: 'branch1',
+      owner: 'team17',
+      repo: 'gitsync',
+      accessToken: 'tok',
+    });
+
+    expect(res.cached).toBe(false);
+    expect(res.markdown).toContain('What was done');
+    expect(mockGetCommit).toHaveBeenCalledWith('team17', 'gitsync', 'tok', 'branch1');
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    // No cache write on the fallback path (no doc to cache on).
+    expect(updateSpy).not.toHaveBeenCalled();
+    // The prompt context was built from the GitHub commit message.
+    const userMsg = (mockCreate.mock.calls[0] as unknown as [
+      { messages: Array<{ role: string; content: string }> },
+    ])[0].messages.find((m) => m.role === 'user');
+    expect(userMsg?.content).toContain('branch-only work');
+  });
+
+  it('still throws not-found when the doc is missing and no token is supplied', async () => {
+    await expect(
+      explainCommitFlow({
+        repoId: REPO,
+        sha: 'branch1',
+        owner: 'team17',
+        repo: 'gitsync',
+        // accessToken intentionally absent
+      }),
+    ).rejects.toMatchObject({ code: 'not-found' });
+    expect(mockGetCommit).not.toHaveBeenCalled();
     expect(mockCreate).not.toHaveBeenCalled();
   });
 

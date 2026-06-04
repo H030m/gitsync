@@ -107,6 +107,25 @@ class CommitGraph {
       };
 }
 
+// ---- Branch color mapping ---------------------------------------------------
+
+/// Stable palette slot for a branch name: the same branch always maps to the
+/// same color slot across reloads (the lane a branch occupies can change, so
+/// keying color on the branch name — not the lane index — keeps it stable).
+/// Pure (no Flutter imports here) so the painter can call it for any palette
+/// size. Empty/unknown names fold to slot 0.
+int branchColorIndex(String branch, int paletteSize) {
+  if (paletteSize <= 0) return 0;
+  if (branch.isEmpty) return 0;
+  // Simple deterministic char-code fold (FNV-ish), kept small and dependency-
+  // free; only the modulo matters for the palette slot.
+  var hash = 0;
+  for (var i = 0; i < branch.length; i++) {
+    hash = (hash * 31 + branch.codeUnitAt(i)) & 0x7fffffff;
+  }
+  return hash % paletteSize;
+}
+
 // ---- Lane assignment ("active lanes" algorithm) -----------------------------
 
 /// Paint geometry for one commit row of the branch graph. All lane indices are
@@ -134,6 +153,12 @@ class GraphRowGeometry {
   /// parents of a merge commit opening (or joining) other lanes.
   final List<int> outOfNode;
 
+  /// For each lane column active at this row (whether passing through, into, or
+  /// out of the node, or the node's own lane), the branch name the line belongs
+  /// to — `null` when the lane is free or its branch is unknown. Indexed by lane
+  /// column; used to color strokes per BRANCH and to drive the rail-tap popup.
+  final List<String?> laneBranches;
+
   const GraphRowGeometry({
     required this.commit,
     required this.lane,
@@ -142,6 +167,7 @@ class GraphRowGeometry {
     this.passThrough = const [],
     this.intoNode = const [],
     this.outOfNode = const [],
+    this.laneBranches = const [],
   });
 
   /// Number of columns this row touches (for rail sizing).
@@ -174,12 +200,23 @@ class GraphRowGeometry {
 ///   running off the bottom edge (off-screen history stub).
 List<GraphRowGeometry> buildGraphRows(List<GraphCommit> commits) {
   final active = <String?>[]; // lane → the SHA that lane expects next
+  // Parallel to `active`: the branch each lane's line belongs to. Set when a
+  // lane starts expecting a sha, carried forward as the lane advances, cleared
+  // when the lane is freed — so a lane expecting an off-window sha keeps the
+  // branch of the commit that opened it.
+  final laneBranch = <String?>[];
+  // sha → that commit's primaryBranch, for resolving a lane's expected sha.
+  final branchOf = <String, String>{
+    for (final c in commits)
+      if (c.sha.isNotEmpty) c.sha: c.primaryBranch,
+  };
   final rows = <GraphRowGeometry>[];
 
   int alloc() {
     final free = active.indexOf(null);
     if (free != -1) return free;
     active.add(null);
+    laneBranch.add(null);
     return active.length - 1;
   }
 
@@ -190,17 +227,30 @@ List<GraphRowGeometry> buildGraphRows(List<GraphCommit> commits) {
     final isTip = lane == -1;
     if (isTip) lane = alloc();
 
+    // The node's own lane carries the commit's own branch.
+    laneBranch[lane] = c.primaryBranch.isEmpty ? null : c.primaryBranch;
+
     // Other lanes expecting this commit converge into the node and free up.
     final intoNode = <int>[];
     for (var l = 0; l < active.length; l++) {
       if (l != lane && active[l] == c.sha) {
         intoNode.add(l);
         active[l] = null;
+        laneBranch[l] = null;
       }
     }
 
     // The node's own line continues down toward its first parent.
-    active[lane] = c.parents.isEmpty ? null : c.parents.first;
+    final firstParent = c.parents.isEmpty ? null : c.parents.first;
+    active[lane] = firstParent;
+    if (firstParent == null) {
+      laneBranch[lane] = null;
+    } else {
+      // Prefer the parent's own branch when it's in the window; otherwise keep
+      // the branch of this commit (line runs off-screen under its branch).
+      laneBranch[lane] = branchOf[firstParent] ?? c.primaryBranch;
+      if (laneBranch[lane]!.isEmpty) laneBranch[lane] = null;
+    }
 
     // Extra parents: join the lane already expecting them, else open one.
     final outOfNode = <int>[];
@@ -210,6 +260,8 @@ List<GraphRowGeometry> buildGraphRows(List<GraphCommit> commits) {
       if (l == -1) {
         l = alloc();
         active[l] = p;
+        final pb = branchOf[p] ?? c.primaryBranch;
+        laneBranch[l] = pb.isEmpty ? null : pb;
       }
       if (l != lane) outOfNode.add(l);
     }
@@ -223,6 +275,25 @@ List<GraphRowGeometry> buildGraphRows(List<GraphCommit> commits) {
       return a != null && a == b;
     });
 
+    // Snapshot the branch of every lane this row touches. A lane is "touched"
+    // if it's the node's lane, passes through, or is an into/out edge.
+    final laneBranches = List<String?>.generate(cols, (l) {
+      if (l == lane) return c.primaryBranch.isEmpty ? null : c.primaryBranch;
+      if (l < passThrough.length && passThrough[l]) {
+        return l < laneBranch.length ? laneBranch[l] : null;
+      }
+      if (intoNode.contains(l)) {
+        // The lane just freed; recover its branch from the row above.
+        final a = l < above.length ? above[l] : null;
+        if (a != null) return branchOf[a];
+        return null;
+      }
+      if (outOfNode.contains(l)) {
+        return l < laneBranch.length ? laneBranch[l] : null;
+      }
+      return null;
+    });
+
     rows.add(GraphRowGeometry(
       commit: c,
       lane: lane,
@@ -231,11 +302,13 @@ List<GraphRowGeometry> buildGraphRows(List<GraphCommit> commits) {
       passThrough: passThrough,
       intoNode: intoNode,
       outOfNode: outOfNode,
+      laneBranches: laneBranches,
     ));
 
     // Keep the lane list compact so freed right-edge columns are reusable.
     while (active.isNotEmpty && active.last == null) {
       active.removeLast();
+      laneBranch.removeLast();
     }
   }
   return rows;

@@ -42,6 +42,44 @@ export async function getRecentCommits(
   }));
 }
 
+export interface CommitDetail {
+  sha: string;
+  message: string;
+  authorLogin: string;
+  authorName: string;
+  committedAt: string;
+  files: string[];
+  additions: number;
+  deletions: number;
+}
+
+/**
+ * Fetches a single commit (GET /repos/{owner}/{repo}/commits/{sha}) with its
+ * message, author, changed file paths and line stats. Used by explainCommit's
+ * fallback path when no Firestore commit doc exists (06-05 D2). All GitHub API
+ * access stays in this file (ARCHITECTURE.md §6.4).
+ */
+export async function getCommit(
+  owner: string,
+  repo: string,
+  accessToken: string,
+  sha: string,
+): Promise<CommitDetail> {
+  const octokit = getOctokit(accessToken);
+  const res = await octokit.repos.getCommit({ owner, repo, ref: sha });
+  const data = res.data;
+  return {
+    sha: data.sha,
+    message: data.commit.message,
+    authorLogin: data.author?.login ?? '',
+    authorName: data.commit.author?.name ?? '',
+    committedAt: data.commit.author?.date ?? '',
+    files: (data.files ?? []).map((f) => f.filename),
+    additions: data.stats?.additions ?? 0,
+    deletions: data.stats?.deletions ?? 0,
+  };
+}
+
 // ---- Commit graph (branch topology) ----------------------------------------
 
 export interface GraphCommitRaw {

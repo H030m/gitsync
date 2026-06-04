@@ -7,8 +7,9 @@ import '../models/commit_graph.dart';
 import '../repositories/commit_repo.dart';
 import '../services/functions_service.dart';
 
-/// The Commits tab's two visualizations: real branch topology vs the
-/// per-author rail map.
+/// The Commits tab's two visualizations: real branch topology vs the flat,
+/// filterable commit list. (`author` is the legacy enum name kept for callers;
+/// it now backs the list view.)
 enum CommitsViewMode { branch, author }
 
 /// Streams the Commits tab's commit list (recent by default, or a user-picked
@@ -34,6 +35,95 @@ class CommitsViewModel with ChangeNotifier {
 
   List<Commit> _commits = [];
   List<Commit> get commits => _commits;
+
+  // ---- List filters (list view) --------------------------------------------
+
+  final Set<String> _authorFilter = {};
+  final Set<String> _branchFilter = {};
+  String _keyword = '';
+
+  /// Selected author logins (OR within the set). Empty → no author constraint.
+  Set<String> get authorFilter => _authorFilter;
+
+  /// Selected branch names (OR within the set). Empty → no branch constraint.
+  /// Commits without a `branch` are grouped under 'main'.
+  Set<String> get branchFilter => _branchFilter;
+
+  /// Case-insensitive substring matched against the commit message.
+  String get keyword => _keyword;
+
+  bool get hasFilters =>
+      _authorFilter.isNotEmpty ||
+      _branchFilter.isNotEmpty ||
+      _keyword.trim().isNotEmpty;
+
+  /// Branch label for a commit, defaulting legacy (branch-less) docs to 'main'.
+  static String branchLabel(Commit c) =>
+      (c.branch == null || c.branch!.isEmpty) ? 'main' : c.branch!;
+
+  /// Author logins present in the loaded commits (sorted, deduped).
+  List<String> get availableAuthors {
+    final set = <String>{
+      for (final c in _commits)
+        if (c.author.login.isNotEmpty) c.author.login,
+    };
+    final list = set.toList()..sort();
+    return list;
+  }
+
+  /// Branch names present in the loaded commits (sorted, deduped; legacy docs
+  /// fold into 'main').
+  List<String> get availableBranches {
+    final set = <String>{for (final c in _commits) branchLabel(c)};
+    final list = set.toList()..sort();
+    return list;
+  }
+
+  /// The loaded commits passed through the active filters: AND across the three
+  /// dimensions, OR within each multi-select; keyword is a case-insensitive
+  /// substring on the message.
+  List<Commit> get filteredCommits {
+    if (!hasFilters) return _commits;
+    final kw = _keyword.trim().toLowerCase();
+    return _commits.where((c) {
+      if (_authorFilter.isNotEmpty &&
+          !_authorFilter.contains(c.author.login)) {
+        return false;
+      }
+      if (_branchFilter.isNotEmpty &&
+          !_branchFilter.contains(branchLabel(c))) {
+        return false;
+      }
+      if (kw.isNotEmpty && !c.message.toLowerCase().contains(kw)) {
+        return false;
+      }
+      return true;
+    }).toList();
+  }
+
+  void toggleAuthorFilter(String login) {
+    if (!_authorFilter.add(login)) _authorFilter.remove(login);
+    notifyListeners();
+  }
+
+  void toggleBranchFilter(String branch) {
+    if (!_branchFilter.add(branch)) _branchFilter.remove(branch);
+    notifyListeners();
+  }
+
+  void setKeyword(String value) {
+    if (_keyword == value) return;
+    _keyword = value;
+    notifyListeners();
+  }
+
+  void clearFilters() {
+    if (!hasFilters) return;
+    _authorFilter.clear();
+    _branchFilter.clear();
+    _keyword = '';
+    notifyListeners();
+  }
 
   bool _loading = true;
   bool get loading => _loading;

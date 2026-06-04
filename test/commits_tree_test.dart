@@ -39,15 +39,15 @@ Future<void> _openCommitsTab(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-/// The branch graph is the default visualization — these tree-map tests
-/// flip the toggle to the per-author view first.
-Future<void> _switchToAuthorView(WidgetTester tester) async {
-  await tester.tap(find.byIcon(Icons.person_outline));
+/// The branch graph is the default visualization — these list tests flip the
+/// toggle to the flat, filterable list view first.
+Future<void> _switchToListView(WidgetTester tester) async {
+  await tester.tap(find.byIcon(Icons.view_list_outlined));
   await tester.pumpAndSettle();
 }
 
 void main() {
-  testWidgets('Commits tab renders the tree map with day headers',
+  testWidgets('Commits list view renders commits with day headers',
       (tester) async {
     tester.view.physicalSize = const Size(1200, 2400);
     tester.view.devicePixelRatio = 1.0;
@@ -55,7 +55,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await _openCommitsTab(tester);
-    await _switchToAuthorView(tester);
+    await _switchToListView(tester);
 
     expect(find.text('Commit map'), findsOneWidget);
     // All five dummy commits are on screen, grouped under day headers.
@@ -73,7 +73,7 @@ void main() {
     );
   });
 
-  testWidgets('tapping a commit opens the sheet with an AI work summary',
+  testWidgets('tapping a list commit opens the sheet with an AI work summary',
       (tester) async {
     tester.view.physicalSize = const Size(1200, 2400);
     tester.view.devicePixelRatio = 1.0;
@@ -81,7 +81,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await _openCommitsTab(tester);
-    await _switchToAuthorView(tester);
+    await _switchToListView(tester);
 
     await tester.tap(find.text('TaskBoard drag-and-drop between columns'));
     await tester.pumpAndSettle();
@@ -94,7 +94,7 @@ void main() {
     );
   });
 
-  testWidgets('range filter narrows the map to the picked days',
+  testWidgets('author filter narrows the list to the picked author',
       (tester) async {
     tester.view.physicalSize = const Size(1200, 2400);
     tester.view.devicePixelRatio = 1.0;
@@ -102,7 +102,78 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await _openCommitsTab(tester);
-    await _switchToAuthorView(tester);
+    await _switchToListView(tester);
+
+    // Open the Author multi-select and pick alice-dev only.
+    await tester.tap(find.widgetWithText(FilterChip, 'Author'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('alice-dev'));
+    await tester.pumpAndSettle();
+    // Close the sheet.
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+
+    // Alice's commits stay; demo-user / bob-ml commits are filtered out.
+    expect(find.text('Wire up GitHub OAuth provider in AuthService'),
+        findsOneWidget);
+    expect(
+        find.text('TaskBoard drag-and-drop between columns'), findsNothing);
+    expect(find.text('breakdownTask: zod schema + cycle detection draft'),
+        findsNothing);
+  });
+
+  testWidgets('keyword filter narrows the list (and composes with author)',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await _openCommitsTab(tester);
+    await _switchToListView(tester);
+    final vm =
+        tester.element(find.text('Commit map')).read<CommitsViewModel>();
+
+    // Keyword alone: only the two OAuth commits match.
+    await tester.enterText(
+        find.widgetWithText(TextField, 'Search message…'), 'OAuth');
+    await tester.pumpAndSettle();
+    expect(find.text('Wire up GitHub OAuth provider in AuthService'),
+        findsOneWidget);
+    expect(
+        find.text('OAuth callback URL fix for Windows + sign-in error states'),
+        findsOneWidget);
+    expect(
+        find.text('TaskBoard drag-and-drop between columns'), findsNothing);
+
+    // Compose author + keyword: alice-dev AND "OAuth" → both alice OAuth
+    // commits remain (demo-user's OAuth-free commits already excluded).
+    vm.toggleAuthorFilter('alice-dev');
+    await tester.pumpAndSettle();
+    expect(find.text('Wire up GitHub OAuth provider in AuthService'),
+        findsOneWidget);
+    expect(
+        find.text('OAuth callback URL fix for Windows + sign-in error states'),
+        findsOneWidget);
+
+    // Clearing filters restores the full list.
+    vm.clearFilters();
+    await tester.pumpAndSettle();
+    expect(
+        find.text('TaskBoard drag-and-drop between columns'), findsOneWidget);
+    expect(find.text('breakdownTask: zod schema + cycle detection draft'),
+        findsOneWidget);
+  });
+
+  testWidgets('range filter narrows the list to the picked days',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await _openCommitsTab(tester);
+    await _switchToListView(tester);
     final vm = tester
         .element(find.text('Commit map'))
         .read<CommitsViewModel>();

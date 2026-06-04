@@ -10,6 +10,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 
 import { db } from '../admin';
 import { getOpenAI, MODELS } from '../config';
+import { getCommit } from '../services/githubClient';
 import { explainCommitSystem, explainCommitContext } from '../prompts/explainCommit';
 
 export interface ExplainCommitInput {
@@ -17,6 +18,15 @@ export interface ExplainCommitInput {
   sha: string;
   /** Regenerate even when a cached workSummary exists. */
   force?: boolean;
+  /**
+   * Optional GitHub fallback (06-05 D2): when the commit doc is missing (e.g. a
+   * branch-graph commit predating all-branch ingest), fetch the commit from the
+   * GitHub API instead of 404ing. Requires all three; the cache is NOT written
+   * on this path (no doc to cache on).
+   */
+  owner?: string;
+  repo?: string;
+  accessToken?: string;
 }
 
 export interface ExplainCommitResult {
@@ -32,11 +42,18 @@ const TASK_LIMIT = 5;
 export async function explainCommitFlow(
   input: ExplainCommitInput,
 ): Promise<ExplainCommitResult> {
-  const { repoId, sha, force } = input;
+  const { repoId, sha, force, owner, repo, accessToken } = input;
 
   const ref = db.doc(`apps/gitsync/repos/${repoId}/commits/${sha}`);
   const snap = await ref.get();
   if (!snap.exists) {
+    // ---- GitHub fallback (06-05 D2) -----------------------------------------
+    // No Firestore doc (branch-graph / historical commit predating all-branch
+    // ingest). If we have GitHub creds, fetch the commit and summarize it from
+    // that context — no linked tasks, no neighbors, no cache write-back.
+    if (owner && repo && accessToken) {
+      return explainFromGitHub({ repoId, sha, owner, repo, accessToken });
+    }
     throw new HttpsError('not-found', 'commit not found');
   }
   const commit = snap.data() ?? {};
@@ -141,5 +158,50 @@ export async function explainCommitFlow(
   }
 
   logger.info('explainCommit: generated', { repoId, sha });
+  return { markdown, cached: false };
+}
+
+/**
+ * Fallback summary path (06-05 D2): generates an explanation from the GitHub
+ * API when no Firestore commit doc exists. Simpler context than the doc path —
+ * just message + files (no linked tasks, no neighbor commits) — and never writes
+ * a cache (there is no doc to cache on).
+ */
+async function explainFromGitHub(input: {
+  repoId: string;
+  sha: string;
+  owner: string;
+  repo: string;
+  accessToken: string;
+}): Promise<ExplainCommitResult> {
+  const { repoId, sha, owner, repo, accessToken } = input;
+  const detail = await getCommit(owner, repo, accessToken, sha);
+
+  const completion = await getOpenAI().chat.completions.create({
+    model: MODELS.fast,
+    messages: [
+      { role: 'system', content: explainCommitSystem },
+      {
+        role: 'user',
+        content: explainCommitContext({
+          sha,
+          message: detail.message,
+          authorName: detail.authorName || detail.authorLogin || 'unknown',
+          filesChanged: detail.files,
+          additions: detail.additions,
+          deletions: detail.deletions,
+          aiSummary: null,
+          linkedTasks: [],
+          neighborCommits: [],
+        }),
+      },
+    ],
+  });
+  const markdown = completion.choices[0]?.message?.content?.trim() ?? '';
+  if (!markdown) {
+    throw new HttpsError('internal', 'OpenAI returned an empty explanation');
+  }
+
+  logger.info('explainCommit: generated via GitHub fallback', { repoId, sha });
   return { markdown, cached: false };
 }

@@ -5,16 +5,67 @@ import 'package:gitsync/models/commit_graph.dart';
 // Pure-Dart tests for the branch-graph lane assignment (active-lanes pass).
 // Commits are listed newest → oldest, exactly as `getCommitGraph` returns.
 
-GraphCommit _c(String sha, List<String> parents, {int hoursAgo = 0}) =>
+GraphCommit _c(String sha, List<String> parents,
+        {int hoursAgo = 0, String branch = ''}) =>
     GraphCommit(
       sha: sha,
       message: 'commit $sha',
       committedAt: DateTime(2026, 6, 4).subtract(Duration(hours: hoursAgo)),
       parents: parents,
+      primaryBranch: branch,
       isMerge: parents.length >= 2,
     );
 
 void main() {
+  group('branchColorIndex', () {
+    test('same branch name maps to the same slot across calls', () {
+      expect(branchColorIndex('main', 6), branchColorIndex('main', 6));
+      expect(
+        branchColorIndex('feature/summary-intel-hub', 6),
+        branchColorIndex('feature/summary-intel-hub', 6),
+      );
+    });
+
+    test('slot is within the palette range and stable per name', () {
+      for (final name in ['main', 'dev', 'feature/x', 'release/1.0', '']) {
+        final i = branchColorIndex(name, 6);
+        expect(i, inInclusiveRange(0, 5));
+        expect(i, branchColorIndex(name, 6)); // deterministic
+      }
+    });
+
+    test('empty branch / zero palette fold to 0 without throwing', () {
+      expect(branchColorIndex('', 6), 0);
+      expect(branchColorIndex('main', 0), 0);
+    });
+  });
+
+  test('laneBranches carry the branch each lane belongs to (fork + merge)', () {
+    // main: m1 ── m2 ─────── m3 (merge)
+    //         └── f1 ── f2 ──┘  (feature)
+    final rows = buildGraphRows([
+      _c('m3', ['m2', 'f2'], hoursAgo: 0, branch: 'main'),
+      _c('f2', ['f1'], hoursAgo: 1, branch: 'feature'),
+      _c('m2', ['m1'], hoursAgo: 2, branch: 'main'),
+      _c('f1', ['m1'], hoursAgo: 3, branch: 'feature'),
+      _c('m1', [], hoursAgo: 4, branch: 'main'),
+    ]);
+    final by = {for (final r in rows) r.commit.sha: r};
+
+    // The node's own lane carries its own branch.
+    expect(by['m3']!.laneBranches[by['m3']!.lane], 'main');
+    expect(by['f2']!.laneBranches[by['f2']!.lane], 'feature');
+
+    // While the feature chain is on screen, lane 1 (feature) passes through
+    // m2's row — and the painter should see it as 'feature', not 'main'.
+    expect(by['m2']!.passThrough[1], isTrue);
+    expect(by['m2']!.laneBranches[1], 'feature');
+
+    // Symmetrically, main (lane 0) passes through f2's row.
+    expect(by['f2']!.passThrough[0], isTrue);
+    expect(by['f2']!.laneBranches[0], 'main');
+  });
+
   test('linear history stays in one lane', () {
     final rows = buildGraphRows([
       _c('c3', ['c2'], hoursAgo: 0),

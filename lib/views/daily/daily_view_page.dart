@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -796,10 +795,10 @@ class _BriefInputBar extends StatelessWidget {
   }
 }
 
-// Commits tab — a scrollable commit tree map. One lane (column + color) per
-// author, day separators, and tap-a-commit → an AI explanation of the work
-// (the `explainCommit` callable, cached per sha). A range button filters the
-// map to an inclusive day range.
+// Commits tab — a scrollable commit visualization. The default branch graph
+// shows real topology; the list view is a flat, filterable commit list. Tap a
+// commit → an AI explanation of the work (the `explainCommit` callable, cached
+// per sha). A range button filters to an inclusive day range.
 class _CommitsTab extends StatelessWidget {
   const _CommitsTab();
 
@@ -870,7 +869,7 @@ class _CommitsTab extends StatelessWidget {
                           ? null
                           : () => vm.loadGraph(force: true),
                     ),
-                  // Branch topology vs per-author rails (PRD D2).
+                  // Branch topology vs the flat, filterable commit list (D4).
                   SegmentedButton<CommitsViewMode>(
                     segments: const [
                       ButtonSegment(
@@ -880,8 +879,8 @@ class _CommitsTab extends StatelessWidget {
                       ),
                       ButtonSegment(
                         value: CommitsViewMode.author,
-                        icon: Icon(Icons.person_outline, size: 18),
-                        tooltip: 'By author',
+                        icon: Icon(Icons.view_list_outlined, size: 18),
+                        tooltip: 'List',
                       ),
                     ],
                     selected: {vm.viewMode},
@@ -945,22 +944,7 @@ class _CommitsTab extends StatelessWidget {
             Expanded(
               child: vm.viewMode == CommitsViewMode.branch
                   ? _BranchGraphView(vm: vm)
-                  : vm.commits.isEmpty
-                      ? EmptyState(
-                          icon: Icons.commit_outlined,
-                          title: 'No commits',
-                          message:
-                              'No commits in this period. Pick another range '
-                              'or go back to the recent commits.',
-                          action: vm.hasRange
-                              ? ActionChip(
-                                  avatar: const Icon(Icons.restore, size: 16),
-                                  label: const Text('Recent 50'),
-                                  onPressed: vm.clearRange,
-                                )
-                              : null,
-                        )
-                      : _CommitTree(vm: vm),
+                  : _CommitListView(vm: vm),
             ),
           ],
         );
@@ -969,8 +953,8 @@ class _CommitsTab extends StatelessWidget {
   }
 }
 
-// Lane palette for the tree map (index = lane). Wraps around if the team is
-// larger than the palette.
+// Lane palette for the graph/list (also the per-branch color source via
+// branchColorIndex). Wraps around if there are more branches than colors.
 const List<Color> _laneColors = [
   Color(0xFF4C9AFF), // blue
   Color(0xFF36B37E), // green
@@ -980,89 +964,355 @@ const List<Color> _laneColors = [
   Color(0xFF00B8D9), // teal
 ];
 
-// One row of the flattened tree: either a day header or a commit with its
-// precomputed lane geometry.
-class _TreeRow {
-  _TreeRow.header(this.dayLabel)
-    : commit = null,
-      lane = 0,
-      activeLanes = const [];
-  _TreeRow.commit(Commit this.commit, this.lane, this.activeLanes)
-    : dayLabel = null;
+// One row of the flattened list: a day header or a commit.
+class _ListItem {
+  _ListItem.header(this.dayLabel) : commit = null;
+  _ListItem.commit(Commit this.commit) : dayLabel = null;
 
   final String? dayLabel;
   final Commit? commit;
-  final int lane;
-
-  /// For each lane: whether a vertical line passes through this row.
-  final List<bool> activeLanes;
 
   bool get isHeader => dayLabel != null;
 }
 
-// Hard cap on rail lanes — authors beyond this share the last lane so the
-// rail never paints over the text column (bots can inflate author counts).
-const int _maxLanes = 6;
+// The flat, filterable commit list (D4): a filter chip bar (author / branch /
+// keyword) on top, then the commits grouped under day headers — no per-author
+// lane rail. Filters compose (AND across dimensions, OR within a multi-select).
+class _CommitListView extends StatefulWidget {
+  const _CommitListView({required this.vm});
+  final CommitsViewModel vm;
 
-// Builds the flattened row list: day headers + commits with lane geometry.
-// Lanes are assigned per author in order of first (newest) appearance; a
-// lane's line spans from its newest to its oldest commit.
-List<_TreeRow> _buildTreeRows(List<Commit> commits) {
-  final laneOf = <String, int>{};
-  for (final c in commits) {
-    laneOf.putIfAbsent(
-      c.author.login,
-      () => laneOf.length.clamp(0, _maxLanes - 1),
-    );
-  }
-  final laneCount = laneOf.isEmpty
-      ? 0
-      : (laneOf.values.reduce((a, b) => a > b ? a : b) + 1);
-
-  // First/last (newest/oldest) flat index of each lane, over commits only.
-  final firstIdx = List<int>.filled(laneCount, -1);
-  final lastIdx = List<int>.filled(laneCount, -1);
-  for (var i = 0; i < commits.length; i++) {
-    final lane = laneOf[commits[i].author.login]!;
-    if (firstIdx[lane] == -1) firstIdx[lane] = i;
-    lastIdx[lane] = i;
-  }
-
-  final rows = <_TreeRow>[];
-  String? lastDay;
-  for (var i = 0; i < commits.length; i++) {
-    final c = commits[i];
-    final day = _dayKey(c.committedAt.toDate());
-    if (day != lastDay) {
-      rows.add(_TreeRow.header(day));
-      lastDay = day;
-    }
-    final active = List<bool>.generate(
-      laneCount,
-      (l) => firstIdx[l] <= i && i <= lastIdx[l],
-    );
-    rows.add(_TreeRow.commit(c, laneOf[c.author.login]!, active));
-  }
-  return rows;
+  @override
+  State<_CommitListView> createState() => _CommitListViewState();
 }
 
-class _CommitTree extends StatelessWidget {
-  const _CommitTree({required this.vm});
+class _CommitListViewState extends State<_CommitListView> {
+  final _keywordController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _keywordController.text = widget.vm.keyword;
+  }
+
+  @override
+  void dispose() {
+    _keywordController.dispose();
+    super.dispose();
+  }
+
+  List<_ListItem> _items(List<Commit> commits) {
+    final items = <_ListItem>[];
+    String? lastDay;
+    for (final c in commits) {
+      final day = _dayKey(c.committedAt.toDate());
+      if (day != lastDay) {
+        items.add(_ListItem.header(day));
+        lastDay = day;
+      }
+      items.add(_ListItem.commit(c));
+    }
+    return items;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = widget.vm;
+    final filtered = vm.filteredCommits;
+    return Column(
+      children: [
+        _CommitFilterBar(vm: vm, keywordController: _keywordController),
+        Expanded(
+          child: vm.commits.isEmpty
+              ? EmptyState(
+                  icon: Icons.commit_outlined,
+                  title: 'No commits',
+                  message: 'No commits in this period. Pick another range '
+                      'or go back to the recent commits.',
+                  action: vm.hasRange
+                      ? ActionChip(
+                          avatar: const Icon(Icons.restore, size: 16),
+                          label: const Text('Recent 50'),
+                          onPressed: vm.clearRange,
+                        )
+                      : null,
+                )
+              : filtered.isEmpty
+                  ? EmptyState(
+                      icon: Icons.filter_list_off_outlined,
+                      title: 'No matching commits',
+                      message: 'No commits match the current filters.',
+                      action: ActionChip(
+                        avatar: const Icon(Icons.clear, size: 16),
+                        label: const Text('Clear filters'),
+                        onPressed: vm.clearFilters,
+                      ),
+                    )
+                  : Builder(
+                      builder: (ctx) {
+                        final items = _items(filtered);
+                        return ListView.builder(
+                          padding: const EdgeInsets.only(
+                            bottom: AppDimens.spacingMd,
+                          ),
+                          itemCount: items.length,
+                          itemBuilder: (ctx, i) {
+                            final item = items[i];
+                            if (item.isHeader) {
+                              return _DayHeader(label: item.dayLabel!);
+                            }
+                            return _CommitListRow(commit: item.commit!, vm: vm);
+                          },
+                        );
+                      },
+                    ),
+        ),
+      ],
+    );
+  }
+}
+
+// Filter chip bar for the commit list: Author + Branch multi-selects, a compact
+// keyword field, and a clear-all chip. Horizontally scrollable so it never
+// overflows on a narrow window.
+class _CommitFilterBar extends StatelessWidget {
+  const _CommitFilterBar({required this.vm, required this.keywordController});
+  final CommitsViewModel vm;
+  final TextEditingController keywordController;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppDimens.spacingMd,
+        0,
+        AppDimens.spacingMd,
+        AppDimens.spacingSm,
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            FilterChip(
+              avatar: const Icon(Icons.person_outline, size: 16),
+              label: Text(
+                vm.authorFilter.isEmpty
+                    ? 'Author'
+                    : 'Author (${vm.authorFilter.length})',
+              ),
+              selected: vm.authorFilter.isNotEmpty,
+              onSelected: (_) => _pickMulti(
+                context,
+                title: 'Author',
+                options: vm.availableAuthors,
+                selected: vm.authorFilter,
+                onToggle: vm.toggleAuthorFilter,
+              ),
+            ),
+            const SizedBox(width: AppDimens.spacingSm),
+            FilterChip(
+              avatar: const Icon(Icons.account_tree_outlined, size: 16),
+              label: Text(
+                vm.branchFilter.isEmpty
+                    ? 'Branch'
+                    : 'Branch (${vm.branchFilter.length})',
+              ),
+              selected: vm.branchFilter.isNotEmpty,
+              onSelected: (_) => _pickMulti(
+                context,
+                title: 'Branch',
+                options: vm.availableBranches,
+                selected: vm.branchFilter,
+                onToggle: vm.toggleBranchFilter,
+              ),
+            ),
+            const SizedBox(width: AppDimens.spacingSm),
+            SizedBox(
+              width: 180,
+              child: TextField(
+                controller: keywordController,
+                onChanged: vm.setKeyword,
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  hintText: 'Search message…',
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  suffixIcon: vm.keyword.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.clear, size: 16),
+                          onPressed: () {
+                            keywordController.clear();
+                            vm.setKeyword('');
+                          },
+                        ),
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: AppDimens.spacingSm,
+                    vertical: AppDimens.spacingSm,
+                  ),
+                ),
+              ),
+            ),
+            if (vm.hasFilters) ...[
+              const SizedBox(width: AppDimens.spacingSm),
+              ActionChip(
+                avatar: Icon(Icons.clear, size: 16, color: scheme.error),
+                label: const Text('Clear'),
+                onPressed: () {
+                  keywordController.clear();
+                  vm.clearFilters();
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Multi-select popup: tap toggles a value; the list reflects live selection.
+  Future<void> _pickMulti(
+    BuildContext context, {
+    required String title,
+    required List<String> options,
+    required Set<String> selected,
+    required void Function(String) onToggle,
+  }) {
+    return showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return SafeArea(
+          child: StatefulBuilder(
+            builder: (ctx, setSheetState) => Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppDimens.spacingMd,
+                    0,
+                    AppDimens.spacingMd,
+                    AppDimens.spacingSm,
+                  ),
+                  child: Text(
+                    title,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                if (options.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(AppDimens.spacingMd),
+                    child: Text('Nothing to filter by yet.'),
+                  )
+                else
+                  Flexible(
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        for (final opt in options)
+                          CheckboxListTile(
+                            dense: true,
+                            value: selected.contains(opt),
+                            title: Text(opt),
+                            onChanged: (_) {
+                              onToggle(opt);
+                              setSheetState(() {});
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// One commit row in the flat list (no lane rail): message + author/branch/sha.
+class _CommitListRow extends StatelessWidget {
+  const _CommitListRow({required this.commit, required this.vm});
+  final Commit commit;
   final CommitsViewModel vm;
 
   @override
   Widget build(BuildContext context) {
-    final rows = _buildTreeRows(vm.commits);
-    return ListView.builder(
-      padding: const EdgeInsets.only(bottom: AppDimens.spacingMd),
-      itemCount: rows.length,
-      itemBuilder: (ctx, i) {
-        final row = rows[i];
-        if (row.isHeader) {
-          return _DayHeader(label: row.dayLabel!);
-        }
-        return _CommitTreeRow(row: row, vm: vm);
-      },
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final c = commit;
+    final branch = CommitsViewModel.branchLabel(c);
+    return InkWell(
+      onTap: () => _showCommitSheet(context, c, vm),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppDimens.spacingMd,
+          vertical: AppDimens.spacingSm,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              margin: const EdgeInsets.only(top: 2, right: AppDimens.spacingSm),
+              decoration: BoxDecoration(
+                color: _BranchGraphRow.branchColor(branch),
+                shape: BoxShape.circle,
+              ),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    c.message.split('\n').first,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          '${c.author.name.isEmpty ? c.author.login : c.author.name}'
+                          ' · $branch'
+                          ' · ${c.sha.length >= 7 ? c.sha.substring(0, 7) : c.sha}'
+                          ' · ${_hhmm(c.committedAt.toDate())}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                      if (c.aiSummary != null) ...[
+                        const SizedBox(width: AppDimens.spacingXs),
+                        Icon(
+                          Icons.auto_awesome_outlined,
+                          size: 12,
+                          color: scheme.primary,
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, size: 18, color: scheme.outline),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1096,148 +1346,6 @@ class _DayHeader extends StatelessWidget {
       ),
     );
   }
-}
-
-class _CommitTreeRow extends StatelessWidget {
-  const _CommitTreeRow({required this.row, required this.vm});
-  final _TreeRow row;
-  final CommitsViewModel vm;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final c = row.commit!;
-    final color = _laneColors[row.lane % _laneColors.length];
-    final laneWidth = 16.0;
-    final railWidth =
-        (row.activeLanes.length.clamp(1, 6)) * laneWidth + AppDimens.spacingSm;
-
-    return InkWell(
-      onTap: () => _showCommitSheet(context, c, vm),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppDimens.spacingMd),
-        // IntrinsicHeight bounds the stretch axis so the rail painter gets the
-        // row's real height (a ListView child otherwise has unbounded height).
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(
-                width: railWidth,
-                child: CustomPaint(
-                  painter: _LanePainter(
-                    lane: row.lane,
-                    activeLanes: row.activeLanes,
-                    laneWidth: laneWidth,
-                    color: color,
-                    lineColor: scheme.outlineVariant,
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: AppDimens.spacingSm,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        c.message.split('\n').first,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: color,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: AppDimens.spacingXs),
-                          Flexible(
-                            child: Text(
-                              '${c.author.name.isEmpty ? c.author.login : c.author.name}'
-                              ' · ${c.sha.substring(0, 7)}'
-                              ' · ${_hhmm(c.committedAt.toDate())}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: scheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                          if (c.aiSummary != null) ...[
-                            const SizedBox(width: AppDimens.spacingXs),
-                            Icon(
-                              Icons.auto_awesome_outlined,
-                              size: 12,
-                              color: scheme.primary,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Icon(Icons.chevron_right, size: 18, color: scheme.outline),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// Paints the tree rail for one commit row: a vertical line for every lane
-// whose span covers this row, and a node dot on the commit's own lane.
-class _LanePainter extends CustomPainter {
-  _LanePainter({
-    required this.lane,
-    required this.activeLanes,
-    required this.laneWidth,
-    required this.color,
-    required this.lineColor,
-  });
-
-  final int lane;
-  final List<bool> activeLanes;
-  final double laneWidth;
-  final Color color;
-  final Color lineColor;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final linePaint = Paint()
-      ..color = lineColor
-      ..strokeWidth = 2;
-    for (var l = 0; l < activeLanes.length; l++) {
-      if (!activeLanes[l]) continue;
-      final x = laneWidth / 2 + l * laneWidth;
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), linePaint);
-    }
-    // Node dot (ring + fill) on this commit's lane, vertically centered.
-    final x = laneWidth / 2 + lane * laneWidth;
-    final y = size.height / 2;
-    canvas.drawCircle(Offset(x, y), 5.5, Paint()..color = lineColor);
-    canvas.drawCircle(Offset(x, y), 4, Paint()..color = color);
-  }
-
-  @override
-  bool shouldRepaint(_LanePainter old) =>
-      old.lane != lane ||
-      old.color != color ||
-      old.lineColor != lineColor ||
-      !listEquals(old.activeLanes, activeLanes);
 }
 
 // ---- Branch graph view (real topology via getCommitGraph) -------------------
@@ -1326,7 +1434,7 @@ class _BranchGraphView extends StatelessWidget {
     }
     railLanes = railLanes.clamp(1, _maxGraphLanes);
 
-    // Interleave day headers (same grouping as the author view).
+    // Interleave day headers (same grouping as the list view).
     final items = <_GraphListItem>[];
     String? lastDay;
     for (final r in rows) {
@@ -1409,13 +1517,19 @@ class _BranchGraphRow extends StatelessWidget {
   /// Branch name when this commit is a branch tip (labeled chip).
   final String? branchTip;
 
+  /// Branch color for a branch name (stable across reloads). Used by the node
+  /// dot, the tip chip, the rail-tap legend and the list-row dot.
+  static Color branchColor(String branch) =>
+      _laneColors[branchColorIndex(branch, _laneColors.length)];
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final g = row.commit;
     final laneWidth = 16.0;
-    final color = _laneColors[row.lane % _laneColors.length];
+    // Color by BRANCH (stable across reloads), not by lane index.
+    final color = branchColor(g.primaryBranch);
     final railWidth = railLanes * laneWidth + AppDimens.spacingSm;
 
     return InkWell(
@@ -1440,6 +1554,7 @@ class _BranchGraphRow extends StatelessWidget {
                 email: '',
               ),
               url: '',
+              branch: g.primaryBranch.isEmpty ? null : g.primaryBranch,
             );
         _showCommitSheet(context, commit, vm);
       },
@@ -1451,15 +1566,22 @@ class _BranchGraphRow extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SizedBox(
-                width: railWidth,
-                child: CustomPaint(
-                  painter: _GraphLanePainter(
-                    row: row,
-                    laneWidth: laneWidth,
-                    maxLanes: railLanes,
-                    palette: _laneColors,
-                    ringColor: scheme.outlineVariant,
+              // The rail strip is its own gesture target (inside the row's
+              // InkWell so it wins the arena for this region): tapping it pops
+              // up the lane→branch legend instead of opening the commit sheet.
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _showLaneBranchSheet(context, row),
+                child: SizedBox(
+                  width: railWidth,
+                  child: CustomPaint(
+                    painter: _GraphLanePainter(
+                      row: row,
+                      laneWidth: laneWidth,
+                      maxLanes: railLanes,
+                      palette: _laneColors,
+                      ringColor: scheme.outlineVariant,
+                    ),
                   ),
                 ),
               ),
@@ -1594,7 +1716,9 @@ class _GraphChip extends StatelessWidget {
 
 // Paints one branch-graph row: pass-through verticals, the node's own stem,
 // and the half-diagonals of fork/merge edges. Diagonals meet row boundaries
-// at the lane's column x, so consecutive rows form continuous curves.
+// at the lane's column x, so consecutive rows form continuous curves. Each
+// lane's strokes are colored by the BRANCH the line belongs to (laneBranches),
+// so a branch keeps its color even when it switches lanes.
 class _GraphLanePainter extends CustomPainter {
   _GraphLanePainter({
     required this.row,
@@ -1613,7 +1737,23 @@ class _GraphLanePainter extends CustomPainter {
   double _x(int lane) =>
       laneWidth / 2 + math.min(lane, maxLanes - 1) * laneWidth;
 
-  Color _colorOf(int lane) => palette[lane % palette.length];
+  // Color a lane by the BRANCH its line belongs to (stable across reloads);
+  // fall back to the lane-index color when the branch is unknown.
+  Color _colorOf(int lane) {
+    final branch =
+        lane < row.laneBranches.length ? row.laneBranches[lane] : null;
+    if (branch != null && branch.isNotEmpty) {
+      return palette[branchColorIndex(branch, palette.length)];
+    }
+    return palette[lane % palette.length];
+  }
+
+  // The node's own dot color keys on the commit's own branch.
+  Color get _nodeColor {
+    final b = row.commit.primaryBranch;
+    if (b.isNotEmpty) return palette[branchColorIndex(b, palette.length)];
+    return palette[row.lane % palette.length];
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1665,7 +1805,7 @@ class _GraphLanePainter extends CustomPainter {
     canvas.drawCircle(
       Offset(nodeX, midY),
       4,
-      Paint()..color = _colorOf(row.lane),
+      Paint()..color = _nodeColor,
     );
     if (row.commit.isMerge) {
       canvas.drawCircle(Offset(nodeX, midY), 1.8, Paint()..color = ringColor);
@@ -1677,6 +1817,92 @@ class _GraphLanePainter extends CustomPainter {
       old.row != row ||
       old.maxLanes != maxLanes ||
       old.ringColor != ringColor;
+}
+
+// Rail-tap legend (D3): lists the branches whose lines pass through this row —
+// a color dot + branch name per lane, the tapped commit's own branch first,
+// deduplicated. A big tap target (the whole rail strip), no per-pixel hit test.
+void _showLaneBranchSheet(BuildContext context, GraphRowGeometry row) {
+  final own = row.commit.primaryBranch;
+  // Gather distinct branch names across the row's lanes, own branch first.
+  final ordered = <String>[];
+  void add(String? b) {
+    if (b == null || b.isEmpty) return;
+    if (!ordered.contains(b)) ordered.add(b);
+  }
+
+  add(own);
+  for (final b in row.laneBranches) {
+    add(b);
+  }
+
+  showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (ctx) {
+      final theme = Theme.of(ctx);
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppDimens.spacingMd,
+            0,
+            AppDimens.spacingMd,
+            AppDimens.spacingMd,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppDimens.spacingSm),
+                child: Text(
+                  '這一列的分支',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (ordered.isEmpty)
+                Text(
+                  '沒有分支資訊',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                )
+              else
+                for (final b in ordered)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: _BranchGraphRow.branchColor(b),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: AppDimens.spacingSm),
+                        Expanded(
+                          child: Text(
+                            b,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: b == own
+                                  ? FontWeight.w700
+                                  : FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
 }
 
 // Bottom sheet: commit details + the AI work explanation (auto-fetched, cached
@@ -1740,6 +1966,28 @@ class _CommitDetailSheet extends StatelessWidget {
                   color: scheme.onSurfaceVariant,
                 ),
               ),
+              if (c.branch != null && c.branch!.isNotEmpty) ...[
+                const SizedBox(height: AppDimens.spacingXs),
+                Row(
+                  children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: _BranchGraphRow.branchColor(c.branch!),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: AppDimens.spacingXs),
+                    Text(
+                      c.branch!,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               if (c.filesChanged.isNotEmpty) ...[
                 const SizedBox(height: AppDimens.spacingSm),
                 Wrap(

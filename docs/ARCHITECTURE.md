@@ -151,6 +151,7 @@ apps/gitsync/
 │   │   ├── deletions: number
 │   │   ├── linkedTaskIds: string[]             # 從 commit message 解析 (e.g. "fix #12")
 │   │   ├── aiSummary: string?                  # AI 生成的人話摘要
+│   │   ├── branch: string?                     # 06-05 D1: 首次出現的 push ref（refs/heads/ 去掉）；legacy doc 無此欄
 │   │   └── committedAt: Timestamp
 │   │
 │   ├── pullRequests/{prNumber}
@@ -340,7 +341,7 @@ service cloud.firestore {
 | `generateHandoff` | `{ repoId, taskId }` | `{ handoffMarkdown }` | AI Flow — 交接文件 |
 | `summarizeDay` | `{ repoId, date }` 或 `{ repoId, startDate, endDate }` | `{ summary, highlights, blockers, commitThemes, memberContributions, ... }` | AI Flow — 時段報告生成（agentic，§5.4；上限 92 天）|
 | `dailyBrief` | `{ repoId, date, endDate?, question, history? }` | `{ answer, commits[] }` | AI Flow — Summary tab「問 AI 這段期間」agentic 聊天（§5.4）|
-| `explainCommit` | `{ repoId, sha, force? }` | `{ markdown, cached }` | AI Flow — commit tree 地圖點擊的工作總結（§5.4；cache 在 `commits/{sha}.workSummary`）|
+| `explainCommit` | `{ repoId, sha, force? }` | `{ markdown, cached }` | AI Flow — commit tree 地圖點擊的工作總結（§5.4；cache 在 `commits/{sha}.workSummary`）。06-05 D2：doc 不存在時 fallback 到 GitHub API（`githubClient.getCommit`，用 caller 的 token）摘要 branch-graph commit，不寫 cache |
 | `getCommitGraph` | `{ repoId, startDate?, endDate? }` | `{ commits[], branches[], cached, truncated }` | Commits 分頁分支圖 — 即時向 GitHub GraphQL 拉 branch 拓撲（parents/avatar/PR 關聯;webhook payload 沒有 parents）,90s Firestore cache（`repos/{repoId}/graphCache/{key}`）,分支上限 20 |
 | `setDiscordWebhook` | `{ repoId, webhookUrl, channelIds[] }` | `{}` | 設定 Discord outbound webhook + 監聽頻道 |
 | `subscribeToTopic` | `{ token, topic }` | `{}` | FCM web push（同課程） |
@@ -576,7 +577,7 @@ Step 3 — 寫 dailyReports/{docId}：單日 docId = date、跨日 = `{start}_{e
 
 **(c) `explainCommitFlow` / `explainCommit` callable（commit tree 點擊 → AI 工作總結）**
 
-讀 commit doc + linked tasks + 同作者鄰近 commits → 一次 `gpt-4o-mini` 呼叫產出三段式 markdown（做了什麼／脈絡／改了哪裡）。**結果 cache 在 `commits/{sha}.workSummary`**（commits 只有 Cloud Functions 寫得進），重複點擊零成本；`force=true` 重生。前端 Commits tab 的 tree 地圖（lane-per-author CustomPaint、日期分隔）點 row 開 bottom sheet 顯示。
+讀 commit doc + linked tasks + 同作者鄰近 commits → 一次 `gpt-4o-mini` 呼叫產出三段式 markdown（做了什麼／脈絡／改了哪裡）。**結果 cache 在 `commits/{sha}.workSummary`**（commits 只有 Cloud Functions 寫得進），重複點擊零成本；`force=true` 重生。前端 Commits tab 的 tree 地圖（lane-per-author CustomPaint、日期分隔）點 row 開 bottom sheet 顯示。**06-05 D2 — GitHub fallback**：branch-graph 上的 commit 可能沒有 Firestore doc（predates all-branch ingest），此時 handler 解析 repo `name` + caller 的 `githubAccessToken`（同 `getCommitGraph`），flow 改打 `githubClient.getCommit` 取 message/files/stats 生成摘要；fallback 路徑不寫 cache（沒有 doc 可寫）。三者缺一即停用 fallback，維持原本 doc-only 行為。
 
 > tasks 的 `status == done` + `updatedAt` range 複合查詢需要 `firestore.indexes.json` 新增的 `tasks status+updatedAt` 索引（live 模式 `firebase deploy --only firestore:indexes`）。
 
@@ -716,7 +717,9 @@ read:user       # 讀 user info
 
 **重要原則**：webhook handler **只負責「raw payload → 標準化 → 寫入 Firestore」**，不解析業務語意、不呼叫 OpenAI、不跨文件更新。所有後續邏輯下沉給 §4.3 對應的 Firestore Trigger（trigger 才有 idempotency key 保護）。這樣 webhook 永遠在毫秒級回應 GitHub（避免 retry 風暴），重邏輯 / 重 retry 集中在 trigger 層。
 
-**`handlePush`** — 只做寫入：對 payload 中每個 commit，set `repos/{repoId}/commits/{sha}`，欄位含 `repoId`（冗餘）、`message`、`author`、`url`、`filesChanged`、`additions`、`deletions`、`committedAt`。**不解析** commit message 的 `#N`、**不算 embedding**、**不寫 `linkedTaskIds`** — 由 `onCommitCreated` trigger 統一處理。
+**`handlePush`** — 只做寫入：對 payload 中每個 commit，寫 `repos/{repoId}/commits/{sha}`，欄位含 `repoId`（冗餘）、`message`、`author`、`url`、`filesChanged`、`added`/`removed`/`modified`、`committedAt`、`branch`。**不解析** commit message 的 `#N`、**不算 embedding**、**不寫 `linkedTaskIds`** — 由 `onCommitCreated` trigger 統一處理。
+
+> **06-05 D1 — ingest ALL branches（不再只收 default branch）**：舊版會 skip 非 default branch 的 push，導致 feature-branch 工作從不進 Firestore（list 看不到、explainCommit 對 branch-graph commit 404）。現在每個 branch 的 push 都寫 doc，並以 push `ref`（去掉 `refs/heads/`）存 `branch` 欄。**First-seen wins**：merge 進 main 會用同一批 sha 重新 push，故改用 per-commit `create()`（碰到已存在的 doc 會丟 ALREADY_EXISTS，忽略即可），避免 `set` 覆蓋 `onCommitCreated` 寫入的 `aiSummary`/`embedding`/`linkedTaskIds`/`workSummary` 並保留原始 branch 歸屬。GitHub push payload 的 `commits[]` 上限 20，超量靠 backfill / PR-merge 流程補。連帶效果：`dailyIntel` 的 range report 現在也會涵蓋 branch commits（時間範圍查詢，desirable）。歷史缺口由一次性腳本 `functions/scripts/backfill-commits.mjs` 補（GitHub REST 逐 branch 列 commit，跳過已存在的 sha，`--dry-run` gated）。
 
 **`handlePR`**（只在 `action == "closed"` 且 `merged == true` 時處理）— 只做寫入：set `pullRequests/{n}`，欄位含 `repoId`（冗餘）、`title`、`state: "merged"`、`commitShas`、`headBranch`、`baseBranch`、`mergedAt`。**不更新** 對應 tasks 的 status — 由 `onPRMerged` trigger 用 transaction 處理。
 
