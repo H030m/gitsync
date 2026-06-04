@@ -322,3 +322,36 @@ Dropped associatedPullRequests from the bulk GraphQL query (2000 nested PR looku
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: Fix Discord digest disappearing on shared-range clear
+
+**Date**: 2026-06-05
+**Task**: Fix Discord digest disappearing on shared-range clear
+**Branch**: `feature/summary-intel-hub`
+
+### Summary
+
+Regression from unified-range task: clearing the shared range called discord.setRange(today,today), overwriting the saved backfill range and re-pointing the digest at a day with no digest doc. Clear now leaves Discord on its saved range; digests intact in Firestore. Test asserts clear never touches the Discord VM.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0134ca6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
