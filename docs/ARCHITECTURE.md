@@ -342,7 +342,7 @@ service cloud.firestore {
 | `summarizeDay` | `{ repoId, date }` 或 `{ repoId, startDate, endDate }` | `{ summary, highlights, blockers, commitThemes, memberContributions, ... }` | AI Flow — 時段報告生成（agentic，§5.4；上限 92 天）|
 | `dailyBrief` | `{ repoId, date, endDate?, question, history? }` | `{ answer, commits[] }` | AI Flow — Summary tab「問 AI 這段期間」agentic 聊天（§5.4）|
 | `explainCommit` | `{ repoId, sha, force? }` | `{ markdown, cached }` | AI Flow — commit tree 地圖點擊的工作總結（§5.4；cache 在 `commits/{sha}.workSummary`）。06-05 D2：doc 不存在時 fallback 到 GitHub API（`githubClient.getCommit`，用 caller 的 token）摘要 branch-graph commit，不寫 cache |
-| `getCommitGraph` | `{ repoId, startDate?, endDate? }` | `{ commits[], branches[], cached, truncated }` | Commits 分頁分支圖 — 即時向 GitHub GraphQL 拉 branch 拓撲（parents/avatar/PR 關聯;webhook payload 沒有 parents）,90s Firestore cache（`repos/{repoId}/graphCache/{key}`）,分支上限 20 |
+| `getCommitGraph` | `{ repoId, startDate?, endDate? }` | `{ commits[], branches[], cached, truncated }` | Commits 分頁分支圖 — 即時向 GitHub GraphQL 拉 branch 拓撲（parents/avatar/PR 關聯;webhook payload 沒有 parents）,90s Firestore cache（`repos/{repoId}/graphCache/{key}`）,分支上限 20；非快取回應時 best-effort 把抓到的 commit 補寫成 commit docs（與 push webhook 同 shape + first-seen-wins `create()`，補上歷史缺口、觸發 `onCommitCreated`；失敗不影響回應）(06-05 D7) |
 | `setDiscordWebhook` | `{ repoId, webhookUrl, channelIds[] }` | `{}` | 設定 Discord outbound webhook + 監聽頻道 |
 | `subscribeToTopic` | `{ token, topic }` | `{}` | FCM web push（同課程） |
 

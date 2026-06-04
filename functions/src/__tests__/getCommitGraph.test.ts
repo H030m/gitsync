@@ -21,6 +21,10 @@ jest.mock('firebase-functions/v2', () => ({
 
 const store = new Map<string, Record<string, unknown>>();
 const setSpy = jest.fn();
+const createSpy = jest.fn();
+// Paths whose create() should reject with a non-ALREADY_EXISTS error (drives
+// the "a create failure does not fail the call" test). Cleared each test.
+const createFailPaths = new Set<string>();
 
 const fakeDb = {
   doc: (path: string) => ({
@@ -33,10 +37,34 @@ const fakeDb = {
       store.set(path, data);
       setSpy(path, data);
     },
+    // Mirrors Firestore create(): rejects with ALREADY_EXISTS (gRPC code 6)
+    // when the doc already exists — drives the first-seen-wins sync path.
+    async create(data: Record<string, unknown>) {
+      createSpy(path, data);
+      if (createFailPaths.has(path)) {
+        throw new Error('boom: create failed');
+      }
+      if (store.has(path)) {
+        const err = new Error('ALREADY_EXISTS') as Error & { code: number };
+        err.code = 6;
+        throw err;
+      }
+      store.set(path, data);
+    },
   }),
 };
 
 jest.mock('../admin', () => ({ db: fakeDb, REGION: 'asia-east1' }));
+
+// The D7 sync step needs Timestamp.fromDate + FieldValue.serverTimestamp.
+jest.mock('firebase-admin/firestore', () => ({
+  FieldValue: {
+    serverTimestamp: () => '__serverTimestamp__',
+  },
+  Timestamp: {
+    fromDate: (d: Date) => ({ __ms__: d.getTime(), toMillis: () => d.getTime() }),
+  },
+}));
 
 // The flow only needs taipeiRangeBounds from dailyIntel — mock the module so
 // its transitive imports (discordSearch, assignTools) stay out of this test.
@@ -115,6 +143,8 @@ const BRANCHES: GraphBranchRaw[] = [
 beforeEach(() => {
   store.clear();
   setSpy.mockClear();
+  createSpy.mockClear();
+  createFailPaths.clear();
   mockFetchCommitGraph.mockReset();
   store.set(`apps/gitsync/repos/${REPO}`, { name: 'team17/gitsync' });
   store.set('apps/gitsync/users/u1', { githubAccessToken: 'tok' });
@@ -291,5 +321,73 @@ describe('getCommitGraph handler', () => {
     await expect(
       handler({ auth: { uid: 'u1' }, data: { repoId: REPO } }),
     ).rejects.toMatchObject({ code: 'unavailable' });
+  });
+
+  // ---- 06-05 D7: best-effort commit-doc sync on a non-cached fetch ----------
+
+  it('syncs fetched commits into Firestore docs with the webhook shape', async () => {
+    mockFetchCommitGraph.mockResolvedValue({
+      branches: BRANCHES,
+      defaultBranch: 'main',
+      branchesTruncated: false,
+    });
+    // f1 already ingested + enriched on its feature branch — must NOT be clobbered.
+    const f1Path = `apps/gitsync/repos/${REPO}/commits/f1`;
+    store.set(f1Path, { branch: 'feature/x', aiSummary: 'enriched' });
+
+    await handler({ auth: { uid: 'u1' }, data: { repoId: REPO } });
+
+    // A create was attempted for every fetched commit (5 in the fixture).
+    const attemptedShas = createSpy.mock.calls.map((c) =>
+      (c[0] as string).split('/').pop(),
+    );
+    expect(new Set(attemptedShas)).toEqual(new Set(['m3', 'f2', 'f1', 'm2', 'm1']));
+
+    // f2 was newly created with the webhook shape (branch + Timestamp committedAt).
+    const f2 = store.get(`apps/gitsync/repos/${REPO}/commits/f2`)!;
+    expect(f2).toMatchObject({
+      repoId: REPO,
+      sha: 'f2',
+      message: 'commit f2',
+      author: { login: 'alice-dev', name: 'Alice', email: '' },
+      url: `https://github.com/team17/gitsync/commit/f2`,
+      filesChanged: [],
+      added: [],
+      removed: [],
+      modified: [],
+      branch: 'feature/x',
+    });
+    // committedAt is a real Timestamp parsed from the ISO string, not the string.
+    expect((f2.committedAt as { __ms__: number }).__ms__).toBe(
+      Date.parse('2026-06-03T01:00:00Z'),
+    );
+
+    // First-seen wins: the pre-existing enriched f1 doc is untouched.
+    expect(store.get(f1Path)).toEqual({ branch: 'feature/x', aiSummary: 'enriched' });
+  });
+
+  it('a create failure (non-ALREADY_EXISTS) does not fail the graph call', async () => {
+    mockFetchCommitGraph.mockResolvedValue({
+      branches: BRANCHES,
+      defaultBranch: 'main',
+      branchesTruncated: false,
+    });
+    createFailPaths.add(`apps/gitsync/repos/${REPO}/commits/m1`);
+
+    const res = await handler({ auth: { uid: 'u1' }, data: { repoId: REPO } });
+
+    expect(res.cached).toBe(false);
+    expect((res.commits as unknown[]).length).toBe(5);
+  });
+
+  it('does not sync commit docs on a cache hit', async () => {
+    store.set(`apps/gitsync/repos/${REPO}/graphCache/recent`, {
+      payload: { commits: [], branches: [], truncated: false },
+      generatedAtMs: Date.now(),
+    });
+
+    await handler({ auth: { uid: 'u1' }, data: { repoId: REPO } });
+
+    expect(createSpy).not.toHaveBeenCalled();
   });
 });

@@ -6,8 +6,17 @@
 // → dedupe commits seen from multiple branches → attribute each commit to a
 // "primary" branch via first-parent walks → label merge commits with their
 // PR number. The client stays a dumb painter.
+//
+// 06-05 D7: on a non-cached fetch, best-effort sync the assembled commits into
+// Firestore commit docs (same shape + first-seen-wins create() semantics as the
+// push webhook). This fills the list view's history gap for commits the webhook
+// never received (e.g. branches that predate all-branch ingest) — tapping the
+// graph refresh button backfills them, no local script needed. A sync failure
+// NEVER fails the graph call; ALREADY_EXISTS (gRPC code 6) is the expected
+// no-op for commits already ingested.
 import { logger } from 'firebase-functions/v2';
 import { HttpsError } from 'firebase-functions/v2/https';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 
 import { db } from '../admin';
 import {
@@ -128,7 +137,96 @@ export async function getCommitGraphFlow(
     });
   }
 
+  // ---- Best-effort commit-doc sync (06-05 D7) -------------------------------
+  // Only on the non-cached path (cache hits returned early above). Fills the
+  // list view's history gap for commits the webhook never ingested. Wrapped so
+  // any failure never fails the graph call.
+  await syncCommitDocs(repoId, owner, repo, payload.commits);
+
   return { ...payload, cached: false };
+}
+
+/**
+ * Best-effort: create a Firestore commit doc for each fetched graph commit that
+ * has none yet, matching the push webhook's shape field-for-field (where data
+ * exists) and its first-seen-wins `create()` semantics — so newly created docs
+ * trigger `onCommitCreated` enrichment, and existing (already-enriched) docs are
+ * never overwritten. The GraphQL history carries no file lists or author email,
+ * so those are empty.
+ *
+ * ALREADY_EXISTS (gRPC code 6) is the expected no-op (doc already ingested) and
+ * is counted as a skip; other rejections are logged at warn. Never throws.
+ */
+async function syncCommitDocs(
+  repoId: string,
+  owner: string,
+  repo: string,
+  commits: GraphCommit[],
+): Promise<void> {
+  try {
+    const writes = commits.map(async (c) => {
+      // committedAt MUST be a Firestore Timestamp, never the ISO string — every
+      // range query compares against Timestamps (database-guidelines Rule H).
+      const parsed = c.committedAt ? new Date(c.committedAt) : null;
+      const committedAt =
+        parsed && !Number.isNaN(parsed.getTime())
+          ? Timestamp.fromDate(parsed)
+          : FieldValue.serverTimestamp();
+      const ref = db.doc(`apps/gitsync/repos/${repoId}/commits/${c.sha}`);
+      await ref.create({
+        repoId,
+        sha: c.sha,
+        message: c.message,
+        author: {
+          login: c.author.login ?? '',
+          name: c.author.name,
+          email: '', // GraphQL history payload has no author email.
+        },
+        url: `https://github.com/${owner}/${repo}/commit/${c.sha}`,
+        // GraphQL history has no per-commit file lists.
+        filesChanged: [],
+        added: [],
+        removed: [],
+        modified: [],
+        committedAt,
+        // First-seen branch attribution (06-05 D1): the graph's primary branch.
+        branch: c.primaryBranch,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    });
+
+    const results = await Promise.allSettled(writes);
+    let created = 0;
+    let skipped = 0;
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        created += 1;
+        continue;
+      }
+      const err = r.reason as { code?: number } | undefined;
+      // ALREADY_EXISTS (gRPC code 6) → doc already ingested; expected skip.
+      if (err?.code === 6) {
+        skipped += 1;
+        continue;
+      }
+      logger.warn('syncCommitDocs: commit create failed (best-effort)', {
+        repoId,
+        err: String(r.reason),
+      });
+    }
+    logger.info('syncCommitDocs: commit-doc sync complete', {
+      repoId,
+      created,
+      skipped,
+    });
+  } catch (err) {
+    // Defensive: the loop is already settled-based, but never let a sync
+    // failure fail the graph call.
+    logger.warn('syncCommitDocs failed (best-effort)', {
+      repoId,
+      err: String(err),
+    });
+  }
 }
 
 /**
