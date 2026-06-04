@@ -147,3 +147,49 @@ pointers permanently. Pair external cleanup (e.g. best-effort `deleteWebhook`) w
 
 - Server-authored times use `FieldValue.serverTimestamp()` on write (`createdAt`, `updatedAt`,
   `processedAt`). Don't persist client clock values for these.
+- Event times parsed from external payloads (e.g. a webhook's ISO-8601 `timestamp`) MUST be
+  converted to a Firestore `Timestamp` before writing — never store the raw string. See the
+  type-strict query rule below for why.
+
+---
+
+## Rule H — Firestore queries are TYPE-STRICT (a schema bug needs a data migration, not just a writer fix)
+
+**What**: A `where()` comparison only matches docs whose field holds the **same type** as the
+operand. Comparing against a `Timestamp` silently excludes docs where the field is a string —
+no error, no warning, just zero matches. `orderBy()`-only queries still return those docs
+(Firestore sorts mixed types in type order), which hides the corruption.
+
+**Symptom profile** (recognize it fast): *"the default/unfiltered list works, but every
+filtered/range view is empty"* — and switching the filter back doesn't help. That smell means a
+type mismatch between the stored field and the query operand, not a missing index (a missing
+index throws; a type mismatch doesn't).
+
+**Why it bit us** (06-04 task): the old `githubWebhook` wrote `committedAt` as the payload's
+ISO string. Fixing the webhook (7144b4b) fixed *new* docs only — all 37 existing commit docs
+still silently fell out of every Timestamp range query (Flutter `streamRange`, dailyIntel
+`listRangeCommits`), so the Commits tab range filter returned nothing.
+
+**The complete fix is always two-sided**:
+
+1. **Writer**: parse + convert at the ingest boundary
+   (`Timestamp.fromDate(new Date(payload.timestamp))`, fall back to `serverTimestamp()`).
+2. **Data**: migrate existing docs with an idempotent, `--dry-run`-gated script — pattern:
+   `functions/scripts/normalize-commits.mjs` (scan → report would-fix count → real run →
+   re-run dry-run must report 0).
+
+```ts
+// Wrong — "fixed the webhook, done": old docs still invisible to range queries
+batch.set(ref, { committedAt: payload.timestamp });        // string
+
+// Correct — uniform type on write + one-off migration for what's already stored
+const parsed = payload.timestamp ? new Date(payload.timestamp) : null;
+const committedAt = parsed && !Number.isNaN(parsed.getTime())
+  ? Timestamp.fromDate(parsed)
+  : FieldValue.serverTimestamp();
+```
+
+**Tests required**: the webhook unit test asserts the stored field is a real `Timestamp`
+parsed from the payload ISO string AND the server-time fallback when absent
+(`__tests__/githubWebhook.test.ts`); reader models tolerate the legacy shape defensively
+(`Commit._parseTimestamp`) so a stray doc degrades instead of hanging a stream.
