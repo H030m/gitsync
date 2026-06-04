@@ -1,6 +1,7 @@
 import 'package:cloud_functions/cloud_functions.dart';
 
 import '../config/app_config.dart';
+import '../models/commit_graph.dart';
 import '../models/daily_brief.dart';
 import '../models/discord_chat.dart';
 import '../models/sub_task.dart';
@@ -74,6 +75,16 @@ abstract class FunctionsService {
     required String repoId,
     required String sha,
     bool force = false,
+  });
+
+  /// Branch-topology data for the Commits tab's branch-graph view: commits
+  /// with parent SHAs + branch tips, fetched on demand from the GitHub API
+  /// (commit docs carry no parents). [startDate]..[endDate] is the inclusive
+  /// day range (both YYYY-MM-DD, both or neither; omit for "recent").
+  Future<CommitGraph> getCommitGraph({
+    required String repoId,
+    String? startDate,
+    String? endDate,
   });
 
   // ---- Discord -----------------------------------------------------------
@@ -259,6 +270,20 @@ class _LiveFunctionsService implements FunctionsService {
     });
     final data = Map<String, dynamic>.from(res.data as Map);
     return data['markdown'] as String;
+  }
+
+  @override
+  Future<CommitGraph> getCommitGraph({
+    required String repoId,
+    String? startDate,
+    String? endDate,
+  }) async {
+    final res = await _callable('getCommitGraph').call({
+      'repoId': repoId,
+      'startDate': ?startDate,
+      'endDate': ?endDate,
+    });
+    return CommitGraph.fromMap(Map<String, dynamic>.from(res.data as Map));
   }
 
   @override

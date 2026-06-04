@@ -1,8 +1,11 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/commit.dart';
+import '../../models/commit_graph.dart';
 import '../../models/daily_brief.dart';
 import '../../models/daily_report.dart';
 import '../../models/discord_chat.dart';
@@ -846,7 +849,7 @@ class _CommitsTab extends StatelessWidget {
                 AppDimens.spacingMd,
                 AppDimens.spacingMd,
                 AppDimens.spacingMd,
-                AppDimens.spacingSm,
+                0,
               ),
               child: Row(
                 children: [
@@ -857,12 +860,39 @@ class _CommitsTab extends StatelessWidget {
                     ),
                   ),
                   const Spacer(),
-                  if (vm.hasRange)
-                    IconButton(
-                      tooltip: 'Clear range',
-                      onPressed: vm.clearRange,
-                      icon: const Icon(Icons.close, size: 18),
+                  // Branch topology vs per-author rails (PRD D2).
+                  SegmentedButton<CommitsViewMode>(
+                    segments: const [
+                      ButtonSegment(
+                        value: CommitsViewMode.branch,
+                        icon: Icon(Icons.account_tree_outlined, size: 18),
+                        tooltip: 'Branch graph',
+                      ),
+                      ButtonSegment(
+                        value: CommitsViewMode.author,
+                        icon: Icon(Icons.person_outline, size: 18),
+                        tooltip: 'By author',
+                      ),
+                    ],
+                    selected: {vm.viewMode},
+                    onSelectionChanged: (s) => vm.setViewMode(s.first),
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
                     ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppDimens.spacingMd,
+                AppDimens.spacingXs,
+                AppDimens.spacingMd,
+                AppDimens.spacingSm,
+              ),
+              child: Row(
+                children: [
                   OutlinedButton.icon(
                     onPressed: () async {
                       final now = DateTime.now();
@@ -887,19 +917,40 @@ class _CommitsTab extends StatelessWidget {
                           : 'Recent 50',
                     ),
                   ),
+                  // An obvious way back to the default stream — re-picking the
+                  // same dates in the picker stays on the range query (which
+                  // is NOT the same as the recent stream).
+                  if (vm.hasRange) ...[
+                    const SizedBox(width: AppDimens.spacingSm),
+                    ActionChip(
+                      avatar: const Icon(Icons.restore, size: 16),
+                      label: const Text('Recent 50'),
+                      onPressed: vm.clearRange,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
                 ],
               ),
             ),
             Expanded(
-              child: vm.commits.isEmpty
-                  ? const EmptyState(
-                      icon: Icons.commit_outlined,
-                      title: 'No commits',
-                      message:
-                          'No commits in this period. Pick another range or '
-                          'clear the filter.',
-                    )
-                  : _CommitTree(vm: vm),
+              child: vm.viewMode == CommitsViewMode.branch
+                  ? _BranchGraphView(vm: vm)
+                  : vm.commits.isEmpty
+                      ? EmptyState(
+                          icon: Icons.commit_outlined,
+                          title: 'No commits',
+                          message:
+                              'No commits in this period. Pick another range '
+                              'or go back to the recent commits.',
+                          action: vm.hasRange
+                              ? ActionChip(
+                                  avatar: const Icon(Icons.restore, size: 16),
+                                  label: const Text('Recent 50'),
+                                  onPressed: vm.clearRange,
+                                )
+                              : null,
+                        )
+                      : _CommitTree(vm: vm),
             ),
           ],
         );
@@ -998,30 +1049,41 @@ class _CommitTree extends StatelessWidget {
       itemBuilder: (ctx, i) {
         final row = rows[i];
         if (row.isHeader) {
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppDimens.spacingMd,
-              AppDimens.spacingSm,
-              AppDimens.spacingMd,
-              AppDimens.spacingXs,
-            ),
-            child: Row(
-              children: [
-                Text(
-                  row.dayLabel!,
-                  style: Theme.of(ctx).textTheme.labelMedium?.copyWith(
-                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(width: AppDimens.spacingSm),
-                const Expanded(child: Divider(height: 1)),
-              ],
-            ),
-          );
+          return _DayHeader(label: row.dayLabel!);
         }
         return _CommitTreeRow(row: row, vm: vm);
       },
+    );
+  }
+}
+
+// Day separator row shared by both commit visualizations.
+class _DayHeader extends StatelessWidget {
+  const _DayHeader({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppDimens.spacingMd,
+        AppDimens.spacingSm,
+        AppDimens.spacingMd,
+        AppDimens.spacingXs,
+      ),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(width: AppDimens.spacingSm),
+          const Expanded(child: Divider(height: 1)),
+        ],
+      ),
     );
   }
 }
@@ -1168,6 +1230,439 @@ class _LanePainter extends CustomPainter {
       !listEquals(old.activeLanes, activeLanes);
 }
 
+// ---- Branch graph view (real topology via getCommitGraph) -------------------
+
+// Hard cap on graph columns — deeper lanes share the last column so the rail
+// never paints over the text (pathological histories can get wide).
+const int _maxGraphLanes = 6;
+
+// Either a day header or a commit row with its lane geometry.
+class _GraphListItem {
+  _GraphListItem.header(this.dayLabel) : row = null;
+  _GraphListItem.row(GraphRowGeometry this.row) : dayLabel = null;
+
+  final String? dayLabel;
+  final GraphRowGeometry? row;
+
+  bool get isHeader => dayLabel != null;
+}
+
+// The branch-topology visualization: lanes are branch lines (not authors),
+// with fork and merge edges from real parent SHAs (getCommitGraph callable).
+class _BranchGraphView extends StatelessWidget {
+  const _BranchGraphView({required this.vm});
+  final CommitsViewModel vm;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    if (vm.graphLoading && vm.graph == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (vm.graphError != null && vm.graph == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppDimens.spacingLg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 40),
+              const SizedBox(height: AppDimens.spacingSm),
+              Text(
+                'Could not load the branch graph',
+                style: theme.textTheme.titleMedium,
+              ),
+              const SizedBox(height: AppDimens.spacingXs),
+              Text(
+                vm.graphError!,
+                style: theme.textTheme.bodySmall,
+                textAlign: TextAlign.center,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: AppDimens.spacingMd),
+              FilledButton.icon(
+                onPressed: vm.loadGraph,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    final graph = vm.graph;
+    if (graph == null || graph.commits.isEmpty) {
+      return EmptyState(
+        icon: Icons.account_tree_outlined,
+        title: 'No commits',
+        message: 'No commits in this period. Pick another range or go back '
+            'to the recent commits.',
+        action: vm.hasRange
+            ? ActionChip(
+                avatar: const Icon(Icons.restore, size: 16),
+                label: const Text('Recent 50'),
+                onPressed: vm.clearRange,
+              )
+            : null,
+      );
+    }
+
+    final rows = buildGraphRows(graph.commits);
+    final tips = graph.tipLabels;
+    var railLanes = 1;
+    for (final r in rows) {
+      railLanes = math.max(railLanes, r.laneSpan);
+    }
+    railLanes = railLanes.clamp(1, _maxGraphLanes);
+
+    // Interleave day headers (same grouping as the author view).
+    final items = <_GraphListItem>[];
+    String? lastDay;
+    for (final r in rows) {
+      final day = _dayKey(r.commit.committedAt);
+      if (day != lastDay) {
+        items.add(_GraphListItem.header(day));
+        lastDay = day;
+      }
+      items.add(_GraphListItem.row(r));
+    }
+
+    return Column(
+      children: [
+        if (graph.truncated)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppDimens.spacingMd,
+              0,
+              AppDimens.spacingMd,
+              AppDimens.spacingXs,
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 14,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: AppDimens.spacingXs),
+                Expanded(
+                  child: Text(
+                    'Large history — showing the most recent branches/commits.',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.only(bottom: AppDimens.spacingMd),
+            itemCount: items.length,
+            itemBuilder: (ctx, i) {
+              final item = items[i];
+              if (item.isHeader) return _DayHeader(label: item.dayLabel!);
+              return _BranchGraphRow(
+                row: item.row!,
+                railLanes: railLanes,
+                branchTip: tips[item.row!.commit.sha],
+                vm: vm,
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _BranchGraphRow extends StatelessWidget {
+  const _BranchGraphRow({
+    required this.row,
+    required this.railLanes,
+    required this.vm,
+    this.branchTip,
+  });
+
+  final GraphRowGeometry row;
+  final int railLanes;
+  final CommitsViewModel vm;
+
+  /// Branch name when this commit is a branch tip (labeled chip).
+  final String? branchTip;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final g = row.commit;
+    final laneWidth = 16.0;
+    final color = _laneColors[row.lane % _laneColors.length];
+    final railWidth = railLanes * laneWidth + AppDimens.spacingSm;
+
+    return InkWell(
+      onTap: () {
+        // Prefer the full Firestore commit (files/diff stats for the sheet);
+        // commits outside the stream window degrade to the graph's own data.
+        Commit? full;
+        for (final c in vm.commits) {
+          if (c.sha == g.sha) {
+            full = c;
+            break;
+          }
+        }
+        final commit = full ??
+            Commit(
+              sha: g.sha,
+              repoId: '',
+              message: g.message,
+              author: CommitAuthor(
+                login: g.authorLogin ?? '',
+                name: g.authorName,
+                email: '',
+              ),
+              url: '',
+            );
+        _showCommitSheet(context, commit, vm);
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppDimens.spacingMd),
+        // IntrinsicHeight bounds the stretch axis so the rail painter gets the
+        // row's real height (a ListView child otherwise has unbounded height).
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                width: railWidth,
+                child: CustomPaint(
+                  painter: _GraphLanePainter(
+                    row: row,
+                    laneWidth: laneWidth,
+                    maxLanes: railLanes,
+                    palette: _laneColors,
+                    ringColor: scheme.outlineVariant,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: AppDimens.spacingSm,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              g.message.split('\n').first,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          if (g.isMerge && g.prNumber != null) ...[
+                            const SizedBox(width: AppDimens.spacingXs),
+                            _GraphChip(
+                              label: '#${g.prNumber}',
+                              icon: Icons.merge_outlined,
+                              background: scheme.secondaryContainer,
+                              foreground: scheme.onSecondaryContainer,
+                            ),
+                          ],
+                          if (branchTip != null) ...[
+                            const SizedBox(width: AppDimens.spacingXs),
+                            _GraphChip(
+                              label: branchTip!,
+                              icon: Icons.label_outline,
+                              background: color.withValues(alpha: 0.18),
+                              foreground: scheme.onSurface,
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 8,
+                            backgroundColor: scheme.surfaceContainerHighest,
+                            foregroundImage: g.avatarUrl != null
+                                ? NetworkImage(g.avatarUrl!)
+                                : null,
+                            child: Text(
+                              (g.authorLogin ?? g.authorName).isEmpty
+                                  ? '?'
+                                  : (g.authorLogin ?? g.authorName)
+                                      .substring(0, 1)
+                                      .toUpperCase(),
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                fontSize: 9,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: AppDimens.spacingXs),
+                          Flexible(
+                            child: Text(
+                              '${g.authorLogin ?? g.authorName}'
+                              ' · ${g.sha.length >= 7 ? g.sha.substring(0, 7) : g.sha}'
+                              ' · ${_hhmm(g.committedAt)}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Icon(Icons.chevron_right, size: 18, color: scheme.outline),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Tiny inline chip for PR numbers / branch-tip labels on graph rows.
+class _GraphChip extends StatelessWidget {
+  const _GraphChip({
+    required this.label,
+    required this.icon,
+    required this.background,
+    required this.foreground,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color background;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(AppDimens.radiusSm),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: foreground),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  fontSize: 10,
+                  color: foreground,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Paints one branch-graph row: pass-through verticals, the node's own stem,
+// and the half-diagonals of fork/merge edges. Diagonals meet row boundaries
+// at the lane's column x, so consecutive rows form continuous curves.
+class _GraphLanePainter extends CustomPainter {
+  _GraphLanePainter({
+    required this.row,
+    required this.laneWidth,
+    required this.maxLanes,
+    required this.palette,
+    required this.ringColor,
+  });
+
+  final GraphRowGeometry row;
+  final double laneWidth;
+  final int maxLanes;
+  final List<Color> palette;
+  final Color ringColor;
+
+  double _x(int lane) =>
+      laneWidth / 2 + math.min(lane, maxLanes - 1) * laneWidth;
+
+  Color _colorOf(int lane) => palette[lane % palette.length];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final midY = size.height / 2;
+    final nodeX = _x(row.lane);
+
+    Paint stroke(int lane) => Paint()
+      ..color = _colorOf(lane)
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    // Pass-through verticals.
+    for (var l = 0; l < row.passThrough.length; l++) {
+      if (!row.passThrough[l]) continue;
+      final x = _x(l);
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), stroke(l));
+    }
+
+    // The node's own line: from the children above / down to the first parent
+    // (drawn even when the parent is off-window — the history continues).
+    if (row.topStem) {
+      canvas.drawLine(Offset(nodeX, 0), Offset(nodeX, midY), stroke(row.lane));
+    }
+    if (row.bottomStem) {
+      canvas.drawLine(
+        Offset(nodeX, midY),
+        Offset(nodeX, size.height),
+        stroke(row.lane),
+      );
+    }
+
+    // Merge lines converging into the node from other lanes above.
+    for (final l in row.intoNode) {
+      final path = Path()
+        ..moveTo(_x(l), 0)
+        ..quadraticBezierTo(_x(l), midY, nodeX, midY);
+      canvas.drawPath(path, stroke(l));
+    }
+    // Fork edges leaving the node toward extra parents' lanes below.
+    for (final l in row.outOfNode) {
+      final path = Path()
+        ..moveTo(nodeX, midY)
+        ..quadraticBezierTo(_x(l), midY, _x(l), size.height);
+      canvas.drawPath(path, stroke(l));
+    }
+
+    // Node dot (ring + fill); merge commits get a hollow center.
+    canvas.drawCircle(Offset(nodeX, midY), 5.5, Paint()..color = ringColor);
+    canvas.drawCircle(
+      Offset(nodeX, midY),
+      4,
+      Paint()..color = _colorOf(row.lane),
+    );
+    if (row.commit.isMerge) {
+      canvas.drawCircle(Offset(nodeX, midY), 1.8, Paint()..color = ringColor);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_GraphLanePainter old) =>
+      old.row != row ||
+      old.maxLanes != maxLanes ||
+      old.ringColor != ringColor;
+}
+
 // Bottom sheet: commit details + the AI work explanation (auto-fetched, cached
 // by the VM and on the backend commit doc).
 void _showCommitSheet(
@@ -1223,7 +1718,7 @@ class _CommitDetailSheet extends StatelessWidget {
               const SizedBox(height: AppDimens.spacingXs),
               Text(
                 '${c.author.name.isEmpty ? c.author.login : c.author.name}'
-                ' · ${c.sha.substring(0, 7)}'
+                ' · ${c.sha.length >= 7 ? c.sha.substring(0, 7) : c.sha}'
                 ' · +${c.additions} −${c.deletions}',
                 style: theme.textTheme.labelMedium?.copyWith(
                   color: scheme.onSurfaceVariant,

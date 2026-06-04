@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitsync/models/commit_graph.dart';
 import 'package:gitsync/models/daily_brief.dart';
 import 'package:gitsync/models/discord_chat.dart';
 import 'package:gitsync/models/repo.dart';
@@ -89,6 +90,14 @@ class _FakeFunctionsService implements FunctionsService {
     required String repoId,
     required String sha,
     bool force = false,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<CommitGraph> getCommitGraph({
+    required String repoId,
+    String? startDate,
+    String? endDate,
   }) =>
       throw UnimplementedError();
 

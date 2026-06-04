@@ -1,5 +1,6 @@
 import '../../config/app_config.dart';
 import '../../data/dummy_data.dart';
+import '../../models/commit_graph.dart';
 import '../../models/daily_brief.dart';
 import '../../models/discord_chat.dart';
 import '../../models/sub_task.dart';
@@ -139,6 +140,56 @@ class FakeFunctionsService implements FunctionsService {
         'task(s) ${commit?.linkedTaskIds.join(", ") ?? ""}.\n\n'
         '**Where** — ${commit?.filesChanged.join(", ") ?? "(not recorded)"}\n\n'
         '*(這是 fake backend 的示範回覆。)*';
+  }
+
+  @override
+  Future<CommitGraph> getCommitGraph({
+    required String repoId,
+    String? startDate,
+    String? endDate,
+  }) async {
+    await Future.delayed(AppConfig.simulatedLatency * 3);
+    // Small fixed topology: feature/daily-report forks off main and merges
+    // back via PR #7 — enough to exercise lanes, fork and merge edges.
+    final now = DateTime.now();
+    GraphCommit c(
+      String sha,
+      String message,
+      List<String> parents,
+      int hoursAgo, {
+      String branch = 'main',
+      bool isMerge = false,
+      int? prNumber,
+      String login = 'demo-dev',
+    }) =>
+        GraphCommit(
+          sha: sha,
+          message: message,
+          committedAt: now.subtract(Duration(hours: hoursAgo)),
+          parents: parents,
+          authorLogin: login,
+          authorName: login,
+          primaryBranch: branch,
+          isMerge: isMerge,
+          prNumber: prNumber,
+        );
+    return CommitGraph(
+      commits: [
+        c('g6', 'Merge pull request #7 from demo/feature-daily-report',
+            ['g3', 'g5'], 1, isMerge: true, prNumber: 7),
+        c('g5', 'feat(daily): wire report card', ['g4'], 2,
+            branch: 'feature/daily-report', login: 'alice-dev'),
+        c('g4', 'feat(daily): scaffold daily view', ['g2'], 5,
+            branch: 'feature/daily-report', login: 'alice-dev'),
+        c('g3', 'fix(auth): refresh token race', ['g2'], 6),
+        c('g2', 'chore: bump deps', ['g1'], 26),
+        c('g1', 'feat: initial scaffold', ['g0-offscreen'], 30),
+      ],
+      branches: const [
+        GraphBranch(name: 'main', tipSha: 'g6', isDefault: true),
+        GraphBranch(name: 'feature/daily-report', tipSha: 'g5'),
+      ],
+    );
   }
 
   @override

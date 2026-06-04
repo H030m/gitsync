@@ -3,8 +3,13 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../models/commit.dart';
+import '../models/commit_graph.dart';
 import '../repositories/commit_repo.dart';
 import '../services/functions_service.dart';
+
+/// The Commits tab's two visualizations: real branch topology vs the
+/// per-author rail map.
+enum CommitsViewMode { branch, author }
 
 /// Streams the Commits tab's commit list (recent by default, or a user-picked
 /// inclusive day range) and serves the tree map's "tap a commit → AI explains
@@ -18,6 +23,8 @@ class CommitsViewModel with ChangeNotifier {
        _repo = commitRepository ?? CommitRepository(),
        _functions = functionsService ?? FunctionsService() {
     _subscribe();
+    // The branch view is the default visualization — fetch its data up front.
+    loadGraph();
   }
 
   final String _repoId;
@@ -80,6 +87,7 @@ class CommitsViewModel with ChangeNotifier {
     _rangeStart = start;
     _rangeEnd = end;
     _subscribe();
+    _invalidateGraph();
     notifyListeners();
   }
 
@@ -88,7 +96,64 @@ class CommitsViewModel with ChangeNotifier {
     _rangeStart = null;
     _rangeEnd = null;
     _subscribe();
+    _invalidateGraph();
     notifyListeners();
+  }
+
+  // ---- Branch graph (real topology via getCommitGraph) ----------------------
+
+  CommitsViewMode _viewMode = CommitsViewMode.branch;
+  CommitsViewMode get viewMode => _viewMode;
+
+  CommitGraph? _graph;
+  CommitGraph? get graph => _graph;
+
+  bool _graphLoading = false;
+  bool get graphLoading => _graphLoading;
+
+  String? _graphError;
+  String? get graphError => _graphError;
+
+  void setViewMode(CommitsViewMode mode) {
+    if (_viewMode == mode) return;
+    _viewMode = mode;
+    if (mode == CommitsViewMode.branch && _graph == null && !_graphLoading) {
+      loadGraph();
+    }
+    notifyListeners();
+  }
+
+  static String _ymd(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
+
+  /// Fetches the branch topology for the current range (or "recent"). The
+  /// backend caches briefly, so re-toggling the view is cheap.
+  Future<void> loadGraph() async {
+    _graphLoading = true;
+    _graphError = null;
+    notifyListeners();
+    try {
+      _graph = await _functions.getCommitGraph(
+        repoId: _repoId,
+        startDate: hasRange ? _ymd(_rangeStart!) : null,
+        endDate: hasRange ? _ymd(_rangeEnd!) : null,
+      );
+    } catch (e) {
+      _graphError = '$e';
+    } finally {
+      _graphLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // A range change makes the cached graph stale; refetch eagerly only when
+  // the branch view is the one on screen.
+  void _invalidateGraph() {
+    _graph = null;
+    _graphError = null;
+    if (_viewMode == CommitsViewMode.branch) loadGraph();
   }
 
   // ---- AI work explanations (tree map tap) ---------------------------------
