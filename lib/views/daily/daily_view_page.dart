@@ -860,6 +860,16 @@ class _CommitsTab extends StatelessWidget {
                     ),
                   ),
                   const Spacer(),
+                  // Manual refresh for the branch graph (it's fetched on demand
+                  // and won't otherwise pick up new pushes while on screen).
+                  if (vm.viewMode == CommitsViewMode.branch)
+                    IconButton(
+                      tooltip: 'Refresh graph',
+                      icon: const Icon(Icons.refresh, size: 20),
+                      onPressed: vm.graphLoading
+                          ? null
+                          : () => vm.loadGraph(force: true),
+                    ),
                   // Branch topology vs per-author rails (PRD D2).
                   SegmentedButton<CommitsViewMode>(
                     segments: const [
@@ -1358,19 +1368,25 @@ class _BranchGraphView extends StatelessWidget {
             ),
           ),
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.only(bottom: AppDimens.spacingMd),
-            itemCount: items.length,
-            itemBuilder: (ctx, i) {
-              final item = items[i];
-              if (item.isHeader) return _DayHeader(label: item.dayLabel!);
-              return _BranchGraphRow(
-                row: item.row!,
-                railLanes: railLanes,
-                branchTip: tips[item.row!.commit.sha],
-                vm: vm,
-              );
-            },
+          // Pull-to-refresh forces a fresh fetch; AlwaysScrollableScrollPhysics
+          // lets the gesture work even when the list fits on screen.
+          child: RefreshIndicator(
+            onRefresh: () => vm.loadGraph(force: true),
+            child: ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: AppDimens.spacingMd),
+              itemCount: items.length,
+              itemBuilder: (ctx, i) {
+                final item = items[i];
+                if (item.isHeader) return _DayHeader(label: item.dayLabel!);
+                return _BranchGraphRow(
+                  row: item.row!,
+                  railLanes: railLanes,
+                  branchTip: tips[item.row!.commit.sha],
+                  vm: vm,
+                );
+              },
+            ),
           ),
         ),
       ],

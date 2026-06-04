@@ -149,6 +149,31 @@ void main() {
     expect(find.text('AI work summary'), findsOneWidget);
   });
 
+  testWidgets('refresh button refetches and keeps the branch graph visible',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await _openCommitsTab(tester);
+
+    // Branch view is the default — the graph is already on screen.
+    expect(
+      find.text('Merge pull request #7 from demo/feature-daily-report'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byTooltip('Refresh graph'));
+    await tester.pumpAndSettle();
+
+    // The existing graph stays visible through the (forced) reload.
+    expect(
+      find.text('Merge pull request #7 from demo/feature-daily-report'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('Recent 50 reset chip appears with a range and clears it',
       (tester) async {
     tester.view.physicalSize = const Size(1200, 2400);

@@ -98,6 +98,7 @@ class _FakeFunctionsService implements FunctionsService {
     required String repoId,
     String? startDate,
     String? endDate,
+    bool force = false,
   }) =>
       throw UnimplementedError();
 

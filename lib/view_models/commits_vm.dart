@@ -129,8 +129,11 @@ class CommitsViewModel with ChangeNotifier {
       '${d.day.toString().padLeft(2, '0')}';
 
   /// Fetches the branch topology for the current range (or "recent"). The
-  /// backend caches briefly, so re-toggling the view is cheap.
-  Future<void> loadGraph() async {
+  /// backend caches briefly, so re-toggling the view is cheap; pass [force] to
+  /// bypass that cache (pull-to-refresh / the refresh button). On a refresh the
+  /// existing graph stays visible — `_graph` is not cleared — so the view only
+  /// shows the full-screen spinner on the very first load (`graph == null`).
+  Future<void> loadGraph({bool force = false}) async {
     _graphLoading = true;
     _graphError = null;
     notifyListeners();
@@ -139,6 +142,7 @@ class CommitsViewModel with ChangeNotifier {
         repoId: _repoId,
         startDate: hasRange ? _ymd(_rangeStart!) : null,
         endDate: hasRange ? _ymd(_rangeEnd!) : null,
+        force: force,
       );
     } catch (e) {
       _graphError = '$e';

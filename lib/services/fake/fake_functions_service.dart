@@ -147,6 +147,7 @@ class FakeFunctionsService implements FunctionsService {
     required String repoId,
     String? startDate,
     String? endDate,
+    bool force = false,
   }) async {
     await Future.delayed(AppConfig.simulatedLatency * 3);
     // Small fixed topology: feature/daily-report forks off main and merges

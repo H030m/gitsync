@@ -16,10 +16,11 @@ export const getCommitGraph = onCall(
     }
     const uid = request.auth.uid;
 
-    const { repoId, startDate, endDate } = request.data as {
+    const { repoId, startDate, endDate, force } = request.data as {
       repoId?: string;
       startDate?: string;
       endDate?: string;
+      force?: boolean;
     };
     if (!repoId) {
       throw new HttpsError('invalid-argument', 'repoId is required');
@@ -71,6 +72,7 @@ export const getCommitGraph = onCall(
       accessToken,
       startDate,
       endDate,
+      force: force === true,
     });
   },
 );

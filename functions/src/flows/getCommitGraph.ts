@@ -25,6 +25,8 @@ export interface GetCommitGraphInput {
   /** YYYY-MM-DD, inclusive Asia/Taipei days. Omit both for "recent". */
   startDate?: string;
   endDate?: string;
+  /** Skip the cache READ and refetch from GitHub (still writes back). */
+  force?: boolean;
 }
 
 export interface GraphCommit {
@@ -66,20 +68,22 @@ const MERGE_PR_RE = /^Merge pull request #(\d+)\b/;
 export async function getCommitGraphFlow(
   input: GetCommitGraphInput,
 ): Promise<CommitGraphResult> {
-  const { repoId, owner, repo, accessToken, startDate, endDate } = input;
+  const { repoId, owner, repo, accessToken, startDate, endDate, force } = input;
 
   const hasRange = Boolean(startDate && endDate);
   const cacheKey = hasRange ? `${startDate}_${endDate}` : 'recent';
   const cacheRef = db.doc(`apps/gitsync/repos/${repoId}/graphCache/${cacheKey}`);
 
-  // ---- Cache hit ------------------------------------------------------------
-  const cacheSnap = await cacheRef.get();
-  const cacheData = cacheSnap.data();
-  if (cacheData) {
-    const age = Date.now() - ((cacheData.generatedAtMs as number) ?? 0);
-    if (age < CACHE_TTL_MS) {
-      const payload = cacheData.payload as Omit<CommitGraphResult, 'cached'>;
-      return { ...payload, cached: true };
+  // ---- Cache hit (skipped on force — still writes the fresh payload back) ----
+  if (!force) {
+    const cacheSnap = await cacheRef.get();
+    const cacheData = cacheSnap.data();
+    if (cacheData) {
+      const age = Date.now() - ((cacheData.generatedAtMs as number) ?? 0);
+      if (age < CACHE_TTL_MS) {
+        const payload = cacheData.payload as Omit<CommitGraphResult, 'cached'>;
+        return { ...payload, cached: true };
+      }
     }
   }
 

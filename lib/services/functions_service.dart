@@ -85,6 +85,7 @@ abstract class FunctionsService {
     required String repoId,
     String? startDate,
     String? endDate,
+    bool force = false,
   });
 
   // ---- Discord -----------------------------------------------------------
@@ -277,11 +278,13 @@ class _LiveFunctionsService implements FunctionsService {
     required String repoId,
     String? startDate,
     String? endDate,
+    bool force = false,
   }) async {
     final res = await _callable('getCommitGraph').call({
       'repoId': repoId,
       'startDate': ?startDate,
       'endDate': ?endDate,
+      'force': force,
     });
     return CommitGraph.fromMap(Map<String, dynamic>.from(res.data as Map));
   }

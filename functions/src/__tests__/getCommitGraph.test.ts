@@ -266,6 +266,26 @@ describe('getCommitGraph handler', () => {
     expect(mockFetchCommitGraph).not.toHaveBeenCalled();
   });
 
+  it('force bypasses a fresh cache and refetches', async () => {
+    store.set(`apps/gitsync/repos/${REPO}/graphCache/recent`, {
+      payload: { commits: [], branches: [], truncated: false },
+      generatedAtMs: Date.now(),
+    });
+    mockFetchCommitGraph.mockResolvedValue({
+      branches: BRANCHES,
+      defaultBranch: 'main',
+      branchesTruncated: false,
+    });
+
+    const res = await handler({
+      auth: { uid: 'u1' },
+      data: { repoId: REPO, force: true },
+    });
+
+    expect(mockFetchCommitGraph).toHaveBeenCalled();
+    expect(res.cached).toBe(false);
+  });
+
   it('maps a GitHub API failure to unavailable', async () => {
     mockFetchCommitGraph.mockRejectedValue(new Error('rate limited'));
     await expect(
