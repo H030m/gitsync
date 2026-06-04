@@ -42,6 +42,184 @@ export async function getRecentCommits(
   }));
 }
 
+// ---- Commit graph (branch topology) ----------------------------------------
+
+export interface GraphCommitRaw {
+  sha: string;
+  message: string;
+  committedAt: string; // ISO 8601
+  parents: string[];
+  authorLogin: string | null; // null when the commit email isn't a GitHub user
+  authorName: string;
+  avatarUrl: string | null;
+  associatedPrNumber: number | null;
+}
+
+export interface GraphBranchRaw {
+  name: string;
+  tipSha: string;
+  isDefault: boolean;
+  /** History scoped to the since/until window, newest first. */
+  commits: GraphCommitRaw[];
+  /** True when the branch had more in-window commits than we fetched. */
+  truncated: boolean;
+}
+
+/** Branch cap — the N most-recently-committed branches (+ default branch). */
+const GRAPH_BRANCH_LIMIT = 20;
+/** Per-branch history page size (no pagination beyond the first page). */
+const GRAPH_HISTORY_LIMIT = 100;
+
+// One round trip: every branch tip + its in-window history with parent SHAs,
+// author avatar and the associated PR (squash/rebase merges have no
+// "Merge pull request #N" message — associatedPullRequests still resolves
+// them). See task research `github-api-commit-graph.md`.
+const COMMIT_GRAPH_QUERY = `
+  query ($owner: String!, $name: String!, $since: GitTimestamp, $until: GitTimestamp) {
+    repository(owner: $owner, name: $name) {
+      defaultBranchRef {
+        name
+        target { ...CommitHistory }
+      }
+      refs(refPrefix: "refs/heads/", first: ${GRAPH_BRANCH_LIMIT},
+           orderBy: { field: TAG_COMMIT_DATE, direction: DESC }) {
+        nodes {
+          name
+          target { ...CommitHistory }
+        }
+        pageInfo { hasNextPage }
+      }
+    }
+  }
+  fragment CommitHistory on GitObject {
+    ... on Commit {
+      oid
+      history(since: $since, until: $until, first: ${GRAPH_HISTORY_LIMIT}) {
+        nodes {
+          oid
+          message
+          committedDate
+          parents(first: 5) { nodes { oid } }
+          author {
+            avatarUrl
+            name
+            user { login }
+          }
+          associatedPullRequests(first: 1) { nodes { number } }
+        }
+        pageInfo { hasNextPage }
+      }
+    }
+  }
+`;
+
+interface GraphQlCommitNode {
+  oid: string;
+  message: string;
+  committedDate: string;
+  parents: { nodes: Array<{ oid: string }> };
+  author: {
+    avatarUrl: string | null;
+    name: string | null;
+    user: { login: string } | null;
+  } | null;
+  associatedPullRequests: { nodes: Array<{ number: number }> };
+}
+
+interface GraphQlRefTarget {
+  oid?: string;
+  history?: {
+    nodes: GraphQlCommitNode[];
+    pageInfo: { hasNextPage: boolean };
+  };
+}
+
+interface CommitGraphQueryResult {
+  repository: {
+    defaultBranchRef: { name: string; target: GraphQlRefTarget | null } | null;
+    refs: {
+      nodes: Array<{ name: string; target: GraphQlRefTarget | null }>;
+      pageInfo: { hasNextPage: boolean };
+    };
+  } | null;
+}
+
+function toGraphCommitRaw(n: GraphQlCommitNode): GraphCommitRaw {
+  return {
+    sha: n.oid,
+    message: n.message,
+    committedAt: n.committedDate,
+    parents: n.parents.nodes.map((p) => p.oid),
+    authorLogin: n.author?.user?.login ?? null,
+    authorName: n.author?.name ?? '',
+    avatarUrl: n.author?.avatarUrl ?? null,
+    associatedPrNumber: n.associatedPullRequests.nodes[0]?.number ?? null,
+  };
+}
+
+/**
+ * Fetches the branch-topology raw data (branch tips + per-branch in-window
+ * history with parent SHAs) in a single GraphQL round trip. Dedupe/lane
+ * attribution is the flow's job (`flows/getCommitGraph.ts`) — this stays a
+ * pure fetch, like every other helper in this file.
+ */
+export async function fetchCommitGraph(
+  owner: string,
+  repo: string,
+  accessToken: string,
+  options: { since?: string; until?: string } = {},
+): Promise<{
+  branches: GraphBranchRaw[];
+  defaultBranch: string | null;
+  /** True when the repo has more branches than the cap. */
+  branchesTruncated: boolean;
+}> {
+  const octokit = getOctokit(accessToken);
+  const data = await octokit.graphql<CommitGraphQueryResult>(
+    COMMIT_GRAPH_QUERY,
+    {
+      owner,
+      name: repo,
+      since: options.since ?? null,
+      until: options.until ?? null,
+    },
+  );
+
+  const repository = data.repository;
+  if (!repository) {
+    return { branches: [], defaultBranch: null, branchesTruncated: false };
+  }
+  const defaultBranch = repository.defaultBranchRef?.name ?? null;
+
+  const toBranch = (
+    name: string,
+    target: GraphQlRefTarget | null,
+  ): GraphBranchRaw => ({
+    name,
+    tipSha: target?.oid ?? '',
+    isDefault: name === defaultBranch,
+    commits: (target?.history?.nodes ?? []).map(toGraphCommitRaw),
+    truncated: target?.history?.pageInfo.hasNextPage ?? false,
+  });
+
+  const branches: GraphBranchRaw[] = repository.refs.nodes
+    .filter((ref) => ref.target?.history)
+    .map((ref) => toBranch(ref.name, ref.target));
+
+  // The branch cap is "20 most recently committed" — make sure the trunk every
+  // lane forks from / merges to is always present even when it falls outside.
+  const dbr = repository.defaultBranchRef;
+  if (dbr?.target?.history && !branches.some((b) => b.name === dbr.name)) {
+    branches.push(toBranch(dbr.name, dbr.target));
+  }
+
+  return {
+    branches,
+    defaultBranch,
+    branchesTruncated: repository.refs.pageInfo.hasNextPage,
+  };
+}
+
 export interface CreateIssueOptions {
   title: string;
   body: string;
