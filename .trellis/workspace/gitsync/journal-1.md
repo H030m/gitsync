@@ -222,3 +222,37 @@ getCommitGraph gained force=true (skips 90s cache read, keeps write-back); Commi
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: All-branch ingest + branch identity UX + in-app backfill
+
+**Date**: 2026-06-05
+**Task**: All-branch ingest + branch identity UX + in-app backfill
+**Branch**: `feature/summary-intel-hub`
+
+### Summary
+
+Root cause of missing 6/4-6/5 commits: webhook skipped non-default branches by design. Now ingests all branches (branch field, first-seen-wins create). explainCommit falls back to GitHub API when the doc is missing (fixes branch-graph AI). Graph: stable per-branch colors + rail-tap popup naming each lane's branch; detail sheet shows branch. Author view replaced by filterable list (author/branch/keyword/date). D7: graph refresh auto-creates missing commit docs — in-app self-service backfill, no local script. Deployed githubWebhook/explainCommit/getCommitGraph. Spec: PowerShell UTF-8 gotcha + ingest decision recorded.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d043f46` | (see git log) |
+| `2afa1f0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

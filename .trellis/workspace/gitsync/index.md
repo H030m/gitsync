@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 6
+- **Total Sessions**: 7
 - **Last Active**: 2026-06-05
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~224 | Active |
+| `journal-1.md` | ~258 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 7 | 2026-06-05 | All-branch ingest + branch identity UX + in-app backfill | `d043f46`, `2afa1f0` | `feature/summary-intel-hub` |
 | 6 | 2026-06-05 | Branch graph manual refresh (force bypass cache) | `e157991` | `feature/summary-intel-hub` |
 | 5 | 2026-06-05 | Fix range filter (data migration) + GitHub usernames + real branch graph | `6cc925c`, `0b5d23e`, `3ab0eb3`, `3a139b6`, `65bfded` | `feature/summary-intel-hub` |
 | 4 | 2026-06-04 | Summary range reports + commit tree map with AI explain | `c8aa096` | `feature/summary-intel-hub` |
