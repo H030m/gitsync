@@ -487,3 +487,135 @@ The collapsible Discord digest card capped its markdown at maxHeight:360 inside 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: Stats page: four real charts
+
+**Date**: 2026-06-06
+**Task**: Stats page: four real charts
+**Branch**: `feature/summary-intel-hub`
+
+### Summary
+
+Replaced placeholder bars with fl_chart: task-status donut (center total + legend), commits-per-author bar, 14-day commit trend line (zero-filled buckets), stacked member-load bars. StatsViewModel now joins members (ProxyProvider3); pure derivations unit-tested. Note: Member model has no name field yet, labels fall back to userId — future enhancement. 57 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `690cb8e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 16: Stats rebuilt to match the design prototype
+
+**Date**: 2026-06-06
+**Task**: Stats rebuilt to match the design prototype
+**Branch**: `feature/summary-intel-hub`
+
+### Summary
+
+User flagged the four-chart Stats didn't match references/GitSync StatsView.tsx. Rebuilt: two tabs (貢獻度 contribution pie of done-task share with in-slice names/legend/caption; 進度表 per-member progress bars with expandable task lists, done struck-through). VM now tasks+members only (commits upstream removed). Member labels fall back to userId (Member model has no name field). 58 flutter tests green. Lesson: check references/ prototypes before designing UI pages.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8059494` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 17: Stats: commit-share toggle + GitHub names
+
+**Date**: 2026-06-06
+**Task**: Stats: commit-share toggle + GitHub names
+**Branch**: `feature/summary-intel-hub`
+
+### Summary
+
+貢獻度 tab toggles between all-history commit share (fetchAllCommits, default) and done-task share; member labels join users/{uid} to githubLogin with name/uid fallback so no raw UIDs remain. 63 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `35ef550` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 18: Stats: identity merge + AI author summaries
+
+**Date**: 2026-06-06
+**Task**: Stats: identity merge + AI author summaries
+**Branch**: `feature/summary-intel-hub`
+
+### Summary
+
+buildAuthorGroups two-pass merge fixes duplicate humans (login vs git-name buckets: 倪嘉駿→H030m, temmie casing). Pie is legend-only. 進度表 lists all canonical authors with expandable AI work summaries via new summarizeAuthorWork callable (count-invalidated cache, CJK-safe keys). Deployed. 192 functions + 64 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0ada841` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

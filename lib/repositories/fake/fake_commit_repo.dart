@@ -60,4 +60,10 @@ class FakeCommitRepository implements CommitRepository {
     await Future.delayed(AppConfig.simulatedLatency);
     return _state(repoId).value.where((c) => c.sha == sha).firstOrNull;
   }
+
+  @override
+  Future<List<Commit>> fetchAllCommits(String repoId) async {
+    await Future.delayed(AppConfig.simulatedLatency);
+    return List<Commit>.from(_state(repoId).value);
+  }
 }

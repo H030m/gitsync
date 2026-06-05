@@ -77,6 +77,17 @@ abstract class FunctionsService {
     bool force = false,
   });
 
+  /// Asks the AI to summarize what one commit author worked on across the
+  /// repo's history. [login] is the canonical GitHub login when known (sent
+  /// only when non-null); [names] are the git names seen for that author
+  /// bucket. Returns markdown; the backend caches it per author key.
+  Future<String> summarizeAuthorWork({
+    required String repoId,
+    String? login,
+    List<String> names = const [],
+    bool force = false,
+  });
+
   /// Branch-topology data for the Commits tab's branch-graph view: commits
   /// with parent SHAs + branch tips, fetched on demand from the GitHub API
   /// (commit docs carry no parents). [startDate]..[endDate] is the inclusive
@@ -271,6 +282,24 @@ class _LiveFunctionsService implements FunctionsService {
     final res = await _callable('explainCommit').call({
       'repoId': repoId,
       'sha': sha,
+      'force': force,
+    });
+    final data = Map<String, dynamic>.from(res.data as Map);
+    return data['markdown'] as String;
+  }
+
+  @override
+  Future<String> summarizeAuthorWork({
+    required String repoId,
+    String? login,
+    List<String> names = const [],
+    bool force = false,
+  }) async {
+    final res = await _callable('summarizeAuthorWork').call({
+      'repoId': repoId,
+      // Send login only when known; name-only buckets omit it.
+      'login': ?login,
+      'names': names,
       'force': force,
     });
     final data = Map<String, dynamic>.from(res.data as Map);

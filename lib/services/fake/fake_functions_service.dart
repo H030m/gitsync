@@ -143,6 +143,24 @@ class FakeFunctionsService implements FunctionsService {
   }
 
   @override
+  Future<String> summarizeAuthorWork({
+    required String repoId,
+    String? login,
+    List<String> names = const [],
+    bool force = false,
+  }) async {
+    await Future.delayed(AppConfig.simulatedLatency * 3);
+    final label = (login != null && login.isNotEmpty)
+        ? login
+        : (names.isNotEmpty ? names.first : 'unknown');
+    return '## $label 的工作統整\n\n'
+        '- 主要負責 commit 的提交與整合。\n'
+        '- 參與了功能開發與修正。\n'
+        '- 協助專案推進。\n\n'
+        '*(這是 fake backend 的示範回覆。)*';
+  }
+
+  @override
   Future<CommitGraph> getCommitGraph({
     required String repoId,
     String? startDate,
