@@ -32,10 +32,10 @@ class DiscordMessagesViewModel with ChangeNotifier {
       _loading = false;
       notifyListeners();
     });
-    // The digest follows the range's end date (latest day), defaulting to
-    // today until the repo doc (and its range) arrives.
-    _digestDateKey = _keyOf(_date);
-    _subscribeDigest(_digestDateKey);
+    // The digest cards cover EVERY day in the visible window (view range →
+    // saved backfill range → today), defaulting to today until the repo doc
+    // (and its range) arrives.
+    _subscribeDigests();
     _repoSub = _repoRepo.streamRepo(_repoId).listen(_onRepo);
   }
 
@@ -47,7 +47,7 @@ class DiscordMessagesViewModel with ChangeNotifier {
   final DiscordFetchRepository _fetchRepo;
   final FunctionsService _functions;
   StreamSubscription<List<DiscordMessage>>? _sub;
-  StreamSubscription<DiscordDigest?>? _digestSub;
+  StreamSubscription<List<DiscordDigest>>? _digestSub;
   StreamSubscription<Repo?>? _repoSub;
   StreamSubscription<String?>? _fetchSub;
   Timer? _fetchTimeout;
@@ -55,9 +55,10 @@ class DiscordMessagesViewModel with ChangeNotifier {
   // Terminal fetch-request statuses: the bot round-trip is finished.
   static const _terminalStatuses = {'done', 'ingested', 'digest_failed'};
 
-  // The day the digest stream is currently subscribed to (YYYY-MM-DD). Follows
-  // the range's end date; starts at today.
-  late String _digestDateKey;
+  // The window the digest range stream is currently subscribed to (inclusive
+  // YYYY-MM-DD keys). Follows the visible window (view → saved → today).
+  String? _digestWindowStart;
+  String? _digestWindowEnd;
 
   DateTime? _rangeStart;
   DateTime? _rangeEnd;
@@ -84,8 +85,13 @@ class DiscordMessagesViewModel with ChangeNotifier {
   List<DiscordMessage> _messages = [];
   List<DiscordMessage> get messages => _messages;
 
-  DiscordDigest? _digest;
-  DiscordDigest? get digest => _digest;
+  // Every digest in the visible window, newest day first. Days without a digest
+  // doc are simply absent.
+  List<DiscordDigest> _digests = [];
+  List<DiscordDigest> get digests => _digests;
+
+  /// Backward-compat: the newest digest in the window (or null when empty).
+  DiscordDigest? get digest => _digests.isEmpty ? null : _digests.first;
 
   bool _loading = true;
   bool get loading => _loading;
@@ -111,11 +117,12 @@ class DiscordMessagesViewModel with ChangeNotifier {
   bool _settingRange = false;
   bool get settingRange => _settingRange;
 
-  bool _editingDigest = false;
-  bool get editingDigest => _editingDigest;
+  // Per-date in-flight flags so each card spins independently.
+  final Set<String> _editingDates = {};
+  bool isEditingDigest(String date) => _editingDates.contains(date);
 
-  bool _togglingLock = false;
-  bool get togglingLock => _togglingLock;
+  final Set<String> _togglingDates = {};
+  bool isTogglingLock(String date) => _togglingDates.contains(date);
 
   String? _digestError;
   String? get digestError => _digestError;
@@ -131,33 +138,44 @@ class DiscordMessagesViewModel with ChangeNotifier {
     return DateTime.tryParse(key);
   }
 
-  void _subscribeDigest(String dateKey) {
+  // (Re)subscribes the digest range stream to the current visible window.
+  void _subscribeDigests() {
+    final startKey = _keyOf(_windowStart);
+    final endKey = _keyOf(_windowEnd);
+    _digestWindowStart = startKey;
+    _digestWindowEnd = endKey;
     _digestSub?.cancel();
-    _digestSub = _digestRepo.streamDigest(_repoId, dateKey).listen((digest) {
-      _digest = digest;
+    _digestSub = _digestRepo
+        .streamDigestsInRange(_repoId, startKey, endKey)
+        .listen((digests) {
+      _digests = digests;
       notifyListeners();
     });
   }
 
   // Reacts to repo doc changes: updates the saved range and, when the resolved
-  // digest day changes, re-points the digest stream at it.
+  // visible window changes, re-points the digest range stream.
   void _onRepo(Repo? repo) {
     _rangeStart = _parseKey(repo?.discordStartDate);
     _rangeEnd = _parseKey(repo?.discordEndDate);
-    _repointDigest();
+    _repointDigests();
     notifyListeners();
   }
 
-  // The day the digest card shows, by precedence: the display view-range end →
-  // the saved backfill range end → today.
-  DateTime get _digestDay => _viewEnd ?? _rangeEnd ?? _date;
+  // The visible window the digest cards cover, by precedence: the display
+  // view-range → the saved backfill range → today.
+  DateTime get _windowStart => _viewStart ?? _rangeStart ?? _date;
+  DateTime get _windowEnd => _viewEnd ?? _rangeEnd ?? _date;
 
-  // Re-points the digest stream at the resolved digest day if it changed.
-  void _repointDigest() {
-    final newKey = _keyOf(_digestDay);
-    if (newKey != _digestDateKey) {
-      _digestDateKey = newKey;
-      _subscribeDigest(_digestDateKey);
+  /// The digest day the refresh / backfill defaults to: the window's end.
+  String get _digestDateKey => _keyOf(_windowEnd);
+
+  // Re-points the digest range stream if the resolved window changed.
+  void _repointDigests() {
+    final startKey = _keyOf(_windowStart);
+    final endKey = _keyOf(_windowEnd);
+    if (startKey != _digestWindowStart || endKey != _digestWindowEnd) {
+      _subscribeDigests();
     }
   }
 
@@ -167,7 +185,7 @@ class DiscordMessagesViewModel with ChangeNotifier {
   void setViewRange(DateTime start, DateTime end) {
     _viewStart = start;
     _viewEnd = end;
-    _repointDigest();
+    _repointDigests();
     notifyListeners();
   }
 
@@ -176,7 +194,7 @@ class DiscordMessagesViewModel with ChangeNotifier {
   void clearViewRange() {
     _viewStart = null;
     _viewEnd = null;
-    _repointDigest();
+    _repointDigests();
     notifyListeners();
   }
 
@@ -250,46 +268,45 @@ class DiscordMessagesViewModel with ChangeNotifier {
     }
   }
 
-  // Asks the AI to adjust the digest for the range's end date. The updated
-  // markdown arrives via the digest stream, so we don't set it locally. No-ops
-  // if there's no digest yet.
-  Future<void> editDigest(String instruction) async {
-    if (_editingDigest || _digest == null || instruction.trim().isEmpty) return;
-    _editingDigest = true;
+  // Asks the AI to adjust the digest for [date] (the tapped card's day). The
+  // updated markdown arrives via the digest stream, so we don't set it locally.
+  Future<void> editDigest(String date, String instruction) async {
+    if (_editingDates.contains(date) || instruction.trim().isEmpty) return;
+    _editingDates.add(date);
     _digestError = null;
     notifyListeners();
     try {
       await _functions.editDiscordDigest(
         repoId: _repoId,
-        date: _digestDateKey,
+        date: date,
         instruction: instruction.trim(),
       );
     } catch (e) {
       _digestError = '$e';
     } finally {
-      _editingDigest = false;
+      _editingDates.remove(date);
       notifyListeners();
     }
   }
 
-  // Toggles the lock on the digest for the range's end date. When locked, the
-  // backend won't change it (auto-regen and AI edits are both refused).
-  Future<void> toggleLock() async {
-    final digest = _digest;
-    if (_togglingLock || digest == null) return;
-    _togglingLock = true;
+  // Toggles the lock on [digest] (its own date). When locked, the backend won't
+  // change it (auto-regen and AI edits are both refused).
+  Future<void> toggleLock(DiscordDigest digest) async {
+    final date = digest.date;
+    if (_togglingDates.contains(date)) return;
+    _togglingDates.add(date);
     _digestError = null;
     notifyListeners();
     try {
       await _functions.setDigestLock(
         repoId: _repoId,
-        date: _digestDateKey,
+        date: date,
         locked: !digest.locked,
       );
     } catch (e) {
       _digestError = '$e';
     } finally {
-      _togglingLock = false;
+      _togglingDates.remove(date);
       notifyListeners();
     }
   }

@@ -2458,8 +2458,17 @@ class _DiscordTab extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (vm.digest != null) ...[
-                    _DigestCard(digest: vm.digest!, vm: vm),
+                  // One digest card per day in the visible window that HAS a
+                  // digest doc (newest first). Days without a digest are
+                  // skipped; an empty window shows no card.
+                  for (var i = 0; i < vm.digests.length; i++) ...[
+                    _DigestCard(
+                      key: ValueKey(vm.digests[i].date),
+                      digest: vm.digests[i],
+                      vm: vm,
+                      // Newest day expanded by default, older days collapsed.
+                      initiallyExpanded: i == 0,
+                    ),
                     const SizedBox(height: AppDimens.spacingMd),
                   ],
                   Wrap(
@@ -2547,16 +2556,22 @@ class _DiscordTab extends StatelessWidget {
 // collapse/expand; the lock button animates; the card border animates to a
 // "frozen" tint when locked.
 class _DigestCard extends StatefulWidget {
-  const _DigestCard({required this.digest, required this.vm});
+  const _DigestCard({
+    super.key,
+    required this.digest,
+    required this.vm,
+    this.initiallyExpanded = true,
+  });
   final DiscordDigest digest;
   final DiscordMessagesViewModel vm;
+  final bool initiallyExpanded;
 
   @override
   State<_DigestCard> createState() => _DigestCardState();
 }
 
 class _DigestCardState extends State<_DigestCard> {
-  bool _expanded = true;
+  late bool _expanded = widget.initiallyExpanded;
   final _adjustController = TextEditingController();
 
   @override
@@ -2567,9 +2582,11 @@ class _DigestCardState extends State<_DigestCard> {
 
   void _submitAdjust() {
     final text = _adjustController.text;
-    if (text.trim().isEmpty || widget.vm.editingDigest) return;
+    if (text.trim().isEmpty || widget.vm.isEditingDigest(widget.digest.date)) {
+      return;
+    }
     _adjustController.clear();
-    widget.vm.editDigest(text);
+    widget.vm.editDigest(widget.digest.date, text);
   }
 
   @override
@@ -2579,6 +2596,8 @@ class _DigestCardState extends State<_DigestCard> {
     final digest = widget.digest;
     final vm = widget.vm;
     final locked = digest.locked;
+    final editing = vm.isEditingDigest(digest.date);
+    final toggling = vm.isTogglingLock(digest.date);
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
@@ -2614,7 +2633,7 @@ class _DigestCardState extends State<_DigestCard> {
                   ),
                   const SizedBox(width: AppDimens.spacingSm),
                   Text(
-                    'Discord digest',
+                    'Discord digest · ${digest.date}',
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
@@ -2627,8 +2646,8 @@ class _DigestCardState extends State<_DigestCard> {
                   // Animated lock toggle.
                   IconButton(
                     tooltip: locked ? 'Unlock digest' : 'Lock digest',
-                    onPressed: vm.togglingLock ? null : vm.toggleLock,
-                    icon: vm.togglingLock
+                    onPressed: toggling ? null : () => vm.toggleLock(digest),
+                    icon: toggling
                         ? const SizedBox(
                             width: 18,
                             height: 18,
@@ -2715,7 +2734,7 @@ class _DigestCardState extends State<_DigestCard> {
                                   controller: _adjustController,
                                   minLines: 1,
                                   maxLines: 3,
-                                  enabled: !vm.editingDigest,
+                                  enabled: !editing,
                                   textInputAction: TextInputAction.send,
                                   onSubmitted: (_) => _submitAdjust(),
                                   decoration: const InputDecoration(
@@ -2728,10 +2747,8 @@ class _DigestCardState extends State<_DigestCard> {
                               const SizedBox(width: AppDimens.spacingSm),
                               IconButton.filledTonal(
                                 tooltip: 'Adjust with AI',
-                                onPressed: vm.editingDigest
-                                    ? null
-                                    : _submitAdjust,
-                                icon: vm.editingDigest
+                                onPressed: editing ? null : _submitAdjust,
+                                icon: editing
                                     ? const SizedBox(
                                         width: 18,
                                         height: 18,
