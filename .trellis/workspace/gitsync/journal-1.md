@@ -487,3 +487,36 @@ The collapsible Discord digest card capped its markdown at maxHeight:360 inside 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: Stats page: four real charts
+
+**Date**: 2026-06-06
+**Task**: Stats page: four real charts
+**Branch**: `feature/summary-intel-hub`
+
+### Summary
+
+Replaced placeholder bars with fl_chart: task-status donut (center total + legend), commits-per-author bar, 14-day commit trend line (zero-filled buckets), stacked member-load bars. StatsViewModel now joins members (ProxyProvider3); pure derivations unit-tested. Note: Member model has no name field yet, labels fall back to userId — future enhancement. 57 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `690cb8e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
