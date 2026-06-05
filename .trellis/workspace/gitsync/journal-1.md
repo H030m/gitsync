@@ -586,3 +586,36 @@ User flagged the four-chart Stats didn't match references/GitSync StatsView.tsx.
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: Stats: identity merge + AI author summaries
+
+**Date**: 2026-06-06
+**Task**: Stats: identity merge + AI author summaries
+**Branch**: `feature/summary-intel-hub`
+
+### Summary
+
+buildAuthorGroups two-pass merge fixes duplicate humans (login vs git-name buckets: 倪嘉駿→H030m, temmie casing). Pie is legend-only. 進度表 lists all canonical authors with expandable AI work summaries via new summarizeAuthorWork callable (count-invalidated cache, CJK-safe keys). Deployed. 192 functions + 64 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0ada841` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
