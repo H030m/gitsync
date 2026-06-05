@@ -2809,11 +2809,18 @@ class _DigestCardState extends State<_DigestCard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // Long digests can overflow the card; cap the height
-                        // and let the markdown scroll within it.
+                        // and let the markdown scroll within it. The markdown
+                        // body shrink-wraps to its content width, so force the
+                        // scroll viewport to fill the card width — otherwise the
+                        // scrollbar floats in the middle where the text ends
+                        // instead of pinning to the card's right edge.
                         ConstrainedBox(
                           constraints: const BoxConstraints(maxHeight: 360),
                           child: SingleChildScrollView(
-                            child: MarkdownView(data: digest.markdown),
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: MarkdownView(data: digest.markdown),
+                            ),
                           ),
                         ),
                         const SizedBox(height: AppDimens.spacingSm),
