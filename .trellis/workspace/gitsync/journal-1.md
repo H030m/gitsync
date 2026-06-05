@@ -388,3 +388,36 @@ Incident: bound clear branch had called setDiscordRange(today,today) whose desig
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: Discord digests: per-day cards in visible window
+
+**Date**: 2026-06-05
+**Task**: Discord digests: per-day cards in visible window
+**Branch**: `feature/summary-intel-hub`
+
+### Summary
+
+Recovery had restored 39 messages + digests for 6/3-6/4, but the tab only showed the window-end day's digest (today, none yet) → blank. Now streams digests across the visible window (documentId range), one card per day, newest expanded, per-date edit/lock. 44 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1629b82` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
