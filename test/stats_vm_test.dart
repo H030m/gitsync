@@ -1,23 +1,18 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:gitsync/models/commit.dart';
 import 'package:gitsync/models/member.dart';
 import 'package:gitsync/models/task.dart';
 import 'package:gitsync/view_models/stats_vm.dart';
 
-Commit _commit(String sha, DateTime committedAt, {String login = 'x'}) => Commit(
-      sha: sha,
-      repoId: 'r',
-      message: 'm',
-      author: CommitAuthor(login: login, name: login, email: '$login@x'),
-      url: '',
-      committedAt: Timestamp.fromDate(committedAt),
-    );
-
-Task _task(String id, TaskStatus status, {String? assigneeId}) => Task(
+Task _task(
+  String id,
+  TaskStatus status, {
+  String? assigneeId,
+  String? title,
+}) =>
+    Task(
       id: id,
-      title: id,
+      title: title ?? id,
       status: status,
       assigneeId: assigneeId,
       createdBy: 'u',
@@ -26,114 +21,131 @@ Task _task(String id, TaskStatus status, {String? assigneeId}) => Task(
 Member _member(String id) => Member(userId: id, role: MemberRole.member);
 
 void main() {
-  group('computeCommitsPerDay', () {
-    final now = DateTime(2026, 6, 6, 10, 30); // fixed "today"
-
-    test('returns exactly 14 zero-filled days, oldest first, today inclusive',
-        () {
-      final days = StatsViewModel.computeCommitsPerDay(const [], now: now);
-
-      expect(days.length, StatsViewModel.trendDays);
-      expect(days.length, 14);
-      // Oldest is today − 13 days, newest is today.
-      expect(days.first.day, DateTime(2026, 5, 24));
-      expect(days.last.day, DateTime(2026, 6, 6));
-      expect(days.every((d) => d.count == 0), isTrue);
-    });
-
-    test('buckets commits into the right day regardless of time of day', () {
-      final commits = [
-        _commit('a', DateTime(2026, 6, 6, 0, 1)), // today, just past midnight
-        _commit('b', DateTime(2026, 6, 6, 23, 59)), // today, late
-        _commit('c', DateTime(2026, 6, 5, 12)), // yesterday
-      ];
-
-      final days = StatsViewModel.computeCommitsPerDay(commits, now: now);
-      final byDay = {for (final d in days) d.day: d.count};
-
-      expect(byDay[DateTime(2026, 6, 6)], 2);
-      expect(byDay[DateTime(2026, 6, 5)], 1);
-      expect(byDay[DateTime(2026, 6, 4)], 0); // an empty day stays zero-filled
-    });
-
-    test('excludes commits outside the 14-day window (older and future)', () {
-      final commits = [
-        _commit('old', DateTime(2026, 5, 23, 12)), // 1 day before window start
-        _commit('edge', DateTime(2026, 5, 24, 12)), // first day in window
-        _commit('future', DateTime(2026, 6, 7, 9)), // tomorrow, after today
-      ];
-
-      final days = StatsViewModel.computeCommitsPerDay(commits, now: now);
-      final total = days.fold<int>(0, (a, d) => a + d.count);
-
-      expect(total, 1); // only the in-window 'edge' commit counts
-      final byDay = {for (final d in days) d.day: d.count};
-      expect(byDay[DateTime(2026, 5, 24)], 1);
-    });
-  });
-
-  group('computeMemberLoad', () {
-    test('counts in-progress and done per assignee, skips todo + unassigned',
-        () {
+  group('computeContributions', () {
+    test('per-member share of done tasks, sorted by done count desc', () {
       final tasks = [
-        _task('1', TaskStatus.inProgress, assigneeId: 'alice'),
-        _task('2', TaskStatus.inProgress, assigneeId: 'alice'),
-        _task('3', TaskStatus.done, assigneeId: 'alice'),
-        _task('4', TaskStatus.todo, assigneeId: 'alice'), // ignored
-        _task('5', TaskStatus.done, assigneeId: 'bob'),
-        _task('6', TaskStatus.todo, assigneeId: 'carol'), // todo-only → absent
-        _task('7', TaskStatus.inProgress), // unassigned → ignored
+        _task('1', TaskStatus.done, assigneeId: 'alice'),
+        _task('2', TaskStatus.done, assigneeId: 'alice'),
+        _task('3', TaskStatus.done, assigneeId: 'bob'),
+        _task('4', TaskStatus.inProgress, assigneeId: 'alice'), // not done
+        _task('5', TaskStatus.todo, assigneeId: 'bob'), // not done
       ];
-      final members = [_member('alice'), _member('bob'), _member('carol')];
+      final members = [_member('alice'), _member('bob')];
 
-      final loads = StatsViewModel.computeMemberLoad(tasks, members);
-      final byId = {for (final l in loads) l.assigneeId: l};
+      final contribs = StatsViewModel.computeContributions(tasks, members);
 
-      // carol has only a todo task → no entry; unassigned never appears.
-      expect(byId.keys.toSet(), {'alice', 'bob'});
-      expect(byId['alice']!.inProgress, 2);
-      expect(byId['alice']!.done, 1);
-      expect(byId['alice']!.total, 3);
-      expect(byId['bob']!.inProgress, 0);
-      expect(byId['bob']!.done, 1);
+      // 3 done total: alice 2 (67%), bob 1 (33%). alice first (higher count).
+      expect(contribs.map((c) => c.assigneeId).toList(), ['alice', 'bob']);
+      expect(contribs.first.doneCount, 2);
+      expect(contribs.first.pct, 67); // 2/3 rounds to 67
+      expect(contribs.last.doneCount, 1);
+      expect(contribs.last.pct, 33); // 1/3 rounds to 33
     });
 
-    test('sorts by total descending', () {
+    test('excludes unassigned and never-done assignees', () {
       final tasks = [
-        _task('1', TaskStatus.done, assigneeId: 'low'),
-        _task('2', TaskStatus.inProgress, assigneeId: 'high'),
-        _task('3', TaskStatus.inProgress, assigneeId: 'high'),
-        _task('4', TaskStatus.done, assigneeId: 'high'),
+        _task('1', TaskStatus.done, assigneeId: 'alice'),
+        _task('2', TaskStatus.done), // unassigned → excluded
+        _task('3', TaskStatus.todo, assigneeId: 'bob'), // never done → no entry
       ];
-      final loads = StatsViewModel.computeMemberLoad(
+      final contribs = StatsViewModel.computeContributions(
         tasks,
-        [_member('low'), _member('high')],
+        [_member('alice'), _member('bob')],
       );
 
-      expect(loads.first.assigneeId, 'high');
-      expect(loads.last.assigneeId, 'low');
+      expect(contribs.length, 1);
+      expect(contribs.single.assigneeId, 'alice');
+      expect(contribs.single.pct, 100);
+    });
+
+    test('zero-done edge: no done tasks → empty list', () {
+      final tasks = [
+        _task('1', TaskStatus.todo, assigneeId: 'alice'),
+        _task('2', TaskStatus.inProgress, assigneeId: 'bob'),
+      ];
+      final contribs = StatsViewModel.computeContributions(
+        tasks,
+        [_member('alice'), _member('bob')],
+      );
+
+      expect(contribs, isEmpty);
     });
 
     test('falls back to the raw id when the assignee is not in the roster', () {
       final tasks = [
-        _task('1', TaskStatus.inProgress, assigneeId: 'ghost-user'),
+        _task('1', TaskStatus.done, assigneeId: 'ghost-user'),
       ];
-      // Empty roster → no member match.
-      final loads = StatsViewModel.computeMemberLoad(tasks, const []);
+      final contribs = StatsViewModel.computeContributions(tasks, const []);
 
-      expect(loads.length, 1);
-      expect(loads.single.assigneeId, 'ghost-user');
-      expect(loads.single.label, 'ghost-user'); // raw id used as the label
+      expect(contribs.single.label, 'ghost-user');
     });
+  });
 
-    test('joins the roster member when present', () {
+  group('computeMemberProgress', () {
+    test('pct = done / assigned, rounded', () {
       final tasks = [
         _task('1', TaskStatus.done, assigneeId: 'alice'),
+        _task('2', TaskStatus.done, assigneeId: 'alice'),
+        _task('3', TaskStatus.todo, assigneeId: 'alice'),
+        _task('4', TaskStatus.inProgress, assigneeId: 'alice'),
       ];
-      final loads =
-          StatsViewModel.computeMemberLoad(tasks, [_member('alice')]);
+      final progress = StatsViewModel.computeMemberProgress(
+        tasks,
+        [_member('alice')],
+      );
 
-      expect(loads.single.label, 'alice');
+      // 2 done of 4 assigned → 50%.
+      expect(progress.single.pct, 50);
+      expect(progress.single.tasks.length, 4);
+    });
+
+    test('task list is ordered pending-first, then done, preserving order', () {
+      final tasks = [
+        _task('1', TaskStatus.done, assigneeId: 'alice', title: 'doneA'),
+        _task('2', TaskStatus.todo, assigneeId: 'alice', title: 'todoA'),
+        _task('3', TaskStatus.done, assigneeId: 'alice', title: 'doneB'),
+        _task('4', TaskStatus.inProgress, assigneeId: 'alice', title: 'wipA'),
+      ];
+      final progress = StatsViewModel.computeMemberProgress(
+        tasks,
+        [_member('alice')],
+      );
+
+      final titles = progress.single.tasks.map((t) => t.title).toList();
+      // pending (todoA, wipA) keep original order, then done (doneA, doneB).
+      expect(titles, ['todoA', 'wipA', 'doneA', 'doneB']);
+      expect(progress.single.tasks.map((t) => t.done).toList(),
+          [false, false, true, true]);
+    });
+
+    test('excludes unassigned tasks; one entry per assignee', () {
+      final tasks = [
+        _task('1', TaskStatus.done, assigneeId: 'alice'),
+        _task('2', TaskStatus.todo, assigneeId: 'bob'),
+        _task('3', TaskStatus.done), // unassigned → excluded
+      ];
+      final progress = StatsViewModel.computeMemberProgress(
+        tasks,
+        [_member('alice'), _member('bob')],
+      );
+
+      expect(progress.map((p) => p.assigneeId).toSet(), {'alice', 'bob'});
+      // alice 1/1 = 100, bob 0/1 = 0; sorted pct desc → alice first.
+      expect(progress.first.assigneeId, 'alice');
+      expect(progress.first.pct, 100);
+      expect(progress.last.assigneeId, 'bob');
+      expect(progress.last.pct, 0);
+    });
+
+    test('falls back to the raw id when not in the roster', () {
+      final tasks = [
+        _task('1', TaskStatus.todo, assigneeId: 'ghost-user'),
+      ];
+      final progress =
+          StatsViewModel.computeMemberProgress(tasks, const []);
+
+      expect(progress.single.label, 'ghost-user');
+      expect(progress.single.pct, 0);
     });
   });
 }

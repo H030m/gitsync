@@ -3,21 +3,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 import 'package:gitsync/data/dummy_data.dart';
-import 'package:gitsync/view_models/commits_vm.dart';
 import 'package:gitsync/view_models/members_vm.dart';
 import 'package:gitsync/view_models/tasks_board_vm.dart';
 import 'package:gitsync/views/stats/stats_view_page.dart';
 
-// Smoke test: StatsViewPage renders its four cards against the fake backend.
-// The page wires StatsViewModel via ChangeNotifierProxyProvider3, so the
-// harness only needs to supply the three upstream VMs.
+// Widget test: StatsViewPage renders the two prototype tabs (貢獻度 / 進度表)
+// against the fake backend. The page wires StatsViewModel via
+// ChangeNotifierProxyProvider2, so the harness only supplies the two upstream
+// VMs (tasks + members) — no commits (the prototype has none).
 Widget _harness() {
   const repoId = DummyData.demoRepoId;
   return MaterialApp(
     home: MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => TasksBoardViewModel(repoId: repoId)),
-        ChangeNotifierProvider(create: (_) => CommitsViewModel(repoId: repoId)),
+        ChangeNotifierProvider(
+            create: (_) => TasksBoardViewModel(repoId: repoId)),
         ChangeNotifierProvider(create: (_) => MembersViewModel(repoId: repoId)),
       ],
       child: const StatsViewPage(repoId: repoId),
@@ -26,8 +26,10 @@ Widget _harness() {
 }
 
 void main() {
-  testWidgets('Stats page renders all four chart cards', (tester) async {
-    tester.view.physicalSize = const Size(1200, 3200);
+  testWidgets('renders both tabs; pie legend shows %, progress expands', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 2400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -35,15 +37,36 @@ void main() {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
-    expect(find.text('Task status'), findsOneWidget);
-    expect(find.text('Commits per author'), findsOneWidget);
-    expect(find.text('Daily commits (last 14 days)'), findsOneWidget);
-    expect(find.text('Member load'), findsOneWidget);
+    // Both tabs present.
+    expect(find.text('貢獻度'), findsWidgets);
+    expect(find.text('進度表'), findsOneWidget);
 
-    // CommitsViewModel eagerly fetches the branch graph (a fake-latency
-    // Future) on construction; the Stats page never renders it, so
-    // pumpAndSettle returns before that timer fires. Drain it here so the
-    // test doesn't fail on a pending Timer at teardown.
-    await tester.pump(const Duration(seconds: 1));
+    // Tab 1 (default): contribution caption + legend percentage text.
+    expect(find.text('已完成的任務累計的貢獻度'), findsOneWidget);
+    // The only done task is demo-user-001's → 100% legend chip.
+    expect(
+      find.textContaining('100%'),
+      findsWidgets,
+      reason: 'legend chip should show the contribution percentage',
+    );
+
+    // Switch to Tab 2 (進度表).
+    await tester.tap(find.text('進度表'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('每個人當前未完成任務的進度'), findsOneWidget);
+    expect(find.text('詳細情形'), findsWidgets);
+
+    // The done task title is hidden until 詳細情形 is expanded.
+    const doneTitle = 'Set up Flutter project skeleton';
+    expect(find.text(doneTitle), findsNothing);
+
+    // Expand the first 詳細情形 toggle (demo-user-001, the only assignee with a
+    // done task) and verify the done task is shown struck-through.
+    await tester.tap(find.text('詳細情形').first);
+    await tester.pumpAndSettle();
+
+    final doneText = tester.widget<Text>(find.text(doneTitle));
+    expect(doneText.style?.decoration, TextDecoration.lineThrough);
   });
 }

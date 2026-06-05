@@ -2,85 +2,93 @@ import 'package:flutter/foundation.dart';
 
 import '../models/member.dart';
 import '../models/task.dart';
-import 'commits_vm.dart';
 import 'members_vm.dart';
 import 'tasks_board_vm.dart';
 
-/// One member's task workload, split by status.
+/// One member's share of the team's completed (done) tasks.
 @immutable
-class MemberLoad {
-  const MemberLoad({
+class Contribution {
+  const Contribution({
     required this.assigneeId,
     required this.label,
-    required this.inProgress,
-    required this.done,
+    required this.doneCount,
+    required this.pct,
   });
 
   final String assigneeId;
 
-  /// Display label for the assignee — the member roster has no human-readable
-  /// name field today, so this falls back to the raw assigneeId. When the id is
-  /// absent from the roster (no member match) the raw id is used directly.
+  /// Display label for the member — the roster has no human-readable name
+  /// field today, so this falls back to the raw assigneeId.
   final String label;
-  final int inProgress;
-  final int done;
 
-  int get total => inProgress + done;
+  /// Number of done tasks assigned to this member.
+  final int doneCount;
+
+  /// This member's share of ALL done tasks, 0..100 (rounded). When no task is
+  /// done across the team every share is 0.
+  final int pct;
 }
 
-/// One calendar day's commit count (used by the 14-day trend).
+/// One member's progress over their own assigned tasks, with the task list.
 @immutable
-class DayCount {
-  const DayCount({required this.day, required this.count});
+class MemberProgress {
+  const MemberProgress({
+    required this.assigneeId,
+    required this.label,
+    required this.pct,
+    required this.tasks,
+  });
 
-  /// Midnight (local) of the bucketed day.
-  final DateTime day;
-  final int count;
+  final String assigneeId;
+  final String label;
+
+  /// done / (all tasks assigned to this member), 0..100 (rounded).
+  final int pct;
+
+  /// This member's tasks, pending first then done, each in original order.
+  final List<ProgressTask> tasks;
 }
 
-// Derived statistics view (StatsViewPage) built from TasksBoardViewModel,
-// CommitsViewModel and MembersViewModel. Plug all three in via
-// ChangeNotifierProxyProvider3 in the route layer.
-//
-// CAVEAT: the commit-derived charts (`commitsPerAuthor`, `commitsPerDay`) only
-// see the commits currently loaded by CommitsViewModel — i.e. the recent-50
-// window, or the user-picked day range on the Daily page. They are not a
-// separate full-history query (by design — see task 06-06 prd §5).
-class StatsViewModel with ChangeNotifier {
-  /// Length of the daily-commits trend window, in days (today inclusive).
-  static const int trendDays = 14;
+/// A single task line in a member's progress detail list.
+@immutable
+class ProgressTask {
+  const ProgressTask({required this.title, required this.done});
 
+  final String title;
+  final bool done;
+}
+
+// Derived statistics view (StatsViewPage) built from TasksBoardViewModel and
+// MembersViewModel. Plug both in via ChangeNotifierProxyProvider2 in the page.
+//
+// Two derivations, mirroring the design prototype's two tabs:
+//   * `contributions`  — per-member share of COMPLETED tasks (貢獻度 pie).
+//   * `memberProgress` — per-member done/assigned progress + task list (進度表).
+//
+// Unassigned tasks are excluded from both.
+class StatsViewModel with ChangeNotifier {
   TasksBoardViewModel? _tasksVm;
-  CommitsViewModel? _commitsVm;
   MembersViewModel? _membersVm;
 
-  Map<TaskStatus, int> _statusCounts = const {};
-  Map<TaskStatus, int> get statusCounts => _statusCounts;
+  List<Contribution> _contributions = const [];
 
-  Map<String, int> _commitsPerAuthor = const {};
-  Map<String, int> get commitsPerAuthor => _commitsPerAuthor;
+  /// Per-member share of all done tasks, members with at least one done task
+  /// first (by done count descending), then any remaining roster/assignee with
+  /// zero done. See [computeContributions].
+  List<Contribution> get contributions => _contributions;
 
-  List<DayCount> _commitsPerDay = const [];
+  List<MemberProgress> _memberProgress = const [];
 
-  /// Commit counts for exactly the last [trendDays] calendar days (oldest →
-  /// newest, today inclusive), zero-filled. Derived from the loaded commits'
-  /// `committedAt`; commits outside the window are excluded.
-  List<DayCount> get commitsPerDay => _commitsPerDay;
+  /// Per-member done/assigned progress with their ordered task list, one entry
+  /// per member that has at least one assigned task. See [computeMemberProgress].
+  List<MemberProgress> get memberProgress => _memberProgress;
 
-  List<MemberLoad> _memberLoad = const [];
-
-  /// Per-assignee in-progress/done counts, one entry per assignee that has at
-  /// least one in-progress or done task, sorted by total descending.
-  List<MemberLoad> get memberLoad => _memberLoad;
-
-  // Receives upstream updates from ChangeNotifierProxyProvider3.
+  // Receives upstream updates from ChangeNotifierProxyProvider2.
   void updateFromUpstream({
     required TasksBoardViewModel tasks,
-    required CommitsViewModel commits,
     required MembersViewModel members,
   }) {
     _tasksVm = tasks;
-    _commitsVm = commits;
     _membersVm = members;
     _recompute();
     notifyListeners();
@@ -88,119 +96,110 @@ class StatsViewModel with ChangeNotifier {
 
   void _recompute() {
     final tasks = _tasksVm?.tasks ?? const <Task>[];
-    final commits = _commitsVm?.commits ?? const [];
     final members = _membersVm?.members ?? const <Member>[];
 
-    _statusCounts = _computeStatusCounts(tasks);
-    _commitsPerAuthor = _computeCommitsPerAuthor(commits);
-    _commitsPerDay = computeCommitsPerDay(commits);
-    _memberLoad = computeMemberLoad(tasks, members);
+    _contributions = computeContributions(tasks, members);
+    _memberProgress = computeMemberProgress(tasks, members);
   }
 
-  static Map<TaskStatus, int> _computeStatusCounts(List<Task> tasks) {
-    final counts = <TaskStatus, int>{
-      TaskStatus.todo: 0,
-      TaskStatus.inProgress: 0,
-      TaskStatus.done: 0,
-    };
-    for (final t in tasks) {
-      counts[t.status] = (counts[t.status] ?? 0) + 1;
-    }
-    return counts;
-  }
-
-  static Map<String, int> _computeCommitsPerAuthor(Iterable commits) {
-    final perAuthor = <String, int>{};
-    for (final c in commits) {
-      perAuthor.update(c.author.login, (v) => v + 1, ifAbsent: () => 1);
-    }
-    return perAuthor;
-  }
-
-  /// Buckets [commits] into the last [trendDays] calendar days (today
-  /// inclusive), zero-filling empty days and dropping commits outside the
-  /// window. Returned oldest → newest. Exposed for unit testing.
-  static List<DayCount> computeCommitsPerDay(
-    Iterable commits, {
-    DateTime? now,
-  }) {
-    final today = _dayOf(now ?? DateTime.now());
-    final start = today.subtract(const Duration(days: trendDays - 1));
-
-    // Seed every day in the window with a zero count, keyed by ymd.
-    final buckets = <String, int>{};
-    for (var i = 0; i < trendDays; i++) {
-      buckets[_ymd(start.add(Duration(days: i)))] = 0;
-    }
-
-    for (final c in commits) {
-      final day = _dayOf(c.committedAt.toDate());
-      if (day.isBefore(start) || day.isAfter(today)) continue; // out of window
-      final key = _ymd(day);
-      buckets[key] = (buckets[key] ?? 0) + 1;
-    }
-
-    return [
-      for (var i = 0; i < trendDays; i++)
-        DayCount(
-          day: start.add(Duration(days: i)),
-          count: buckets[_ymd(start.add(Duration(days: i)))] ?? 0,
-        ),
-    ];
-  }
-
-  /// Per-assignee {inProgress, done} counts from [tasks], joined to a display
-  /// label via the [members] roster. The roster exposes no human-readable name
-  /// today, so the label is the assigneeId either way; an assigneeId absent
-  /// from the roster (no member match) still resolves to the raw id. Unassigned
-  /// tasks and todo-only assignees are skipped. Exposed for unit testing.
-  static List<MemberLoad> computeMemberLoad(
+  /// Per-member share of all DONE tasks. Each member's pct = their done count /
+  /// total done count across all assignees, rounded to an int (0..100). When no
+  /// task is done team-wide every pct is 0 (zero-done edge). Only assignees with
+  /// at least one done task get an entry; unassigned tasks are excluded. Sorted
+  /// by done count descending, then by label. Exposed for unit testing.
+  static List<Contribution> computeContributions(
     List<Task> tasks,
     List<Member> members,
   ) {
     final byId = {for (final m in members) m.userId: m};
 
-    final inProgress = <String, int>{};
     final done = <String, int>{};
     for (final t in tasks) {
       final id = t.assigneeId;
       if (id == null || id.isEmpty) continue;
-      switch (t.status) {
-        case TaskStatus.inProgress:
-          inProgress.update(id, (v) => v + 1, ifAbsent: () => 1);
-        case TaskStatus.done:
-          done.update(id, (v) => v + 1, ifAbsent: () => 1);
-        case TaskStatus.todo:
-          break;
-      }
+      if (t.status != TaskStatus.done) continue;
+      done.update(id, (v) => v + 1, ifAbsent: () => 1);
     }
 
-    final ids = {...inProgress.keys, ...done.keys};
-    final loads = [
-      for (final id in ids)
-        MemberLoad(
-          assigneeId: id,
-          label: _labelFor(id, byId),
-          inProgress: inProgress[id] ?? 0,
-          done: done[id] ?? 0,
+    final totalDone = done.values.fold<int>(0, (a, b) => a + b);
+
+    final list = [
+      for (final entry in done.entries)
+        Contribution(
+          assigneeId: entry.key,
+          label: _labelFor(entry.key, byId),
+          doneCount: entry.value,
+          pct: totalDone == 0
+              ? 0
+              : ((entry.value / totalDone) * 100).round(),
         ),
-    ]..sort((a, b) => b.total.compareTo(a.total));
-    return loads;
+    ]..sort((a, b) {
+        final byCount = b.doneCount.compareTo(a.doneCount);
+        return byCount != 0 ? byCount : a.label.compareTo(b.label);
+      });
+    return list;
+  }
+
+  /// Per-member progress over their OWN assigned tasks. pct = done / assigned
+  /// count, rounded (0..100). Each entry's task list is ordered pending-first
+  /// then done, preserving original order within each group. Only assignees with
+  /// at least one assigned task get an entry; unassigned tasks are excluded.
+  /// Sorted by pct descending, then by label. Exposed for unit testing.
+  static List<MemberProgress> computeMemberProgress(
+    List<Task> tasks,
+    List<Member> members,
+  ) {
+    final byId = {for (final m in members) m.userId: m};
+
+    final byAssignee = <String, List<Task>>{};
+    for (final t in tasks) {
+      final id = t.assigneeId;
+      if (id == null || id.isEmpty) continue;
+      byAssignee.putIfAbsent(id, () => []).add(t);
+    }
+
+    final list = <MemberProgress>[];
+    for (final entry in byAssignee.entries) {
+      final assigned = entry.value;
+      final doneCount =
+          assigned.where((t) => t.status == TaskStatus.done).length;
+      final pct = assigned.isEmpty
+          ? 0
+          : ((doneCount / assigned.length) * 100).round();
+
+      final pending = [
+        for (final t in assigned)
+          if (t.status != TaskStatus.done)
+            ProgressTask(title: t.title, done: false),
+      ];
+      final completed = [
+        for (final t in assigned)
+          if (t.status == TaskStatus.done)
+            ProgressTask(title: t.title, done: true),
+      ];
+
+      list.add(MemberProgress(
+        assigneeId: entry.key,
+        label: _labelFor(entry.key, byId),
+        pct: pct,
+        tasks: [...pending, ...completed],
+      ));
+    }
+
+    list.sort((a, b) {
+      final byPct = b.pct.compareTo(a.pct);
+      return byPct != 0 ? byPct : a.label.compareTo(b.label);
+    });
+    return list;
   }
 
   // The roster has no display-name field yet; resolve to the raw id whether or
   // not the member is present. Kept as a join point so a future name field on
-  // Member only needs to change here.
+  // Member only needs to change here (mirrors how the rest of the UI shows
+  // assignees: the userId is the only human-facing identifier available).
   static String _labelFor(String id, Map<String, Member> byId) {
     final member = byId[id];
     if (member == null) return id; // no member match → raw id
     return member.userId;
   }
-
-  static DateTime _dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
-
-  static String _ymd(DateTime d) =>
-      '${d.year.toString().padLeft(4, '0')}-'
-      '${d.month.toString().padLeft(2, '0')}-'
-      '${d.day.toString().padLeft(2, '0')}';
 }

@@ -2,505 +2,340 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../models/task.dart';
 import '../../theme/app_dimens.dart';
-import '../../view_models/commits_vm.dart';
 import '../../view_models/members_vm.dart';
 import '../../view_models/stats_vm.dart';
 import '../../view_models/tasks_board_vm.dart';
 
-// StatsViewPage — four fl_chart visualizations derived from the per-repo
-// ViewModels: a task-status donut, commits-per-author bars, a 14-day commits
-// trend, and per-member task load.
-//
-// CAVEAT: the two commit-derived charts (author bars + daily trend) only
-// reflect the commits currently loaded by CommitsViewModel — the recent-50
-// window, or the day range picked on the Daily page. They are intentionally
-// not a separate full-history query (task 06-06 prd §5).
+// StatsViewPage — faithful rebuild of the design prototype's two-tab Stats
+// screen (StatsView.tsx): a 貢獻度 contribution pie and a 進度表 per-member
+// progress table with expandable task lists. Derived purely from tasks +
+// members via StatsViewModel (no commits — the prototype has none).
 class StatsViewPage extends StatelessWidget {
   const StatsViewPage({super.key, required this.repoId});
   final String repoId;
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProxyProvider3<TasksBoardViewModel, CommitsViewModel,
-        MembersViewModel, StatsViewModel>(
+    return ChangeNotifierProxyProvider2<TasksBoardViewModel, MembersViewModel,
+        StatsViewModel>(
       create: (_) => StatsViewModel(),
-      update: (_, tasks, commits, members, prev) =>
-          (prev ?? StatsViewModel())
-            ..updateFromUpstream(
-              tasks: tasks,
-              commits: commits,
-              members: members,
-            ),
-      child: Scaffold(
-        appBar: AppBar(title: const Text('Stats')),
-        body: Consumer<StatsViewModel>(
-          builder: (ctx, vm, _) {
-            return ListView(
-              padding: const EdgeInsets.all(AppDimens.spacingMd),
-              children: [
-                _StatCard(
-                  title: 'Task status',
-                  icon: Icons.task_alt_outlined,
-                  child: _TaskStatusDonut(counts: vm.statusCounts),
-                ),
-                const SizedBox(height: AppDimens.spacingMd),
-                _StatCard(
-                  title: 'Commits per author',
-                  icon: Icons.commit_outlined,
-                  child: _CommitsPerAuthorBar(perAuthor: vm.commitsPerAuthor),
-                ),
-                const SizedBox(height: AppDimens.spacingMd),
-                _StatCard(
-                  title: 'Daily commits (last 14 days)',
-                  icon: Icons.show_chart_outlined,
-                  child: _DailyCommitsTrend(days: vm.commitsPerDay),
-                ),
-                const SizedBox(height: AppDimens.spacingMd),
-                _StatCard(
-                  title: 'Member load',
-                  icon: Icons.people_alt_outlined,
-                  child: _MemberLoadBar(loads: vm.memberLoad),
-                ),
+      update: (_, tasks, members, prev) => (prev ?? StatsViewModel())
+        ..updateFromUpstream(tasks: tasks, members: members),
+      child: DefaultTabController(
+        length: 2,
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text('統計'),
+            bottom: const TabBar(
+              tabs: [
+                Tab(text: '貢獻度'),
+                Tab(text: '進度表'),
               ],
-            );
-          },
+            ),
+          ),
+          body: Consumer<StatsViewModel>(
+            builder: (ctx, vm, _) {
+              return TabBarView(
+                children: [
+                  _ContributionTab(contributions: vm.contributions),
+                  _ProgressTab(progress: vm.memberProgress),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
   }
 }
 
-// ---- Task status donut ------------------------------------------------------
+// ---- Tab 1: 貢獻度 (contribution pie) --------------------------------------
 
-class _TaskStatusDonut extends StatelessWidget {
-  const _TaskStatusDonut({required this.counts});
-  final Map<TaskStatus, int> counts;
+class _ContributionTab extends StatelessWidget {
+  const _ContributionTab({required this.contributions});
+  final List<Contribution> contributions;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final total = counts.values.fold<int>(0, (a, b) => a + b);
 
-    if (total == 0) {
-      return const _EmptyHint('No tasks yet');
+    if (contributions.isEmpty) {
+      return const _EmptyHint('尚無已完成的任務');
     }
 
-    final entries = [
-      for (final status in TaskStatus.values)
-        (
-          status: status,
-          label: _statusLabel(status),
-          value: counts[status] ?? 0,
-          color: _statusColor(status, scheme),
-        ),
+    final palette = _categoricalPalette(scheme);
+    final colored = [
+      for (var i = 0; i < contributions.length; i++)
+        (item: contributions[i], color: palette[i % palette.length]),
     ];
 
-    return Column(
+    return ListView(
+      padding: const EdgeInsets.all(AppDimens.spacingMd),
       children: [
-        SizedBox(
-          height: 180,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              PieChart(
-                PieChartData(
-                  sectionsSpace: 2,
-                  centerSpaceRadius: 52,
-                  sections: [
-                    for (final e in entries)
-                      if (e.value > 0)
-                        PieChartSectionData(
-                          value: e.value.toDouble(),
-                          color: e.color,
-                          title: '${e.value}',
-                          radius: 36,
-                          titleStyle: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: scheme.onPrimary,
-                          ),
+        Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(AppDimens.spacingMd),
+            child: Column(
+              children: [
+                SizedBox(
+                  height: 240,
+                  width: 240,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      PieChart(
+                        PieChartData(
+                          sectionsSpace: 2,
+                          centerSpaceRadius: 28,
+                          sections: [
+                            for (final c in colored)
+                              PieChartSectionData(
+                                value: c.item.doneCount.toDouble(),
+                                color: c.color,
+                                radius: 90,
+                                title: c.item.label,
+                                titlePositionPercentageOffset: 0.6,
+                                titleStyle: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: _onSliceColor(scheme),
+                                ),
+                              ),
+                          ],
                         ),
-                  ],
-                ),
-              ),
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '$total',
-                    style: Theme.of(context)
-                        .textTheme
-                        .headlineSmall
-                        ?.copyWith(fontWeight: FontWeight.w700),
-                  ),
-                  Text(
-                    'tasks',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: AppDimens.spacingMd),
-        Wrap(
-          alignment: WrapAlignment.center,
-          spacing: AppDimens.spacingMd,
-          runSpacing: AppDimens.spacingXs,
-          children: [
-            for (final e in entries)
-              _LegendDot(color: e.color, label: '${e.label} (${e.value})'),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-// ---- Commits per author -----------------------------------------------------
-
-class _CommitsPerAuthorBar extends StatelessWidget {
-  const _CommitsPerAuthorBar({required this.perAuthor});
-  final Map<String, int> perAuthor;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    if (perAuthor.isEmpty) {
-      return const _EmptyHint('No commits in the loaded window');
-    }
-
-    final authors = perAuthor.keys.toList();
-    final maxY = perAuthor.values.fold<int>(0, (a, b) => a > b ? a : b);
-    final palette = _categoricalPalette(scheme);
-
-    return SizedBox(
-      height: 200,
-      child: BarChart(
-        BarChartData(
-          alignment: BarChartAlignment.spaceAround,
-          maxY: (maxY + 1).toDouble(),
-          gridData: FlGridData(
-            show: true,
-            drawVerticalLine: false,
-            getDrawingHorizontalLine: (_) =>
-                FlLine(color: scheme.outlineVariant, strokeWidth: 0.5),
-          ),
-          borderData: FlBorderData(show: false),
-          titlesData: FlTitlesData(
-            topTitles:
-                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles:
-                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 28,
-                interval: _yInterval(maxY),
-                getTitlesWidget: (value, meta) => _axisText(
-                  context,
-                  value.toInt().toString(),
-                ),
-              ),
-            ),
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 36,
-                getTitlesWidget: (value, meta) {
-                  final i = value.toInt();
-                  if (i < 0 || i >= authors.length) {
-                    return const SizedBox.shrink();
-                  }
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: SizedBox(
-                      width: 64,
-                      child: Text(
-                        authors[i],
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.labelSmall,
                       ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-          barGroups: [
-            for (var i = 0; i < authors.length; i++)
-              BarChartGroupData(
-                x: i,
-                barRods: [
-                  BarChartRodData(
-                    toY: (perAuthor[authors[i]] ?? 0).toDouble(),
-                    color: palette[i % palette.length],
-                    width: 18,
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(AppDimens.radiusSm),
-                    ),
-                  ),
-                ],
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ---- Daily commits trend ----------------------------------------------------
-
-class _DailyCommitsTrend extends StatelessWidget {
-  const _DailyCommitsTrend({required this.days});
-  final List<DayCount> days;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final total = days.fold<int>(0, (a, b) => a + b.count);
-    if (days.isEmpty || total == 0) {
-      return const _EmptyHint('No commits in the loaded window');
-    }
-
-    final maxY = days.fold<int>(0, (a, b) => a > b.count ? a : b.count);
-
-    return SizedBox(
-      height: 200,
-      child: LineChart(
-        LineChartData(
-          minX: 0,
-          maxX: (days.length - 1).toDouble(),
-          minY: 0,
-          maxY: (maxY + 1).toDouble(),
-          gridData: FlGridData(
-            show: true,
-            drawVerticalLine: false,
-            getDrawingHorizontalLine: (_) =>
-                FlLine(color: scheme.outlineVariant, strokeWidth: 0.5),
-          ),
-          borderData: FlBorderData(show: false),
-          titlesData: FlTitlesData(
-            topTitles:
-                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles:
-                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 28,
-                interval: _yInterval(maxY),
-                getTitlesWidget: (value, meta) =>
-                    _axisText(context, value.toInt().toString()),
-              ),
-            ),
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 28,
-                // Sparse labels: every 3rd day reads as MM/dd.
-                interval: 3,
-                getTitlesWidget: (value, meta) {
-                  final i = value.toInt();
-                  if (i < 0 || i >= days.length) {
-                    return const SizedBox.shrink();
-                  }
-                  if (i % 3 != 0) return const SizedBox.shrink();
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: _axisText(context, _mmdd(days[i].day)),
-                  );
-                },
-              ),
-            ),
-          ),
-          lineBarsData: [
-            LineChartBarData(
-              isCurved: true,
-              color: scheme.primary,
-              barWidth: 2.5,
-              dotData: const FlDotData(show: false),
-              belowBarData: BarAreaData(
-                show: true,
-                color: scheme.primary.withValues(alpha: 0.12),
-              ),
-              spots: [
-                for (var i = 0; i < days.length; i++)
-                  FlSpot(i.toDouble(), days[i].count.toDouble()),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ---- Member load ------------------------------------------------------------
-
-class _MemberLoadBar extends StatelessWidget {
-  const _MemberLoadBar({required this.loads});
-  final List<MemberLoad> loads;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    if (loads.isEmpty) {
-      return const _EmptyHint('No assigned in-progress or done tasks');
-    }
-
-    final inProgressColor = scheme.tertiary;
-    final doneColor = scheme.primary;
-    final maxY = loads.fold<int>(
-      0,
-      (a, l) => a > l.total ? a : l.total,
-    );
-
-    return Column(
-      children: [
-        SizedBox(
-          height: 200,
-          child: BarChart(
-            BarChartData(
-              alignment: BarChartAlignment.spaceAround,
-              maxY: (maxY + 1).toDouble(),
-              gridData: FlGridData(
-                show: true,
-                drawVerticalLine: false,
-                getDrawingHorizontalLine: (_) =>
-                    FlLine(color: scheme.outlineVariant, strokeWidth: 0.5),
-              ),
-              borderData: FlBorderData(show: false),
-              titlesData: FlTitlesData(
-                topTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false)),
-                rightTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false)),
-                leftTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    reservedSize: 28,
-                    interval: _yInterval(maxY),
-                    getTitlesWidget: (value, meta) =>
-                        _axisText(context, value.toInt().toString()),
-                  ),
-                ),
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    reservedSize: 36,
-                    getTitlesWidget: (value, meta) {
-                      final i = value.toInt();
-                      if (i < 0 || i >= loads.length) {
-                        return const SizedBox.shrink();
-                      }
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: SizedBox(
-                          width: 72,
-                          child: Text(
-                            loads[i].label,
-                            textAlign: TextAlign.center,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.labelSmall,
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '貢獻度',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelMedium
+                                ?.copyWith(
+                                  color: scheme.onSurface,
+                                  fontWeight: FontWeight.w600,
+                                ),
                           ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-              // Stacked bar: in-progress sits below done.
-              barGroups: [
-                for (var i = 0; i < loads.length; i++)
-                  BarChartGroupData(
-                    x: i,
-                    barRods: [
-                      BarChartRodData(
-                        toY: loads[i].total.toDouble(),
-                        width: 22,
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(AppDimens.radiusSm),
-                        ),
-                        rodStackItems: [
-                          BarChartRodStackItem(
-                            0,
-                            loads[i].inProgress.toDouble(),
-                            inProgressColor,
-                          ),
-                          BarChartRodStackItem(
-                            loads[i].inProgress.toDouble(),
-                            loads[i].total.toDouble(),
-                            doneColor,
+                          Text(
+                            '圓餅圖',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(color: scheme.onSurfaceVariant),
                           ),
                         ],
                       ),
                     ],
                   ),
+                ),
+                const SizedBox(height: AppDimens.spacingMd),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: AppDimens.spacingMd,
+                  runSpacing: AppDimens.spacingXs,
+                  children: [
+                    for (final c in colored)
+                      _LegendDot(
+                        color: c.color,
+                        label: '${c.item.label} — ${c.item.pct}%',
+                      ),
+                  ],
+                ),
               ],
             ),
           ),
         ),
         const SizedBox(height: AppDimens.spacingMd),
-        Wrap(
-          alignment: WrapAlignment.center,
-          spacing: AppDimens.spacingMd,
-          runSpacing: AppDimens.spacingXs,
+        const _CaptionCard('已完成的任務累計的貢獻度'),
+      ],
+    );
+  }
+}
+
+// ---- Tab 2: 進度表 (per-member progress + task lists) -----------------------
+
+class _ProgressTab extends StatelessWidget {
+  const _ProgressTab({required this.progress});
+  final List<MemberProgress> progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    if (progress.isEmpty) {
+      return const _EmptyHint('尚無已指派的任務');
+    }
+
+    final palette = _categoricalPalette(scheme);
+
+    return ListView(
+      padding: const EdgeInsets.all(AppDimens.spacingMd),
+      children: [
+        Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(AppDimens.spacingMd),
+            child: Column(
+              children: [
+                for (var i = 0; i < progress.length; i++) ...[
+                  if (i > 0) const SizedBox(height: AppDimens.spacingMd),
+                  _MemberProgressRow(
+                    member: progress[i],
+                    color: palette[i % palette.length],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: AppDimens.spacingMd),
+        const _CaptionCard('每個人當前未完成任務的進度'),
+      ],
+    );
+  }
+}
+
+class _MemberProgressRow extends StatefulWidget {
+  const _MemberProgressRow({required this.member, required this.color});
+  final MemberProgress member;
+  final Color color;
+
+  @override
+  State<_MemberProgressRow> createState() => _MemberProgressRowState();
+}
+
+class _MemberProgressRowState extends State<_MemberProgressRow> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final m = widget.member;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            _LegendDot(color: inProgressColor, label: 'In progress'),
-            _LegendDot(color: doneColor, label: 'Done'),
+            Text(
+              m.label,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: scheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              '${m.pct}%',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: scheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ],
         ),
+        const SizedBox(height: AppDimens.spacingSm),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(AppDimens.radiusSm),
+          child: LinearProgressIndicator(
+            value: m.pct / 100,
+            minHeight: 8,
+            color: widget.color,
+            backgroundColor: scheme.surfaceContainerHighest,
+          ),
+        ),
+        const SizedBox(height: AppDimens.spacingXs),
+        InkWell(
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppDimens.spacingXs),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  _expanded ? Icons.expand_more : Icons.chevron_right,
+                  size: 16,
+                  color: scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: AppDimens.spacingXs),
+                Text(
+                  '詳細情形',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_expanded)
+          Padding(
+            padding: const EdgeInsets.only(
+              left: AppDimens.spacingSm,
+              top: AppDimens.spacingXs,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final t in m.tasks) _TaskLine(task: t),
+              ],
+            ),
+          ),
       ],
+    );
+  }
+}
+
+class _TaskLine extends StatelessWidget {
+  const _TaskLine({required this.task});
+  final ProgressTask task;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 7, right: AppDimens.spacingSm),
+            child: Container(
+              width: 4,
+              height: 4,
+              decoration: BoxDecoration(
+                color: task.done
+                    ? scheme.outlineVariant
+                    : scheme.onSurfaceVariant,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              task.title,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: task.done
+                    ? scheme.onSurfaceVariant
+                    : scheme.onSurface,
+                decoration:
+                    task.done ? TextDecoration.lineThrough : TextDecoration.none,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
 // ---- Shared bits ------------------------------------------------------------
 
-// Titled card wrapper for a stats section.
-class _StatCard extends StatelessWidget {
-  const _StatCard({required this.title, required this.icon, required this.child});
-  final String title;
-  final IconData icon;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(AppDimens.spacingMd),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, size: 20, color: theme.colorScheme.primary),
-                const SizedBox(width: AppDimens.spacingSm),
-                Text(title,
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w600)),
-              ],
-            ),
-            const SizedBox(height: AppDimens.spacingMd),
-            child,
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// A small colored dot + label, used by chart legends.
+// A small colored dot + label, used by the pie legend.
 class _LegendDot extends StatelessWidget {
   const _LegendDot({required this.color, required this.label});
   final Color color;
@@ -512,12 +347,9 @@ class _LegendDot extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(3),
-          ),
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: AppDimens.spacingXs + 2),
         Text(label, style: Theme.of(context).textTheme.bodySmall),
@@ -526,7 +358,37 @@ class _LegendDot extends StatelessWidget {
   }
 }
 
-// Compact per-card empty-state hint (not the full-screen EmptyState widget).
+// The caption container under each tab (e.g. 已完成的任務累計的貢獻度).
+class _CaptionCard extends StatelessWidget {
+  const _CaptionCard(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDimens.spacingMd,
+        vertical: AppDimens.spacingSm + AppDimens.spacingXs,
+      ),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+      ),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: theme.textTheme.bodySmall
+            ?.copyWith(color: scheme.onSurfaceVariant),
+      ),
+    );
+  }
+}
+
+// Full-tab empty-state hint when there are no members/tasks for a tab.
 class _EmptyHint extends StatelessWidget {
   const _EmptyHint(this.message);
   final String message;
@@ -534,11 +396,12 @@ class _EmptyHint extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppDimens.spacingLg),
-      child: Center(
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppDimens.spacingLg),
         child: Text(
           message,
+          textAlign: TextAlign.center,
           style: Theme.of(context)
               .textTheme
               .bodyMedium
@@ -551,21 +414,9 @@ class _EmptyHint extends StatelessWidget {
 
 // ---- helpers ----------------------------------------------------------------
 
-String _statusLabel(TaskStatus s) => switch (s) {
-      TaskStatus.todo => 'To do',
-      TaskStatus.inProgress => 'In progress',
-      TaskStatus.done => 'Done',
-    };
-
-// Exhaustive switch on TaskStatus (mirrors task_graph_tab) so a new status is a
-// compile error rather than a silent default.
-Color _statusColor(TaskStatus s, ColorScheme scheme) => switch (s) {
-      TaskStatus.todo => scheme.secondary,
-      TaskStatus.inProgress => scheme.tertiary,
-      TaskStatus.done => scheme.primary,
-    };
-
-// Categorical palette derived from the theme for the per-author bars.
+// Ordered categorical palette derived from the theme, cycled for >N members.
+// Mirrors the prototype's intent (light: a blue family; dark: the warm accent +
+// blues) by sourcing from colorScheme rather than hardcoded hexes.
 List<Color> _categoricalPalette(ColorScheme scheme) => [
       scheme.primary,
       scheme.tertiary,
@@ -575,16 +426,6 @@ List<Color> _categoricalPalette(ColorScheme scheme) => [
       scheme.secondaryContainer,
     ];
 
-// Keep the y-axis to a handful of integer gridlines.
-double _yInterval(int maxY) {
-  if (maxY <= 5) return 1;
-  return (maxY / 5).ceilToDouble();
-}
-
-Widget _axisText(BuildContext context, String text) => Text(
-      text,
-      style: Theme.of(context).textTheme.labelSmall,
-    );
-
-String _mmdd(DateTime d) =>
-    '${d.month.toString().padLeft(2, '0')}/${d.day.toString().padLeft(2, '0')}';
+// Contrast color for the member name drawn inside a pie slice.
+Color _onSliceColor(ColorScheme scheme) =>
+    scheme.brightness == Brightness.dark ? scheme.onPrimaryContainer : Colors.white;
