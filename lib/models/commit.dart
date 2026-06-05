@@ -18,16 +18,16 @@ class CommitAuthor {
   });
 
   factory CommitAuthor.fromMap(Map<String, dynamic> map) => CommitAuthor(
-        login: map['login'] as String? ?? '',
-        name: map['name'] as String? ?? '',
-        email: map['email'] as String? ?? '',
-      );
+    login: map['login'] as String? ?? '',
+    name: map['name'] as String? ?? '',
+    email: map['email'] as String? ?? '',
+  );
 
   Map<String, dynamic> toMap() => {
-        'login': login,
-        'name': name,
-        'email': email,
-      };
+    'login': login,
+    'name': name,
+    'email': email,
+  };
 }
 
 class Commit {
@@ -41,6 +41,11 @@ class Commit {
   final int deletions;
   final List<String> linkedTaskIds;
   final String? aiSummary;
+
+  /// The branch this commit was first pushed to (webhook `ref`). Nullable:
+  /// legacy docs ingested before all-branch ingestion lack the field.
+  final String? branch;
+
   Timestamp? _committedAt;
   Timestamp get committedAt => _committedAt ?? Timestamp.now();
 
@@ -55,7 +60,9 @@ class Commit {
     this.deletions = 0,
     this.linkedTaskIds = const [],
     this.aiSummary,
-  });
+    this.branch,
+    Timestamp? committedAt,
+  }) : _committedAt = committedAt;
 
   Commit._({
     required this.sha,
@@ -68,6 +75,7 @@ class Commit {
     required this.deletions,
     required this.linkedTaskIds,
     this.aiSummary,
+    this.branch,
     required Timestamp? committedAt,
   }) : _committedAt = committedAt;
 
@@ -80,13 +88,35 @@ class Commit {
         Map<String, dynamic>.from(map['author'] as Map? ?? {}),
       ),
       url: map['url'] as String? ?? '',
-      filesChanged: List<String>.from(map['filesChanged'] as List? ?? []),
+      filesChanged: _parseFiles(map['filesChanged']),
       additions: (map['additions'] as num?)?.toInt() ?? 0,
       deletions: (map['deletions'] as num?)?.toInt() ?? 0,
       linkedTaskIds: List<String>.from(map['linkedTaskIds'] as List? ?? []),
       aiSummary: map['aiSummary'] as String?,
-      committedAt: map['committedAt'] as Timestamp?,
+      branch: (map['branch'] as String?)?.isEmpty ?? true
+          ? null
+          : map['branch'] as String?,
+      committedAt: _parseTimestamp(map['committedAt']),
     );
+  }
+
+  /// Tolerates the legacy webhook shape (ISO-8601 string) on top of the
+  /// canonical Firestore [Timestamp] — a hard `as Timestamp?` cast used to
+  /// throw inside the commit stream and hang the Commits tab spinner.
+  static Timestamp? _parseTimestamp(Object? value) {
+    if (value is Timestamp) return value;
+    if (value is String) {
+      final parsed = DateTime.tryParse(value);
+      if (parsed != null) return Timestamp.fromDate(parsed);
+    }
+    return null;
+  }
+
+  /// Tolerates the legacy webhook shape (a file *count*) by degrading to an
+  /// empty list; canonical shape is the list of touched file paths.
+  static List<String> _parseFiles(Object? value) {
+    if (value is List) return value.map((e) => '$e').toList();
+    return const [];
   }
 
   @override

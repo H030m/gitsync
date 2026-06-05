@@ -1,5 +1,7 @@
 import '../../config/app_config.dart';
 import '../../data/dummy_data.dart';
+import '../../models/commit_graph.dart';
+import '../../models/daily_brief.dart';
 import '../../models/discord_chat.dart';
 import '../../models/sub_task.dart';
 import '../../repositories/fake/fake_discord_digest_repo.dart';
@@ -116,10 +118,124 @@ class FakeFunctionsService implements FunctionsService {
   @override
   Future<String> summarizeDay({
     required String repoId,
-    required String date,
+    required String startDate,
+    String? endDate,
   }) async {
     await Future.delayed(AppConfig.simulatedLatency * 4);
     return DummyData.todayReport.summary;
+  }
+
+  @override
+  Future<String> explainCommit({
+    required String repoId,
+    required String sha,
+    bool force = false,
+  }) async {
+    await Future.delayed(AppConfig.simulatedLatency * 3);
+    final commit =
+        DummyData.commits.where((c) => c.sha == sha).firstOrNull;
+    final message = commit?.message ?? sha.substring(0, 7);
+    return '**What was done** — ${commit?.aiSummary ?? message}\n\n'
+        '**Why / context** — part of the Sprint 1 push; pairs with the linked '
+        'task(s) ${commit?.linkedTaskIds.join(", ") ?? ""}.\n\n'
+        '**Where** — ${commit?.filesChanged.join(", ") ?? "(not recorded)"}\n\n'
+        '*(這是 fake backend 的示範回覆。)*';
+  }
+
+  @override
+  Future<CommitGraph> getCommitGraph({
+    required String repoId,
+    String? startDate,
+    String? endDate,
+    bool force = false,
+  }) async {
+    await Future.delayed(AppConfig.simulatedLatency * 3);
+    // Small fixed topology: feature/daily-report forks off main and merges
+    // back via PR #7 — enough to exercise lanes, fork and merge edges.
+    final now = DateTime.now();
+    GraphCommit c(
+      String sha,
+      String message,
+      List<String> parents,
+      int hoursAgo, {
+      String branch = 'main',
+      bool isMerge = false,
+      int? prNumber,
+      String login = 'demo-dev',
+    }) =>
+        GraphCommit(
+          sha: sha,
+          message: message,
+          committedAt: now.subtract(Duration(hours: hoursAgo)),
+          parents: parents,
+          authorLogin: login,
+          authorName: login,
+          primaryBranch: branch,
+          isMerge: isMerge,
+          prNumber: prNumber,
+        );
+    return CommitGraph(
+      commits: [
+        c('g6', 'Merge pull request #7 from demo/feature-daily-report',
+            ['g3', 'g5'], 1, isMerge: true, prNumber: 7),
+        c('g5', 'feat(daily): wire report card', ['g4'], 2,
+            branch: 'feature/daily-report', login: 'alice-dev'),
+        c('g4', 'feat(daily): scaffold daily view', ['g2'], 5,
+            branch: 'feature/daily-report', login: 'alice-dev'),
+        c('g3', 'fix(auth): refresh token race', ['g2'], 6),
+        c('g2', 'chore: bump deps', ['g1'], 26),
+        c('g1', 'feat: initial scaffold', ['g0-offscreen'], 30),
+      ],
+      branches: const [
+        GraphBranch(name: 'main', tipSha: 'g6', isDefault: true),
+        GraphBranch(name: 'feature/daily-report', tipSha: 'g5'),
+      ],
+    );
+  }
+
+  @override
+  Future<DailyBriefReply> dailyBrief({
+    required String repoId,
+    required String date,
+    String? endDate,
+    required String question,
+    List<DailyBriefTurn> history = const [],
+  }) async {
+    await Future.delayed(AppConfig.simulatedLatency * 3);
+
+    // Keyword-match the demo commits the same way the backend tool does, so the
+    // fake answer cites real "sources" in the panel.
+    final terms = question
+        .toLowerCase()
+        .split(RegExp(r'[^a-z0-9一-鿿]+'))
+        .where((t) => t.length >= 2)
+        .toSet();
+    final commits = DummyData.commits;
+    final matched = commits.where((c) {
+      final hay = '${c.message} ${c.aiSummary ?? ''}'.toLowerCase();
+      return terms.any(hay.contains);
+    }).toList();
+    final hits = matched.isNotEmpty ? matched : commits;
+
+    final sources = hits
+        .map((c) => DailyBriefSource(
+              sha: c.sha,
+              message: c.message.split('\n').first,
+              authorName: c.author.name,
+              authorLogin: c.author.login,
+              aiSummary: c.aiSummary,
+              linkedTaskIds: c.linkedTaskIds,
+            ))
+        .toList();
+
+    final answer = matched.isNotEmpty
+        ? '根據今天的活動，有 ${matched.length} 個相關的 commit（見下方來源）。'
+            '重點：${matched.first.aiSummary ?? matched.first.message}\n\n'
+            '*(這是 fake backend 的示範回覆。)*'
+        : '今天沒有和你問題直接相關的 commit；以下列出最近的提交作為參考。\n\n'
+            '*(這是 fake backend 的示範回覆。)*';
+
+    return DailyBriefReply(answer: answer, sources: sources);
   }
 
   // ---- Discord -----------------------------------------------------------
@@ -191,6 +307,8 @@ class FakeFunctionsService implements FunctionsService {
     required String repoId,
     required String question,
     List<DiscordChatTurn> history = const [],
+    String? startDate,
+    String? endDate,
   }) async {
     await Future.delayed(AppConfig.simulatedLatency * 3);
 

@@ -97,6 +97,22 @@ layout (`lib/views/tasks/widgets/task_graph_tab.dart`). Conventions learned:
 
 ---
 
+## Scrolling & scrollbars
+
+- **Pin panel scrollbars flush to the right edge.** A panel's scrolling `ListView` carries no
+  right padding; wrap it in `Scrollbar(controller, thumbVisibility: true)` and push the horizontal
+  inset INTO each child instead, so the scrollbar gutter sits at the outermost right
+  (`_ReportsPanel` / `_DigestPanel` in `daily_view_page.dart`).
+- **A vertical `SingleChildScrollView` wrapping shrink-wrapping content needs an explicit width.**
+  `MarkdownView` (→ `MarkdownBody`) sizes to its content width, not the parent's. In a `Column`
+  with `crossAxisAlignment: CrossAxisAlignment.start` the scroll view gets *loose* width
+  constraints and collapses to the child's intrinsic width, so its desktop scrollbar floats in the
+  middle of the card where the longest line ends — not at the card's right edge. Force the viewport
+  to fill the card: `SingleChildScrollView(child: SizedBox(width: double.infinity, child: ...))`
+  (the digest card body in `daily_view_page.dart`).
+
+---
+
 ## Scope discipline (`AI_AGENT_RULES.md §3.2`)
 
 Implement only what was asked. Don't add confirmation dialogs, undo snackbars, analytics, extra
@@ -111,3 +127,5 @@ message — don't add it silently.
 - Using `context` after `await` without `if (mounted)`.
 - Hardcoding `Color(0xFF...)` instead of `colorScheme`.
 - Forgetting to add a new repository method to the Fake implementation (breaks `BACKEND=fake`).
+- A vertical `SingleChildScrollView` around shrink-wrapping content (e.g. `MarkdownView`) without
+  `SizedBox(width: double.infinity, ...)` — the scrollbar floats mid-card instead of at the edge.

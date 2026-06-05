@@ -1,35 +1,24 @@
-// setDiscordRange (callable, auth) — the app's Daily → Discord range picker
-// calls this to set the backfill window [startDate, endDate] for a repo. It:
+// setDiscordRange (callable, auth) — the app's Daily date picker binds the
+// shared window to Discord through this. It:
 //   1. persists the range on the repo doc (discordStartDate/discordEndDate) so
 //      it survives re-login and pre-fills the picker,
 //   2. resets each channel's watermark so the next backfill re-pulls the whole
-//      new window (messageId dedup prevents duplicates),
-//   3. PRUNES data now outside the window — deletes discordMessages whose
-//      timestamp falls before the start or on/after the day after end, and
-//      deletes discordDigests for days outside [start, end].
-// See ARCHITECTURE.md §7 and prd.md (06-03-discord-range-cursor).
+//      new window (messageId dedup prevents duplicates).
+//
+// ADDITIVE-ONLY: this NO LONGER deletes anything. The earlier version pruned
+// out-of-window discordMessages and discordDigests, which caused a data-loss
+// incident (06-05) when the shared range got bound to Discord — narrowing the
+// window silently wiped history. Deletion is removed: messageId dedup makes
+// re-pulls safe, and AI reads are now time-scoped (discordChat range filter)
+// instead of physically pruning storage. Binding the shared range here is safe.
+// See ARCHITECTURE.md §7 and prd.md (06-05-one-date-one-refresh…).
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { FieldValue } from 'firebase-admin/firestore';
 
 import { db, REGION } from '../admin';
-import { taipeiDayStartMs } from '../tools/discordSnowflake';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-const DELETE_CHUNK = 450; // stay under the 500-write batch limit
-
-// Deletes every doc in `refs` in chunks. Returns the number deleted.
-async function deleteAll(
-  refs: FirebaseFirestore.DocumentReference[],
-): Promise<number> {
-  for (let i = 0; i < refs.length; i += DELETE_CHUNK) {
-    const batch = db.batch();
-    for (const ref of refs.slice(i, i + DELETE_CHUNK)) batch.delete(ref);
-    await batch.commit();
-  }
-  return refs.length;
-}
 
 export const setDiscordRange = onCall({ region: REGION }, async (request) => {
   if (!request.auth) {
@@ -71,6 +60,7 @@ export const setDiscordRange = onCall({ region: REGION }, async (request) => {
   );
 
   // 2. Reset each channel's watermark so the next backfill re-pulls the window.
+  //    messageId dedup prevents duplicates; nothing is deleted (additive-only).
   const ids = new Set<string>([
     ...((repoSnap.data()?.discordChannelIds as string[] | undefined) ?? []),
     ...chanSnap.docs.map((d) => d.id),
@@ -87,42 +77,15 @@ export const setDiscordRange = onCall({ region: REGION }, async (request) => {
     await batch.commit();
   }
 
-  // 3a. Prune messages outside [startMs, endExclusiveMs). Two range queries
-  //     (Firestore has no OR); collect refs then batch-delete.
-  const startMs = taipeiDayStartMs(startDate);
-  const endExclusiveMs = taipeiDayStartMs(endDate) + ONE_DAY_MS;
-  const msgCol = repoRef.collection('discordMessages');
-  const [beforeSnap, afterSnap] = await Promise.all([
-    msgCol.where('timestamp', '<', Timestamp.fromMillis(startMs)).get(),
-    msgCol.where('timestamp', '>=', Timestamp.fromMillis(endExclusiveMs)).get(),
-  ]);
-  const prunedMessages = await deleteAll([
-    ...beforeSnap.docs.map((d) => d.ref),
-    ...afterSnap.docs.map((d) => d.ref),
-  ]);
-
-  // 3b. Prune digests for days outside [startDate, endDate]. Digest doc ids are
-  //     YYYY-MM-DD, which sort chronologically as strings.
-  const digestSnap = await repoRef.collection('discordDigests').get();
-  const prunedDigests = await deleteAll(
-    digestSnap.docs
-      .filter((d) => d.id < startDate || d.id > endDate)
-      .map((d) => d.ref),
-  );
-
-  logger.info('setDiscordRange applied', {
+  logger.info('setDiscordRange applied (additive-only, no prune)', {
     repoId,
     startDate,
     endDate,
     channelCount: ids.size,
-    prunedMessages,
-    prunedDigests,
   });
 
   return {
     ok: true,
     channelCount: ids.size,
-    prunedMessages,
-    prunedDigests,
   };
 });

@@ -9,7 +9,20 @@
 // ranker rather than a semantic search. It needs no vector index, which also
 // means it runs unchanged against the fake backend's in-memory messages.
 import { logger } from 'firebase-functions/v2';
+import type { Timestamp } from 'firebase-admin/firestore';
 import { db } from '../admin';
+
+/**
+ * Inclusive Asia/Taipei day window the chat is scoped to. `start`/`end` are the
+ * [startInclusive, endExclusive) Firestore Timestamps (from taipeiRangeBounds);
+ * `startDate`/`endDate` are the YYYY-MM-DD keys for filtering digest doc ids.
+ */
+export interface SearchRange {
+  start: Timestamp;
+  end: Timestamp;
+  startDate: string;
+  endDate: string;
+}
 
 /** One Discord message as the chat agent (and the client UI) sees it. */
 export interface DiscordMessageHit {
@@ -47,9 +60,13 @@ export interface DaySummary {
  * preview. This is the CHEAP first stop for summary / overview questions: the
  * agent scans dates + topics here (O(days) tokens) and only drills into a
  * specific day's full text via {@link getDaySummary}, instead of reading every
- * raw message. Never throws — degrades to [].
+ * raw message. When `range` is given, only digests for days within
+ * [startDate, endDate] (inclusive) are returned. Never throws — degrades to [].
  */
-export async function listDaySummaries(repoId: string): Promise<DaySummaryHit[]> {
+export async function listDaySummaries(
+  repoId: string,
+  range?: SearchRange,
+): Promise<DaySummaryHit[]> {
   try {
     const snap = await db
       .collection(`apps/gitsync/repos/${repoId}/discordDigests`)
@@ -57,15 +74,23 @@ export async function listDaySummaries(repoId: string): Promise<DaySummaryHit[]>
       .limit(MAX_DAY_SUMMARIES)
       .get();
 
-    return snap.docs.map((d) => {
-      const data = d.data() ?? {};
-      const md = (data.markdown as string | undefined) ?? '';
-      return {
-        date: (data.date as string | undefined) ?? d.id,
-        messageCount: (data.messageCount as number | undefined) ?? 0,
-        preview: md.replace(/\s+/g, ' ').trim().slice(0, DAY_PREVIEW_CHARS),
-      };
-    });
+    return snap.docs
+      .filter((d) => {
+        if (!range) return true;
+        // Digest doc ids (and `date` fields) are YYYY-MM-DD → lexicographic
+        // comparison equals chronological; restrict to the active window.
+        const key = ((d.data()?.date as string | undefined) ?? d.id);
+        return key >= range.startDate && key <= range.endDate;
+      })
+      .map((d) => {
+        const data = d.data() ?? {};
+        const md = (data.markdown as string | undefined) ?? '';
+        return {
+          date: (data.date as string | undefined) ?? d.id,
+          messageCount: (data.messageCount as number | undefined) ?? 0,
+          preview: md.replace(/\s+/g, ' ').trim().slice(0, DAY_PREVIEW_CHARS),
+        };
+      });
   } catch (err) {
     logger.warn('listDaySummaries failed; returning [] (best-effort)', {
       repoId,
@@ -144,16 +169,27 @@ function cmpId(a: string, b: string): number {
  * windows merge). Snippets are ranked by match count then recency. When nothing
  * matches, degrades to one snippet of the most recent messages.
  *
+ * When `range` is given, the scan is restricted to messages whose `timestamp`
+ * falls in [start, end) (same field as the orderBy → no composite index).
+ *
  * Never throws — a Firestore read failure degrades to `[]` + a `logger.warn`.
  */
 export async function searchDiscordMessages(
   repoId: string,
   query: string,
   limit = DEFAULT_SNIPPETS,
+  range?: SearchRange,
 ): Promise<DiscordSnippet[]> {
   try {
-    const snap = await db
-      .collection(`apps/gitsync/repos/${repoId}/discordMessages`)
+    let q: FirebaseFirestore.Query = db.collection(
+      `apps/gitsync/repos/${repoId}/discordMessages`,
+    );
+    if (range) {
+      q = q
+        .where('timestamp', '>=', range.start)
+        .where('timestamp', '<', range.end);
+    }
+    const snap = await q
       .orderBy('timestamp', 'desc')
       .limit(SCAN_LIMIT)
       .get();

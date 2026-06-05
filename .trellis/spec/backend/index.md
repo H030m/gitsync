@@ -22,7 +22,7 @@ codebase and the `docs/` design docs.
 | Guide | Description | Status |
 |-------|-------------|--------|
 | [Directory Structure](./directory-structure.md) | `functions/src/` layout, handler/trigger/flow split | ✅ Filled |
-| [Database Guidelines](./database-guidelines.md) | Firestore paths, rules, concurrency (idempotency/transactions), vector search | ✅ Filled |
+| [Database Guidelines](./database-guidelines.md) | Firestore paths, rules, concurrency (idempotency/transactions), vector search, type-strict queries (Rule H) | ✅ Filled |
 | [Error Handling](./error-handling.md) | `HttpsError`, webhook verify, locks, Rule D | ✅ Filled |
 | [Quality Guidelines](./quality-guidelines.md) | v2-only, region, forbidden patterns, never-deploy | ✅ Filled |
 | [Logging Guidelines](./logging-guidelines.md) | `firebase-functions` structured logger | ✅ Filled |

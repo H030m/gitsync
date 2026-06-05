@@ -12,6 +12,12 @@ abstract class CommitRepository {
 
   Stream<List<Commit>> streamRecent(String repoId, {int limit = 50});
   Stream<List<Commit>> streamCommitsForDay(String repoId, DateTime day);
+
+  /// Commits whose `committedAt` falls inside the inclusive local-day range
+  /// [startDay]..[endDay], newest first.
+  Stream<List<Commit>> streamRange(
+      String repoId, DateTime startDay, DateTime endDay);
+
   Future<Commit?> getCommit(String repoId, String sha);
 }
 
@@ -36,6 +42,23 @@ class _LiveCommitRepository implements CommitRepository {
   Stream<List<Commit>> streamCommitsForDay(String repoId, DateTime day) {
     final start = DateTime(day.year, day.month, day.day);
     final end = start.add(const Duration(days: 1));
+    return _db
+        .collection(FirestorePaths.commits(repoId))
+        .where('committedAt',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(start),
+            isLessThan: Timestamp.fromDate(end))
+        .orderBy('committedAt', descending: true)
+        .snapshots()
+        .map((snap) =>
+            snap.docs.map((d) => Commit.fromMap(d.data(), d.id)).toList());
+  }
+
+  @override
+  Stream<List<Commit>> streamRange(
+      String repoId, DateTime startDay, DateTime endDay) {
+    final start = DateTime(startDay.year, startDay.month, startDay.day);
+    final end = DateTime(endDay.year, endDay.month, endDay.day)
+        .add(const Duration(days: 1));
     return _db
         .collection(FirestorePaths.commits(repoId))
         .where('committedAt',

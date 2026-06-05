@@ -1,6 +1,8 @@
 import 'package:cloud_functions/cloud_functions.dart';
 
 import '../config/app_config.dart';
+import '../models/commit_graph.dart';
+import '../models/daily_brief.dart';
 import '../models/discord_chat.dart';
 import '../models/sub_task.dart';
 import 'fake/fake_functions_service.dart';
@@ -46,9 +48,44 @@ abstract class FunctionsService {
     required String repoId,
     required String taskId,
   });
+  /// Generates the Summary tab report for the inclusive day range
+  /// [startDate]..[endDate] (both YYYY-MM-DD; omit [endDate] for one day).
   Future<String> summarizeDay({
     required String repoId,
+    required String startDate,
+    String? endDate,
+  });
+
+  /// Asks the AI a question about a period's activity (commits / completed
+  /// tasks / Discord discussion + repo history). [date]..[endDate] is the
+  /// inclusive scope (omit [endDate] for one day). The backend runs an agentic
+  /// loop and returns the answer plus the commits it surfaced. [history] is
+  /// prior turns, oldest first, for follow-up context.
+  Future<DailyBriefReply> dailyBrief({
+    required String repoId,
     required String date,
+    String? endDate,
+    required String question,
+    List<DailyBriefTurn> history = const [],
+  });
+
+  /// Asks the AI to explain the work behind one commit (the commit tree map's
+  /// tap action). Returns markdown; the backend caches it on the commit doc.
+  Future<String> explainCommit({
+    required String repoId,
+    required String sha,
+    bool force = false,
+  });
+
+  /// Branch-topology data for the Commits tab's branch-graph view: commits
+  /// with parent SHAs + branch tips, fetched on demand from the GitHub API
+  /// (commit docs carry no parents). [startDate]..[endDate] is the inclusive
+  /// day range (both YYYY-MM-DD, both or neither; omit for "recent").
+  Future<CommitGraph> getCommitGraph({
+    required String repoId,
+    String? startDate,
+    String? endDate,
+    bool force = false,
   });
 
   // ---- Discord -----------------------------------------------------------
@@ -105,10 +142,14 @@ abstract class FunctionsService {
   /// agentic loop: it searches the ingested messages, then answers. Returns the
   /// answer plus the messages it surfaced (for the scrollable "sources" panel).
   /// [history] is prior turns, oldest first, for follow-up context.
+  /// [startDate]..[endDate] (both YYYY-MM-DD, both-or-neither) scope the read to
+  /// a time window; omit both for an unscoped (recent-messages) read.
   Future<DiscordChatReply> discordChat({
     required String repoId,
     required String question,
     List<DiscordChatTurn> history = const [],
+    String? startDate,
+    String? endDate,
   });
 
   // ---- FCM ---------------------------------------------------------------
@@ -191,14 +232,65 @@ class _LiveFunctionsService implements FunctionsService {
   @override
   Future<String> summarizeDay({
     required String repoId,
-    required String date,
+    required String startDate,
+    String? endDate,
   }) async {
     final res = await _callable('summarizeDay').call({
       'repoId': repoId,
-      'date': date,
+      'startDate': startDate,
+      'endDate': endDate ?? startDate,
     });
     final data = Map<String, dynamic>.from(res.data as Map);
     return data['summary'] as String;
+  }
+
+  @override
+  Future<DailyBriefReply> dailyBrief({
+    required String repoId,
+    required String date,
+    String? endDate,
+    required String question,
+    List<DailyBriefTurn> history = const [],
+  }) async {
+    final res = await _callable('dailyBrief').call({
+      'repoId': repoId,
+      'date': date,
+      'endDate': ?endDate,
+      'question': question,
+      'history': history.map((t) => t.toMap()).toList(),
+    });
+    return DailyBriefReply.fromMap(Map<String, dynamic>.from(res.data as Map));
+  }
+
+  @override
+  Future<String> explainCommit({
+    required String repoId,
+    required String sha,
+    bool force = false,
+  }) async {
+    final res = await _callable('explainCommit').call({
+      'repoId': repoId,
+      'sha': sha,
+      'force': force,
+    });
+    final data = Map<String, dynamic>.from(res.data as Map);
+    return data['markdown'] as String;
+  }
+
+  @override
+  Future<CommitGraph> getCommitGraph({
+    required String repoId,
+    String? startDate,
+    String? endDate,
+    bool force = false,
+  }) async {
+    final res = await _callable('getCommitGraph').call({
+      'repoId': repoId,
+      'startDate': ?startDate,
+      'endDate': ?endDate,
+      'force': force,
+    });
+    return CommitGraph.fromMap(Map<String, dynamic>.from(res.data as Map));
   }
 
   @override
@@ -284,11 +376,16 @@ class _LiveFunctionsService implements FunctionsService {
     required String repoId,
     required String question,
     List<DiscordChatTurn> history = const [],
+    String? startDate,
+    String? endDate,
   }) async {
     final res = await _callable('discordChat').call({
       'repoId': repoId,
       'question': question,
       'history': history.map((t) => t.toMap()).toList(),
+      // Only sent when scoped; the backend treats absent as unscoped (D2).
+      'startDate': ?startDate,
+      'endDate': ?endDate,
     });
     return DiscordChatReply.fromMap(Map<String, dynamic>.from(res.data as Map));
   }

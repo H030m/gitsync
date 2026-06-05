@@ -6,6 +6,13 @@ import '../services/functions_service.dart';
 /// Drives the Discord AI chat box: holds the conversation transcript and calls
 /// the `discordChat` callable. Each assistant turn carries the messages the AI
 /// surfaced, which the UI renders in a scrollable sources panel.
+///
+/// The chat is TIME-SCOPED (D2): Discord storage is additive-only, so messages
+/// accumulate forever. Every question carries the shared window
+/// ([_start]..[_end], inclusive days) so the AI only reads in-window messages /
+/// digests. The window follows the same precedence as the rest of the Daily
+/// page (view → saved → today); when unscoped no range is sent and the backend
+/// treats it as unscoped.
 class DiscordChatViewModel with ChangeNotifier {
   DiscordChatViewModel({
     required String repoId,
@@ -24,6 +31,41 @@ class DiscordChatViewModel with ChangeNotifier {
 
   String? _error;
   String? get error => _error;
+
+  // The active time window the AI reads (inclusive days). Null when unscoped —
+  // then no startDate/endDate is sent and the backend reads recent messages.
+  DateTime? _start;
+  DateTime? _end;
+
+  static String _key(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
+
+  /// Scopes future questions to [start]..[end] (inclusive days). Wired from the
+  /// Daily page's shared range; the transcript is preserved.
+  void setRange(DateTime start, DateTime end) {
+    _start = start;
+    _end = end;
+    notifyListeners();
+  }
+
+  /// Clears the time scope — future questions read recent messages (unscoped).
+  void clearRange() {
+    _start = null;
+    _end = null;
+    notifyListeners();
+  }
+
+  /// Starts a fresh conversation: clears the transcript and any error, keeping
+  /// the current range scope. No-ops while a question is in flight.
+  void newSession() {
+    if (_sending) return;
+    if (_turns.isEmpty && _error == null) return;
+    _turns.clear();
+    _error = null;
+    notifyListeners();
+  }
 
   /// Sends [question] to the AI. Appends a user turn immediately, then an
   /// assistant turn once the callable returns. No-ops on empty input or while a
@@ -49,6 +91,8 @@ class DiscordChatViewModel with ChangeNotifier {
         repoId: _repoId,
         question: trimmed,
         history: history,
+        startDate: _start == null ? null : _key(_start!),
+        endDate: _end == null ? null : _key(_end!),
       );
       _turns.add(DiscordChatTurn(
         role: 'assistant',

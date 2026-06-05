@@ -188,7 +188,8 @@ scheduledDailyReport（主 Agent）
 | `breakdownTaskFlow` | 半 Agentic | Structured Output + 自我修正（Brain re-prompt） |
 | `assignTaskFlow` | **全 Agentic** | Function Calling loop × 5 輪 + 4 Tools + agent 自主決策 |
 | `generateHandoffFlow` | **全 Agentic + Self Review** | Function Calling + 7 Tools + RAG + Sub-agent 式評分回饋 |
-| `summarizeDayFlow` | 非 Agentic（單次） | Sub-agent 模式（Cloud Tasks 扇出） |
+| `summarizeDayFlow` | **全 Agentic** + Sub-agent 扇出 | Function Calling loop（`getDayDigest`/`searchPastCommits`/`finalizeReport`）+ 純 TS 精確計數（pruning）+ Cloud Tasks isolated sub-agent 扇出 |
+| `dailyBriefChatFlow` | **全 Agentic** | Function Calling loop + 4 唯讀 Tools（情報總站「問 AI 今天」）|
 
 ### 各 Flow 對應的 Agentic 概念拆解
 

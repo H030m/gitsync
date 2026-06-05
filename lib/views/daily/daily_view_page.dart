@@ -1,21 +1,89 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/commit.dart';
+import '../../models/commit_graph.dart';
+import '../../models/daily_brief.dart';
+import '../../models/daily_report.dart';
 import '../../models/discord_chat.dart';
 import '../../models/discord_digest.dart';
 import '../../theme/app_dimens.dart';
 import '../../view_models/commits_vm.dart';
+import '../../view_models/daily_brief_vm.dart';
 import '../../view_models/daily_report_vm.dart';
 import '../../view_models/discord_chat_vm.dart';
 import '../../view_models/discord_messages_vm.dart';
+import '../../view_models/intel_range_vm.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/markdown_view.dart';
 
-// DailyViewPage — three tabs: Summary / Commits / Discord.
-// TODO: implement per prototype `daily/DailyView.tsx`.
-class DailyViewPage extends StatelessWidget {
+// DailyViewPage — three tabs: Summary / Commits / Discord, all driven by ONE
+// shared date range (IntelRangeViewModel). A single picker in the AppBar (shown
+// from every tab) re-scopes all three tabs at once; clearing it returns each to
+// its default. The page subscribes to the shared range and fans changes out to
+// the per-tab ViewModels.
+class DailyViewPage extends StatefulWidget {
   const DailyViewPage({super.key, required this.repoId});
   final String repoId;
+
+  @override
+  State<DailyViewPage> createState() => _DailyViewPageState();
+}
+
+class _DailyViewPageState extends State<DailyViewPage> {
+  IntelRangeViewModel? _rangeVm;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final vm = context.read<IntelRangeViewModel>();
+    if (!identical(vm, _rangeVm)) {
+      _rangeVm?.removeListener(_onRangeChanged);
+      _rangeVm = vm;
+      _rangeVm!.addListener(_onRangeChanged);
+    }
+  }
+
+  // Fans the shared range out to every tab's ViewModel. Setting a range scopes
+  // Summary (per-day cards), the daily-brief chat, the Commits list+graph, the
+  // Discord digest display + persisted backfill range, and the Discord chat's
+  // read window. Clearing returns each tab to its default.
+  void _onRangeChanged() {
+    final range = _rangeVm?.range;
+    final report = context.read<DailyReportViewModel>();
+    final chat = context.read<DailyBriefChatViewModel>();
+    final commits = context.read<CommitsViewModel>();
+    final discord = context.read<DiscordMessagesViewModel>();
+    final discordChat = context.read<DiscordChatViewModel>();
+    if (range != null) {
+      report.setRange(range.start, range.end);
+      chat.setRange(range.start, range.end);
+      commits.setRange(range.start, range.end);
+      // D1+D3: setDiscordRange is now additive-only, so binding the shared range
+      // to Discord is safe again — it persists the range (bot re-pulls + dedups)
+      // and mirrors into the digest display. D2: the Discord chat reads the same
+      // window.
+      discord.setRange(range.start, range.end);
+      discordChat.setRange(range.start, range.end);
+    } else {
+      final now = DateTime.now();
+      report.clearRange();
+      chat.setRange(now, now);
+      commits.clearRange();
+      // Clears only the Discord display scope (no callable — additive store
+      // keeps everything). The chat returns to an unscoped (recent) read.
+      discord.clearViewRange();
+      discordChat.clearRange();
+    }
+  }
+
+  @override
+  void dispose() {
+    _rangeVm?.removeListener(_onRangeChanged);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,6 +92,7 @@ class DailyViewPage extends StatelessWidget {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Daily'),
+          actions: const [_SharedRefreshAction(), _SharedRangeAction()],
           bottom: const TabBar(
             tabs: [
               Tab(text: 'Summary'),
@@ -33,69 +102,204 @@ class DailyViewPage extends StatelessWidget {
           ),
         ),
         body: const TabBarView(
-          children: [
-            _SummaryTab(),
-            _CommitsTab(),
-            _DiscordTab(),
-          ],
+          children: [_SummaryTab(), _CommitsTab(), _DiscordTab()],
         ),
       ),
     );
   }
 }
 
-class _SummaryTab extends StatelessWidget {
-  const _SummaryTab();
+// The one shared Refresh for all three tabs (D3), pinned in the AppBar next to
+// the shared range picker. Refreshes everything for the current window:
+//   - Commits: forces a branch-graph reload (the list view is realtime).
+//   - Discord: re-requests a per-day backfill across the window (≤31 days; the
+//     bot dedups), so missing days fill in.
+//   - Summary: nothing (reports stream realtime; generation stays per-day).
+// Disabled while either the graph or the Discord sweep is already in flight.
+class _SharedRefreshAction extends StatelessWidget {
+  const _SharedRefreshAction();
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<DailyReportViewModel>(
+    return Consumer2<CommitsViewModel, DiscordMessagesViewModel>(
+      builder: (ctx, commits, discord, _) {
+        final busy = commits.graphLoading || discord.refreshing;
+        return IconButton(
+          tooltip: '重新整理目前範圍',
+          icon: busy
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.refresh),
+          onPressed: busy
+              ? null
+              : () {
+                  commits.loadGraph(force: true);
+                  discord.refreshWindow();
+                },
+        );
+      },
+    );
+  }
+}
+
+// The one shared date-range picker for all three tabs, pinned in the AppBar so
+// it's reachable from Summary / Commits / Discord alike. Picking sets the
+// shared range; the reset icon (shown only while a range is active) clears it.
+class _SharedRangeAction extends StatelessWidget {
+  const _SharedRangeAction();
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<IntelRangeViewModel>(
       builder: (ctx, vm, _) {
-        if (vm.loading) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final report = vm.report;
-        final theme = Theme.of(ctx);
-        return ListView(
-          padding: const EdgeInsets.all(AppDimens.spacingMd),
+        final range = vm.range;
+        return Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Card(
-              margin: EdgeInsets.zero,
-              child: Padding(
-                padding: const EdgeInsets.all(AppDimens.spacingMd),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.auto_awesome_outlined,
-                            size: 20, color: theme.colorScheme.primary),
-                        const SizedBox(width: AppDimens.spacingSm),
-                        Text('Daily summary',
-                            style: theme.textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w600)),
-                      ],
-                    ),
-                    const SizedBox(height: AppDimens.spacingSm),
-                    Text(
-                      report?.summary ?? 'No report yet',
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                  ],
-                ),
+            TextButton.icon(
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(ctx).colorScheme.onSurface,
+              ),
+              onPressed: () async {
+                final now = DateTime.now();
+                final picked = await showDateRangePicker(
+                  context: ctx,
+                  firstDate: DateTime(2020),
+                  lastDate: now,
+                  initialDateRange: range ?? DateTimeRange(start: now, end: now),
+                );
+                if (picked == null) return;
+                vm.setRange(picked);
+              },
+              icon: const Icon(Icons.date_range_outlined, size: 18),
+              label: Text(
+                range == null
+                    ? 'Today'
+                    : '${_monthDay(range.start)} ~ ${_monthDay(range.end)}',
               ),
             ),
-            const SizedBox(height: AppDimens.spacingMd),
-            FilledButton.icon(
-              onPressed: vm.regenerating ? null : vm.regenerate,
-              icon: vm.regenerating
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.refresh),
-              label: Text(vm.regenerating ? 'Generating…' : 'Regenerate'),
+            if (range != null)
+              IconButton(
+                tooltip: 'Reset range',
+                icon: const Icon(Icons.restore, size: 20),
+                onPressed: vm.clear,
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// The Summary tab is the developer "intelligence hub": an AI daily report
+// (summary + highlights + blockers + commit-message rollup + per-member
+// contributions) on top, and an agentic "ask AI about today" chat at the
+// bottom. The report streams from `dailyReports/{date}`; the chat hits the
+// `dailyBrief` callable. Both areas share one vertical scroll, with the chat
+// input bar pinned to the bottom (mirrors the Discord tab).
+class _SummaryTab extends StatefulWidget {
+  const _SummaryTab();
+
+  @override
+  State<_SummaryTab> createState() => _SummaryTabState();
+}
+
+class _SummaryTabState extends State<_SummaryTab> {
+  final _controller = TextEditingController();
+  final _scrollController = ScrollController();
+
+  // Whether the upper day-report panel (D2) is expanded. Collapsed shows just
+  // its header row, giving the chat the full height.
+  bool _reportsExpanded = true;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _send(DailyBriefChatViewModel vm) {
+    final text = _controller.text;
+    if (text.trim().isEmpty || vm.sending) return;
+    _controller.clear();
+    vm.ask(text);
+    // Jump to the latest turn once it's laid out.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  // Builds one collapsible report card per day in the selected range. With no
+  // range (single day) it's just today's card; with a range it's one card per
+  // day, today expanded by default and the rest collapsed.
+  List<Widget> _dayCards(DailyReportViewModel report) {
+    final todayKey = DailyReportViewModel.dayKeyOf(DateTime.now());
+    return [
+      for (final day in report.rangeDays) ...[
+        _DayReportCard(
+          key: ValueKey(DailyReportViewModel.dayKeyOf(day)),
+          vm: report,
+          day: day,
+          initiallyExpanded:
+              DailyReportViewModel.dayKeyOf(day) == todayKey,
+        ),
+        const SizedBox(height: AppDimens.spacingSm),
+      ],
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer2<DailyReportViewModel, DailyBriefChatViewModel>(
+      builder: (ctx, report, chat, _) {
+        if (report.loading) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        // Cap the day-report panel at ~42% of the viewport so many days never
+        // push the chat off screen — it scrolls internally instead (D2).
+        final panelMaxHeight = MediaQuery.of(ctx).size.height * 0.42;
+        return Column(
+          children: [
+            // ---- Upper panel: collapsible, fixed-height, internally scrollable
+            _ReportsPanel(
+              dayCount: report.rangeDays.length,
+              expanded: _reportsExpanded,
+              maxHeight: panelMaxHeight,
+              onToggle: () =>
+                  setState(() => _reportsExpanded = !_reportsExpanded),
+              cards: _dayCards(report),
+            ),
+            const Divider(height: 1),
+            // ---- Lower area: the "ask AI about today" chat, own scroll.
+            Expanded(
+              child: ListView(
+                controller: _scrollController,
+                padding: const EdgeInsets.all(AppDimens.spacingMd),
+                children: [
+                  const _BriefHeader(),
+                  const SizedBox(height: AppDimens.spacingSm),
+                  if (chat.turns.isEmpty)
+                    const _BriefHint()
+                  else
+                    for (final turn in chat.turns) _BriefTurnView(turn: turn),
+                  if (chat.sending) const _ThinkingBubble(),
+                ],
+              ),
+            ),
+            _BriefInputBar(
+              controller: _controller,
+              sending: chat.sending,
+              onSend: () => _send(chat),
+              onNewSession: chat.sending ? null : chat.newSession,
             ),
           ],
         );
@@ -104,6 +308,894 @@ class _SummaryTab extends StatelessWidget {
   }
 }
 
+// D2: the upper day-report panel. A tappable header row ("日報" + day count +
+// chevron) collapses/expands the whole panel; when expanded the day cards live
+// in a fixed-height, internally scrollable region (so many days don't push the
+// chat off screen). The day cards keep their own per-card collapse.
+class _ReportsPanel extends StatefulWidget {
+  const _ReportsPanel({
+    required this.dayCount,
+    required this.expanded,
+    required this.maxHeight,
+    required this.onToggle,
+    required this.cards,
+  });
+
+  final int dayCount;
+  final bool expanded;
+  final double maxHeight;
+  final VoidCallback onToggle;
+  final List<Widget> cards;
+
+  @override
+  State<_ReportsPanel> createState() => _ReportsPanelState();
+}
+
+class _ReportsPanelState extends State<_ReportsPanel> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        InkWell(
+          onTap: widget.onToggle,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppDimens.spacingMd,
+              AppDimens.spacingSm,
+              AppDimens.spacingSm,
+              AppDimens.spacingSm,
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.summarize_outlined, size: 20, color: scheme.primary),
+                const SizedBox(width: AppDimens.spacingSm),
+                Text(
+                  '日報',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: AppDimens.spacingSm),
+                _CountChip(
+                  icon: Icons.calendar_today_outlined,
+                  label: '${widget.dayCount}',
+                ),
+                const Spacer(),
+                AnimatedRotation(
+                  turns: widget.expanded ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  child: const Icon(Icons.expand_more),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (widget.expanded)
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: widget.maxHeight),
+            // Scrollbar pinned flush to the panel's far-right edge: the ListView
+            // carries no right padding, so the scrollbar gutter sits at the
+            // outermost right. Each child gets its own right inset instead.
+            child: Scrollbar(
+              controller: _scrollController,
+              thumbVisibility: true,
+              child: ListView(
+                controller: _scrollController,
+                padding: const EdgeInsets.fromLTRB(
+                  AppDimens.spacingMd,
+                  0,
+                  0,
+                  AppDimens.spacingMd,
+                ),
+                shrinkWrap: true,
+                children: [
+                  for (final card in widget.cards)
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        right: AppDimens.spacingSm,
+                      ),
+                      child: card,
+                    ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// One collapsible per-day report card (mirrors _DigestCard's interaction:
+// tappable header + animated chevron + conditional body). Collapsed shows the
+// date and a one-line summary; expanded shows the full report (summary +
+// highlights + commit rollup + contributions) with a regenerate action, or a
+// "產生日報" generate button when the day has no report yet.
+class _DayReportCard extends StatefulWidget {
+  const _DayReportCard({
+    super.key,
+    required this.vm,
+    required this.day,
+    required this.initiallyExpanded,
+  });
+  final DailyReportViewModel vm;
+  final DateTime day;
+  final bool initiallyExpanded;
+
+  @override
+  State<_DayReportCard> createState() => _DayReportCardState();
+}
+
+class _DayReportCardState extends State<_DayReportCard> {
+  late bool _expanded = widget.initiallyExpanded;
+
+  String get _dayKeyStr => DailyReportViewModel.dayKeyOf(widget.day);
+
+  String get _headerLabel {
+    final todayKey = DailyReportViewModel.dayKeyOf(DateTime.now());
+    return _dayKeyStr == todayKey ? 'Today · $_dayKeyStr' : _dayKeyStr;
+  }
+
+  String _summaryLine(DailyReport? report) {
+    if (report == null || report.isEmpty) return '尚未產生日報';
+    final first = report.summary.split('\n').first.trim();
+    return first.isEmpty ? '尚未產生日報' : first;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final vm = widget.vm;
+    final report = vm.reportForDay(_dayKeyStr);
+    final hasReport = report != null && !report.isEmpty;
+    final generating = vm.isGeneratingDay(_dayKeyStr);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ---- Header (tap to collapse/expand) ----
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppDimens.spacingMd,
+                AppDimens.spacingSm,
+                AppDimens.spacingSm,
+                AppDimens.spacingSm,
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.auto_awesome_outlined,
+                    size: 20,
+                    color: scheme.primary,
+                  ),
+                  const SizedBox(width: AppDimens.spacingSm),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _headerLabel,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (!_expanded)
+                          Text(
+                            _summaryLine(report),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (report != null && report.commitCount > 0) ...[
+                    const SizedBox(width: AppDimens.spacingSm),
+                    _CountChip(
+                      icon: Icons.commit_outlined,
+                      label: '${report.commitCount}',
+                    ),
+                  ],
+                  AnimatedRotation(
+                    turns: _expanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: const Icon(Icons.expand_more),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // ---- Collapsible body ----
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            alignment: Alignment.topCenter,
+            child: _expanded
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppDimens.spacingMd,
+                      0,
+                      AppDimens.spacingMd,
+                      AppDimens.spacingMd,
+                    ),
+                    child: hasReport
+                        ? _DayReportBody(vm: vm, day: widget.day, report: report)
+                        : _DayReportEmpty(
+                            generating: generating,
+                            onGenerate: () => vm.generateDay(widget.day),
+                          ),
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// The expanded body of a day card that HAS a report: summary text, a
+// regenerate action, then the existing highlights / rollup / contributions
+// content widgets (reused, not duplicated).
+class _DayReportBody extends StatelessWidget {
+  const _DayReportBody({
+    required this.vm,
+    required this.day,
+    required this.report,
+  });
+  final DailyReportViewModel vm;
+  final DateTime day;
+  final DailyReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final generating = vm.isGeneratingDay(DailyReportViewModel.dayKeyOf(day));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(report.summary, style: theme.textTheme.bodyMedium),
+        const SizedBox(height: AppDimens.spacingSm),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.icon(
+            onPressed: generating ? null : () => vm.generateDay(day),
+            icon: generating
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
+            label: Text(generating ? 'Generating…' : 'Regenerate'),
+          ),
+        ),
+        _HighlightsCard(report: report),
+        _CommitRollupCard(report: report),
+        _ContributionsCard(report: report),
+      ],
+    );
+  }
+}
+
+// The expanded body of a day card with NO report yet: a "產生日報" button.
+class _DayReportEmpty extends StatelessWidget {
+  const _DayReportEmpty({required this.generating, required this.onGenerate});
+  final bool generating;
+  final VoidCallback onGenerate;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '這天還沒有日報。點「產生日報」讓 AI 整理當天的 commits、'
+          '任務與聊天。',
+          style: theme.textTheme.bodyMedium,
+        ),
+        const SizedBox(height: AppDimens.spacingMd),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.icon(
+            onPressed: generating ? null : onGenerate,
+            icon: generating
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.auto_awesome_outlined),
+            label: Text(generating ? 'Generating…' : '產生日報'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// Highlights (wins) + blockers, each a labelled list. Renders nothing for an
+// empty section so the card stays compact.
+class _HighlightsCard extends StatelessWidget {
+  const _HighlightsCard({required this.report});
+  final DailyReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    if (report.highlights.isEmpty && report.blockers.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: AppDimens.spacingMd),
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(AppDimens.spacingMd),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final h in report.highlights)
+                _BulletRow(
+                  icon: Icons.check_circle_outline,
+                  color: scheme.primary,
+                  text: h,
+                ),
+              if (report.highlights.isNotEmpty && report.blockers.isNotEmpty)
+                const SizedBox(height: AppDimens.spacingSm),
+              for (final b in report.blockers)
+                _BulletRow(
+                  icon: Icons.report_problem_outlined,
+                  color: scheme.error,
+                  text: b,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Commit-message rollup: the day's commits grouped into AI-labelled themes.
+class _CommitRollupCard extends StatelessWidget {
+  const _CommitRollupCard({required this.report});
+  final DailyReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    if (report.commitThemes.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: AppDimens.spacingMd),
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(AppDimens.spacingMd),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.merge_type_outlined,
+                    size: 20,
+                    color: scheme.tertiary,
+                  ),
+                  const SizedBox(width: AppDimens.spacingSm),
+                  Text(
+                    'Commit rollup',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppDimens.spacingSm),
+              for (final t in report.commitThemes)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppDimens.spacingSm),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              t.theme,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            if (t.summary.isNotEmpty)
+                              Text(
+                                t.summary,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      if (t.commitCount > 0) ...[
+                        const SizedBox(width: AppDimens.spacingSm),
+                        _CountChip(
+                          icon: Icons.commit_outlined,
+                          label: '${t.commitCount}',
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Per-member contribution chips (tasks done + commits), keyed as the backend
+// reports them (userId, or author login for unmatched commits).
+class _ContributionsCard extends StatelessWidget {
+  const _ContributionsCard({required this.report});
+  final DailyReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = report.memberContributions.entries
+        .where((e) => e.value.tasksDone > 0 || e.value.commits > 0)
+        .toList();
+    if (entries.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: AppDimens.spacingMd),
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(AppDimens.spacingMd),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.groups_outlined,
+                    size: 20,
+                    color: scheme.secondary,
+                  ),
+                  const SizedBox(width: AppDimens.spacingSm),
+                  Text(
+                    'Contributions',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppDimens.spacingSm),
+              Wrap(
+                spacing: AppDimens.spacingSm,
+                runSpacing: AppDimens.spacingSm,
+                children: [
+                  for (final e in entries)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppDimens.spacingSm,
+                        vertical: AppDimens.spacingXs,
+                      ),
+                      decoration: BoxDecoration(
+                        color: scheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircleAvatar(
+                            radius: 10,
+                            backgroundColor: scheme.primaryContainer,
+                            child: Text(
+                              _initial(_memberLabel(e)),
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: scheme.onPrimaryContainer,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: AppDimens.spacingXs),
+                          Text(
+                            '${_memberLabel(e)}  ·  ${e.value.tasksDone}✓ '
+                            '${e.value.commits}⎇',
+                            style: theme.textTheme.labelMedium,
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  static String _initial(String key) =>
+      key.isEmpty ? '?' : key.substring(0, 1).toUpperCase();
+
+  /// GitHub username, falling back to display name, then the raw map key
+  /// (legacy reports written before the backend persisted names — that key is
+  /// a Firebase UID for roster members or a login for unmatched authors).
+  static String _memberLabel(MapEntry<String, MemberContribution> e) {
+    final login = e.value.githubLogin;
+    if (login != null && login.isNotEmpty) return login;
+    final name = e.value.displayName;
+    if (name != null && name.isNotEmpty) return name;
+    return e.key;
+  }
+}
+
+class _BulletRow extends StatelessWidget {
+  const _BulletRow({
+    required this.icon,
+    required this.color,
+    required this.text,
+  });
+  final IconData icon;
+  final Color color;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: AppDimens.spacingSm),
+          Expanded(
+            child: Text(text, style: Theme.of(context).textTheme.bodyMedium),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CountChip extends StatelessWidget {
+  const _CountChip({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 4),
+          Text(label, style: Theme.of(context).textTheme.labelSmall),
+        ],
+      ),
+    );
+  }
+}
+
+// "Ask AI about today" section header.
+class _BriefHeader extends StatelessWidget {
+  const _BriefHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Icon(Icons.forum_outlined, size: 20, color: theme.colorScheme.primary),
+        const SizedBox(width: AppDimens.spacingSm),
+        Text(
+          'Ask AI about today',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _BriefHint extends StatelessWidget {
+  const _BriefHint();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(AppDimens.spacingMd),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        'e.g. 「今天有哪些 commit 跟 OAuth 有關？」、「有沒有人提到 blocker？」、'
+        '「breakdownTask 最近誰改的？」',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
+// One turn of the daily-brief chat: user bubble, or AI markdown answer with an
+// optional commit-sources panel.
+class _BriefTurnView extends StatelessWidget {
+  const _BriefTurnView({required this.turn});
+  final DailyBriefTurn turn;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    if (turn.isUser) {
+      return Padding(
+        padding: const EdgeInsets.only(
+          top: AppDimens.spacingMd,
+          bottom: AppDimens.spacingXs,
+        ),
+        child: Align(
+          alignment: Alignment.centerRight,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 520),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppDimens.spacingMd,
+              vertical: AppDimens.spacingSm,
+            ),
+            decoration: BoxDecoration(
+              color: scheme.primaryContainer,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Text(
+              turn.content,
+              style: TextStyle(color: scheme.onPrimaryContainer),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppDimens.spacingMd),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.auto_awesome_outlined,
+                size: 18,
+                color: scheme.primary,
+              ),
+              const SizedBox(width: AppDimens.spacingSm),
+              Text(
+                'AI',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppDimens.spacingSm),
+          MarkdownView(data: turn.content),
+          if (turn.sources.isNotEmpty) ...[
+            const SizedBox(height: AppDimens.spacingSm),
+            _BriefSourcesPanel(sources: turn.sources),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// Scrollable panel of the commits the AI surfaced for an answer.
+class _BriefSourcesPanel extends StatelessWidget {
+  const _BriefSourcesPanel({required this.sources});
+  final List<DailyBriefSource> sources;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 220),
+      decoration: BoxDecoration(
+        border: Border.all(color: scheme.outlineVariant),
+        borderRadius: BorderRadius.circular(12),
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppDimens.spacingMd,
+              AppDimens.spacingSm,
+              AppDimens.spacingMd,
+              AppDimens.spacingXs,
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.commit_outlined, size: 16, color: scheme.tertiary),
+                const SizedBox(width: AppDimens.spacingXs),
+                Text(
+                  'Source commits (${sources.length})',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Flexible(
+            child: ListView.separated(
+              padding: const EdgeInsets.fromLTRB(
+                AppDimens.spacingMd,
+                0,
+                AppDimens.spacingMd,
+                AppDimens.spacingSm,
+              ),
+              shrinkWrap: true,
+              itemCount: sources.length,
+              separatorBuilder: (_, _) => const Divider(height: 12),
+              itemBuilder: (_, i) {
+                final s = sources[i];
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      s.message,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (s.aiSummary != null && s.aiSummary!.isNotEmpty)
+                      Text(
+                        s.aiSummary!,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    Text(
+                      '${s.authorName.isEmpty ? s.authorLogin : s.authorName}'
+                      ' · ${s.shortSha}',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Pinned input bar for the daily-brief chat (mirrors the Discord chat bar).
+class _BriefInputBar extends StatelessWidget {
+  const _BriefInputBar({
+    required this.controller,
+    required this.sending,
+    required this.onSend,
+    required this.onNewSession,
+  });
+
+  final TextEditingController controller;
+  final bool sending;
+  final VoidCallback onSend;
+
+  /// Clears the conversation to start a fresh session (D3). Null disables it
+  /// (e.g. while a question is in flight).
+  final VoidCallback? onNewSession;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      elevation: 2,
+      color: scheme.surface,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppDimens.spacingMd,
+          AppDimens.spacingSm,
+          AppDimens.spacingMd,
+          AppDimens.spacingMd,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            // Start a new chat session — clears the transcript (D3).
+            IconButton(
+              tooltip: '開啟新 session',
+              onPressed: sending ? null : onNewSession,
+              icon: const Icon(Icons.restart_alt),
+            ),
+            Expanded(
+              child: TextField(
+                controller: controller,
+                minLines: 1,
+                maxLines: 4,
+                textInputAction: TextInputAction.send,
+                enabled: !sending,
+                onSubmitted: (_) => onSend(),
+                decoration: const InputDecoration(
+                  hintText: 'Ask AI about today…',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+            ),
+            const SizedBox(width: AppDimens.spacingSm),
+            IconButton.filled(
+              onPressed: sending ? null : onSend,
+              icon: sending
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.send),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Commits tab — a scrollable commit visualization. The default branch graph
+// shows real topology; the list view is a flat, filterable commit list. Tap a
+// commit → an AI explanation of the work (the `explainCommit` callable, cached
+// per sha). A range button filters to an inclusive day range.
 class _CommitsTab extends StatelessWidget {
   const _CommitsTab();
 
@@ -114,36 +1206,1229 @@ class _CommitsTab extends StatelessWidget {
         if (vm.loading) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (vm.commits.isEmpty) {
-          return const EmptyState(
-            icon: Icons.commit_outlined,
-            title: 'No commits yet',
-            message: 'Recent commits on this repo will show up here.',
+        if (vm.streamError != null) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(AppDimens.spacingLg),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error_outline, size: 40),
+                  const SizedBox(height: AppDimens.spacingSm),
+                  Text(
+                    'Could not load commits',
+                    style: Theme.of(ctx).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: AppDimens.spacingXs),
+                  Text(
+                    vm.streamError!,
+                    style: Theme.of(ctx).textTheme.bodySmall,
+                    textAlign: TextAlign.center,
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: AppDimens.spacingMd),
+                  FilledButton.icon(
+                    onPressed: vm.retry,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
           );
         }
-        final scheme = Theme.of(ctx).colorScheme;
-        return ListView.builder(
-          padding: const EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
-          itemCount: vm.commits.length,
-          itemBuilder: (_, i) {
-            final c = vm.commits[i];
-            return Card(
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: scheme.tertiaryContainer,
-                  foregroundColor: scheme.onTertiaryContainer,
-                  child: const Icon(Icons.commit_outlined, size: 20),
-                ),
-                title: Text(
-                  c.message.split('\n').first,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                subtitle: Text('${c.author.login} · ${c.sha.substring(0, 7)}'),
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppDimens.spacingMd,
+                AppDimens.spacingMd,
+                AppDimens.spacingMd,
+                0,
               ),
+              child: Row(
+                children: [
+                  Text(
+                    'Commit map',
+                    style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const Spacer(),
+                  // Refresh is now the single shared AppBar action (D3); the
+                  // branch graph reloads from there.
+                  // Branch topology vs the flat, filterable commit list (D4).
+                  SegmentedButton<CommitsViewMode>(
+                    segments: const [
+                      ButtonSegment(
+                        value: CommitsViewMode.branch,
+                        icon: Icon(Icons.account_tree_outlined, size: 18),
+                        tooltip: 'Branch graph',
+                      ),
+                      ButtonSegment(
+                        value: CommitsViewMode.author,
+                        icon: Icon(Icons.view_list_outlined, size: 18),
+                        tooltip: 'List',
+                      ),
+                    ],
+                    selected: {vm.viewMode},
+                    onSelectionChanged: (s) => vm.setViewMode(s.first),
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Scope row: the date range is picked once in the AppBar (shared
+            // across all tabs). This shows the current scope and offers the
+            // "Recent 50" reset, which clears the shared range.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppDimens.spacingMd,
+                AppDimens.spacingXs,
+                AppDimens.spacingMd,
+                AppDimens.spacingSm,
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    vm.hasRange
+                        ? Icons.date_range_outlined
+                        : Icons.history_outlined,
+                    size: 16,
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: AppDimens.spacingXs),
+                  Text(
+                    vm.hasRange
+                        ? '${_monthDay(vm.rangeStart!)} ~ ${_monthDay(vm.rangeEnd!)}'
+                        : 'Recent 50',
+                    style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                  if (vm.hasRange) ...[
+                    const SizedBox(width: AppDimens.spacingSm),
+                    ActionChip(
+                      avatar: const Icon(Icons.restore, size: 16),
+                      label: const Text('Recent 50'),
+                      onPressed: () =>
+                          ctx.read<IntelRangeViewModel>().clear(),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Expanded(
+              child: vm.viewMode == CommitsViewMode.branch
+                  ? _BranchGraphView(vm: vm)
+                  : _CommitListView(vm: vm),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// Lane palette for the graph/list (also the per-branch color source via
+// branchColorIndex). Wraps around if there are more branches than colors.
+const List<Color> _laneColors = [
+  Color(0xFF4C9AFF), // blue
+  Color(0xFF36B37E), // green
+  Color(0xFFFF8B00), // orange
+  Color(0xFF9C5FFF), // purple
+  Color(0xFFFF5B7A), // pink
+  Color(0xFF00B8D9), // teal
+];
+
+// One row of the flattened list: a day header or a commit.
+class _ListItem {
+  _ListItem.header(this.dayLabel) : commit = null;
+  _ListItem.commit(Commit this.commit) : dayLabel = null;
+
+  final String? dayLabel;
+  final Commit? commit;
+
+  bool get isHeader => dayLabel != null;
+}
+
+// The flat, filterable commit list (D4): a filter chip bar (author / branch /
+// keyword) on top, then the commits grouped under day headers — no per-author
+// lane rail. Filters compose (AND across dimensions, OR within a multi-select).
+class _CommitListView extends StatefulWidget {
+  const _CommitListView({required this.vm});
+  final CommitsViewModel vm;
+
+  @override
+  State<_CommitListView> createState() => _CommitListViewState();
+}
+
+class _CommitListViewState extends State<_CommitListView> {
+  final _keywordController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _keywordController.text = widget.vm.keyword;
+  }
+
+  @override
+  void dispose() {
+    _keywordController.dispose();
+    super.dispose();
+  }
+
+  List<_ListItem> _items(List<Commit> commits) {
+    final items = <_ListItem>[];
+    String? lastDay;
+    for (final c in commits) {
+      final day = _dayKey(c.committedAt.toDate());
+      if (day != lastDay) {
+        items.add(_ListItem.header(day));
+        lastDay = day;
+      }
+      items.add(_ListItem.commit(c));
+    }
+    return items;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = widget.vm;
+    final filtered = vm.filteredCommits;
+    return Column(
+      children: [
+        _CommitFilterBar(vm: vm, keywordController: _keywordController),
+        Expanded(
+          child: vm.commits.isEmpty
+              ? EmptyState(
+                  icon: Icons.commit_outlined,
+                  title: 'No commits',
+                  message: 'No commits in this period. Pick another range '
+                      'or go back to the recent commits.',
+                  action: vm.hasRange
+                      ? ActionChip(
+                          avatar: const Icon(Icons.restore, size: 16),
+                          label: const Text('Recent 50'),
+                          onPressed: () =>
+                              context.read<IntelRangeViewModel>().clear(),
+                        )
+                      : null,
+                )
+              : filtered.isEmpty
+                  ? EmptyState(
+                      icon: Icons.filter_list_off_outlined,
+                      title: 'No matching commits',
+                      message: 'No commits match the current filters.',
+                      action: ActionChip(
+                        avatar: const Icon(Icons.clear, size: 16),
+                        label: const Text('Clear filters'),
+                        onPressed: vm.clearFilters,
+                      ),
+                    )
+                  : Builder(
+                      builder: (ctx) {
+                        final items = _items(filtered);
+                        return ListView.builder(
+                          padding: const EdgeInsets.only(
+                            bottom: AppDimens.spacingMd,
+                          ),
+                          itemCount: items.length,
+                          itemBuilder: (ctx, i) {
+                            final item = items[i];
+                            if (item.isHeader) {
+                              return _DayHeader(label: item.dayLabel!);
+                            }
+                            return _CommitListRow(commit: item.commit!, vm: vm);
+                          },
+                        );
+                      },
+                    ),
+        ),
+      ],
+    );
+  }
+}
+
+// Filter chip bar for the commit list: Author + Branch multi-selects, a compact
+// keyword field, and a clear-all chip. Horizontally scrollable so it never
+// overflows on a narrow window.
+class _CommitFilterBar extends StatelessWidget {
+  const _CommitFilterBar({required this.vm, required this.keywordController});
+  final CommitsViewModel vm;
+  final TextEditingController keywordController;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppDimens.spacingMd,
+        0,
+        AppDimens.spacingMd,
+        AppDimens.spacingSm,
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            FilterChip(
+              avatar: const Icon(Icons.person_outline, size: 16),
+              label: Text(
+                vm.authorFilter.isEmpty
+                    ? 'Author'
+                    : 'Author (${vm.authorFilter.length})',
+              ),
+              selected: vm.authorFilter.isNotEmpty,
+              onSelected: (_) => _pickMulti(
+                context,
+                title: 'Author',
+                options: vm.availableAuthors,
+                selected: vm.authorFilter,
+                onToggle: vm.toggleAuthorFilter,
+              ),
+            ),
+            const SizedBox(width: AppDimens.spacingSm),
+            FilterChip(
+              avatar: const Icon(Icons.account_tree_outlined, size: 16),
+              label: Text(
+                vm.branchFilter.isEmpty
+                    ? 'Branch'
+                    : 'Branch (${vm.branchFilter.length})',
+              ),
+              selected: vm.branchFilter.isNotEmpty,
+              onSelected: (_) => _pickMulti(
+                context,
+                title: 'Branch',
+                options: vm.availableBranches,
+                selected: vm.branchFilter,
+                onToggle: vm.toggleBranchFilter,
+              ),
+            ),
+            const SizedBox(width: AppDimens.spacingSm),
+            SizedBox(
+              width: 180,
+              child: TextField(
+                controller: keywordController,
+                onChanged: vm.setKeyword,
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  hintText: 'Search message…',
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  suffixIcon: vm.keyword.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.clear, size: 16),
+                          onPressed: () {
+                            keywordController.clear();
+                            vm.setKeyword('');
+                          },
+                        ),
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: AppDimens.spacingSm,
+                    vertical: AppDimens.spacingSm,
+                  ),
+                ),
+              ),
+            ),
+            if (vm.hasFilters) ...[
+              const SizedBox(width: AppDimens.spacingSm),
+              ActionChip(
+                avatar: Icon(Icons.clear, size: 16, color: scheme.error),
+                label: const Text('Clear'),
+                onPressed: () {
+                  keywordController.clear();
+                  vm.clearFilters();
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Multi-select popup: tap toggles a value; the list reflects live selection.
+  Future<void> _pickMulti(
+    BuildContext context, {
+    required String title,
+    required List<String> options,
+    required Set<String> selected,
+    required void Function(String) onToggle,
+  }) {
+    return showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return SafeArea(
+          child: StatefulBuilder(
+            builder: (ctx, setSheetState) => Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppDimens.spacingMd,
+                    0,
+                    AppDimens.spacingMd,
+                    AppDimens.spacingSm,
+                  ),
+                  child: Text(
+                    title,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                if (options.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(AppDimens.spacingMd),
+                    child: Text('Nothing to filter by yet.'),
+                  )
+                else
+                  Flexible(
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        for (final opt in options)
+                          CheckboxListTile(
+                            dense: true,
+                            value: selected.contains(opt),
+                            title: Text(opt),
+                            onChanged: (_) {
+                              onToggle(opt);
+                              setSheetState(() {});
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// One commit row in the flat list (no lane rail): message + author/branch/sha.
+class _CommitListRow extends StatelessWidget {
+  const _CommitListRow({required this.commit, required this.vm});
+  final Commit commit;
+  final CommitsViewModel vm;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final c = commit;
+    final branch = CommitsViewModel.branchLabel(c);
+    return InkWell(
+      onTap: () => _showCommitSheet(context, c, vm),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppDimens.spacingMd,
+          vertical: AppDimens.spacingSm,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              margin: const EdgeInsets.only(top: 2, right: AppDimens.spacingSm),
+              decoration: BoxDecoration(
+                color: _BranchGraphRow.branchColor(branch),
+                shape: BoxShape.circle,
+              ),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    c.message.split('\n').first,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          '${c.author.name.isEmpty ? c.author.login : c.author.name}'
+                          ' · $branch'
+                          ' · ${c.sha.length >= 7 ? c.sha.substring(0, 7) : c.sha}'
+                          ' · ${_hhmm(c.committedAt.toDate())}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                      if (c.aiSummary != null) ...[
+                        const SizedBox(width: AppDimens.spacingXs),
+                        Icon(
+                          Icons.auto_awesome_outlined,
+                          size: 12,
+                          color: scheme.primary,
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, size: 18, color: scheme.outline),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Day separator row shared by both commit visualizations.
+class _DayHeader extends StatelessWidget {
+  const _DayHeader({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppDimens.spacingMd,
+        AppDimens.spacingSm,
+        AppDimens.spacingMd,
+        AppDimens.spacingXs,
+      ),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(width: AppDimens.spacingSm),
+          const Expanded(child: Divider(height: 1)),
+        ],
+      ),
+    );
+  }
+}
+
+// ---- Branch graph view (real topology via getCommitGraph) -------------------
+
+// Hard cap on graph columns — deeper lanes share the last column so the rail
+// never paints over the text (pathological histories can get wide).
+const int _maxGraphLanes = 6;
+
+// Either a day header or a commit row with its lane geometry.
+class _GraphListItem {
+  _GraphListItem.header(this.dayLabel) : row = null;
+  _GraphListItem.row(GraphRowGeometry this.row) : dayLabel = null;
+
+  final String? dayLabel;
+  final GraphRowGeometry? row;
+
+  bool get isHeader => dayLabel != null;
+}
+
+// The branch-topology visualization: lanes are branch lines (not authors),
+// with fork and merge edges from real parent SHAs (getCommitGraph callable).
+class _BranchGraphView extends StatelessWidget {
+  const _BranchGraphView({required this.vm});
+  final CommitsViewModel vm;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    if (vm.graphLoading && vm.graph == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (vm.graphError != null && vm.graph == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppDimens.spacingLg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 40),
+              const SizedBox(height: AppDimens.spacingSm),
+              Text(
+                'Could not load the branch graph',
+                style: theme.textTheme.titleMedium,
+              ),
+              const SizedBox(height: AppDimens.spacingXs),
+              Text(
+                vm.graphError!,
+                style: theme.textTheme.bodySmall,
+                textAlign: TextAlign.center,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: AppDimens.spacingMd),
+              FilledButton.icon(
+                onPressed: vm.loadGraph,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    final graph = vm.graph;
+    if (graph == null || graph.commits.isEmpty) {
+      return EmptyState(
+        icon: Icons.account_tree_outlined,
+        title: 'No commits',
+        message: 'No commits in this period. Pick another range or go back '
+            'to the recent commits.',
+        action: vm.hasRange
+            ? ActionChip(
+                avatar: const Icon(Icons.restore, size: 16),
+                label: const Text('Recent 50'),
+                onPressed: () => context.read<IntelRangeViewModel>().clear(),
+              )
+            : null,
+      );
+    }
+
+    final rows = buildGraphRows(graph.commits);
+    final tips = graph.tipLabels;
+    var railLanes = 1;
+    for (final r in rows) {
+      railLanes = math.max(railLanes, r.laneSpan);
+    }
+    railLanes = railLanes.clamp(1, _maxGraphLanes);
+
+    // Interleave day headers (same grouping as the list view).
+    final items = <_GraphListItem>[];
+    String? lastDay;
+    for (final r in rows) {
+      final day = _dayKey(r.commit.committedAt);
+      if (day != lastDay) {
+        items.add(_GraphListItem.header(day));
+        lastDay = day;
+      }
+      items.add(_GraphListItem.row(r));
+    }
+
+    return Column(
+      children: [
+        if (graph.truncated)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppDimens.spacingMd,
+              0,
+              AppDimens.spacingMd,
+              AppDimens.spacingXs,
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 14,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: AppDimens.spacingXs),
+                Expanded(
+                  child: Text(
+                    'Large history — showing the most recent branches/commits.',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Expanded(
+          // Pull-to-refresh forces a fresh fetch; AlwaysScrollableScrollPhysics
+          // lets the gesture work even when the list fits on screen.
+          child: RefreshIndicator(
+            onRefresh: () => vm.loadGraph(force: true),
+            child: ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: AppDimens.spacingMd),
+              itemCount: items.length,
+              itemBuilder: (ctx, i) {
+                final item = items[i];
+                if (item.isHeader) return _DayHeader(label: item.dayLabel!);
+                return _BranchGraphRow(
+                  row: item.row!,
+                  railLanes: railLanes,
+                  branchTip: tips[item.row!.commit.sha],
+                  vm: vm,
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _BranchGraphRow extends StatelessWidget {
+  const _BranchGraphRow({
+    required this.row,
+    required this.railLanes,
+    required this.vm,
+    this.branchTip,
+  });
+
+  final GraphRowGeometry row;
+  final int railLanes;
+  final CommitsViewModel vm;
+
+  /// Branch name when this commit is a branch tip (labeled chip).
+  final String? branchTip;
+
+  /// Branch color for a branch name (stable across reloads). Used by the node
+  /// dot, the tip chip, the rail-tap legend and the list-row dot.
+  static Color branchColor(String branch) =>
+      _laneColors[branchColorIndex(branch, _laneColors.length)];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final g = row.commit;
+    final laneWidth = 16.0;
+    // Color by BRANCH (stable across reloads), not by lane index.
+    final color = branchColor(g.primaryBranch);
+    final railWidth = railLanes * laneWidth + AppDimens.spacingSm;
+
+    return InkWell(
+      onTap: () {
+        // Prefer the full Firestore commit (files/diff stats for the sheet);
+        // commits outside the stream window degrade to the graph's own data.
+        Commit? full;
+        for (final c in vm.commits) {
+          if (c.sha == g.sha) {
+            full = c;
+            break;
+          }
+        }
+        final commit = full ??
+            Commit(
+              sha: g.sha,
+              repoId: '',
+              message: g.message,
+              author: CommitAuthor(
+                login: g.authorLogin ?? '',
+                name: g.authorName,
+                email: '',
+              ),
+              url: '',
+              branch: g.primaryBranch.isEmpty ? null : g.primaryBranch,
             );
-          },
+        _showCommitSheet(context, commit, vm);
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppDimens.spacingMd),
+        // IntrinsicHeight bounds the stretch axis so the rail painter gets the
+        // row's real height (a ListView child otherwise has unbounded height).
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // The rail strip is its own gesture target (inside the row's
+              // InkWell so it wins the arena for this region): tapping it pops
+              // up the lane→branch legend instead of opening the commit sheet.
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _showLaneBranchSheet(context, row),
+                child: SizedBox(
+                  width: railWidth,
+                  child: CustomPaint(
+                    painter: _GraphLanePainter(
+                      row: row,
+                      laneWidth: laneWidth,
+                      maxLanes: railLanes,
+                      palette: _laneColors,
+                      ringColor: scheme.outlineVariant,
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: AppDimens.spacingSm,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              g.message.split('\n').first,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          if (g.isMerge && g.prNumber != null) ...[
+                            const SizedBox(width: AppDimens.spacingXs),
+                            _GraphChip(
+                              label: '#${g.prNumber}',
+                              icon: Icons.merge_outlined,
+                              background: scheme.secondaryContainer,
+                              foreground: scheme.onSecondaryContainer,
+                            ),
+                          ],
+                          if (branchTip != null) ...[
+                            const SizedBox(width: AppDimens.spacingXs),
+                            _GraphChip(
+                              label: branchTip!,
+                              icon: Icons.label_outline,
+                              background: color.withValues(alpha: 0.18),
+                              foreground: scheme.onSurface,
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 8,
+                            backgroundColor: scheme.surfaceContainerHighest,
+                            foregroundImage: g.avatarUrl != null
+                                ? NetworkImage(g.avatarUrl!)
+                                : null,
+                            child: Text(
+                              (g.authorLogin ?? g.authorName).isEmpty
+                                  ? '?'
+                                  : (g.authorLogin ?? g.authorName)
+                                      .substring(0, 1)
+                                      .toUpperCase(),
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                fontSize: 9,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: AppDimens.spacingXs),
+                          Flexible(
+                            child: Text(
+                              '${g.authorLogin ?? g.authorName}'
+                              ' · ${g.sha.length >= 7 ? g.sha.substring(0, 7) : g.sha}'
+                              ' · ${_hhmm(g.committedAt)}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Icon(Icons.chevron_right, size: 18, color: scheme.outline),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Tiny inline chip for PR numbers / branch-tip labels on graph rows.
+class _GraphChip extends StatelessWidget {
+  const _GraphChip({
+    required this.label,
+    required this.icon,
+    required this.background,
+    required this.foreground,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color background;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(AppDimens.radiusSm),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: foreground),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  fontSize: 10,
+                  color: foreground,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Paints one branch-graph row: pass-through verticals, the node's own stem,
+// and the half-diagonals of fork/merge edges. Diagonals meet row boundaries
+// at the lane's column x, so consecutive rows form continuous curves. Each
+// lane's strokes are colored by the BRANCH the line belongs to (laneBranches),
+// so a branch keeps its color even when it switches lanes.
+class _GraphLanePainter extends CustomPainter {
+  _GraphLanePainter({
+    required this.row,
+    required this.laneWidth,
+    required this.maxLanes,
+    required this.palette,
+    required this.ringColor,
+  });
+
+  final GraphRowGeometry row;
+  final double laneWidth;
+  final int maxLanes;
+  final List<Color> palette;
+  final Color ringColor;
+
+  double _x(int lane) =>
+      laneWidth / 2 + math.min(lane, maxLanes - 1) * laneWidth;
+
+  // Color a lane by the BRANCH its line belongs to (stable across reloads);
+  // fall back to the lane-index color when the branch is unknown.
+  Color _colorOf(int lane) {
+    final branch =
+        lane < row.laneBranches.length ? row.laneBranches[lane] : null;
+    if (branch != null && branch.isNotEmpty) {
+      return palette[branchColorIndex(branch, palette.length)];
+    }
+    return palette[lane % palette.length];
+  }
+
+  // The node's own dot color keys on the commit's own branch.
+  Color get _nodeColor {
+    final b = row.commit.primaryBranch;
+    if (b.isNotEmpty) return palette[branchColorIndex(b, palette.length)];
+    return palette[row.lane % palette.length];
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final midY = size.height / 2;
+    final nodeX = _x(row.lane);
+
+    Paint stroke(int lane) => Paint()
+      ..color = _colorOf(lane)
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    // Pass-through verticals.
+    for (var l = 0; l < row.passThrough.length; l++) {
+      if (!row.passThrough[l]) continue;
+      final x = _x(l);
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), stroke(l));
+    }
+
+    // The node's own line: from the children above / down to the first parent
+    // (drawn even when the parent is off-window — the history continues).
+    if (row.topStem) {
+      canvas.drawLine(Offset(nodeX, 0), Offset(nodeX, midY), stroke(row.lane));
+    }
+    if (row.bottomStem) {
+      canvas.drawLine(
+        Offset(nodeX, midY),
+        Offset(nodeX, size.height),
+        stroke(row.lane),
+      );
+    }
+
+    // Merge lines converging into the node from other lanes above.
+    for (final l in row.intoNode) {
+      final path = Path()
+        ..moveTo(_x(l), 0)
+        ..quadraticBezierTo(_x(l), midY, nodeX, midY);
+      canvas.drawPath(path, stroke(l));
+    }
+    // Fork edges leaving the node toward extra parents' lanes below.
+    for (final l in row.outOfNode) {
+      final path = Path()
+        ..moveTo(nodeX, midY)
+        ..quadraticBezierTo(_x(l), midY, _x(l), size.height);
+      canvas.drawPath(path, stroke(l));
+    }
+
+    // Node dot (ring + fill); merge commits get a hollow center.
+    canvas.drawCircle(Offset(nodeX, midY), 5.5, Paint()..color = ringColor);
+    canvas.drawCircle(
+      Offset(nodeX, midY),
+      4,
+      Paint()..color = _nodeColor,
+    );
+    if (row.commit.isMerge) {
+      canvas.drawCircle(Offset(nodeX, midY), 1.8, Paint()..color = ringColor);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_GraphLanePainter old) =>
+      old.row != row ||
+      old.maxLanes != maxLanes ||
+      old.ringColor != ringColor;
+}
+
+// Rail-tap legend (D3): lists the branches whose lines pass through this row —
+// a color dot + branch name per lane, the tapped commit's own branch first,
+// deduplicated. A big tap target (the whole rail strip), no per-pixel hit test.
+void _showLaneBranchSheet(BuildContext context, GraphRowGeometry row) {
+  final own = row.commit.primaryBranch;
+  // Gather distinct branch names across the row's lanes, own branch first.
+  final ordered = <String>[];
+  void add(String? b) {
+    if (b == null || b.isEmpty) return;
+    if (!ordered.contains(b)) ordered.add(b);
+  }
+
+  add(own);
+  for (final b in row.laneBranches) {
+    add(b);
+  }
+
+  showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (ctx) {
+      final theme = Theme.of(ctx);
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppDimens.spacingMd,
+            0,
+            AppDimens.spacingMd,
+            AppDimens.spacingMd,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppDimens.spacingSm),
+                child: Text(
+                  '這一列的分支',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (ordered.isEmpty)
+                Text(
+                  '沒有分支資訊',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                )
+              else
+                for (final b in ordered)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: _BranchGraphRow.branchColor(b),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: AppDimens.spacingSm),
+                        Expanded(
+                          child: Text(
+                            b,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: b == own
+                                  ? FontWeight.w700
+                                  : FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+// Bottom sheet: commit details + the AI work explanation (auto-fetched, cached
+// by the VM and on the backend commit doc).
+void _showCommitSheet(
+  BuildContext context,
+  Commit commit,
+  CommitsViewModel vm,
+) {
+  // Kick off the explanation fetch before the sheet builds.
+  vm.explain(commit.sha);
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (_) => ChangeNotifierProvider<CommitsViewModel>.value(
+      value: vm,
+      child: _CommitDetailSheet(commit: commit),
+    ),
+  );
+}
+
+class _CommitDetailSheet extends StatelessWidget {
+  const _CommitDetailSheet({required this.commit});
+  final Commit commit;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final c = commit;
+    return Consumer<CommitsViewModel>(
+      builder: (ctx, vm, _) {
+        final explanation = vm.explanationFor(c.sha);
+        final explaining = vm.isExplaining(c.sha);
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.6,
+          maxChildSize: 0.92,
+          builder: (_, scrollController) => ListView(
+            controller: scrollController,
+            padding: const EdgeInsets.fromLTRB(
+              AppDimens.spacingMd,
+              0,
+              AppDimens.spacingMd,
+              AppDimens.spacingMd,
+            ),
+            children: [
+              Text(
+                c.message.split('\n').first,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: AppDimens.spacingXs),
+              Text(
+                '${c.author.name.isEmpty ? c.author.login : c.author.name}'
+                ' · ${c.sha.length >= 7 ? c.sha.substring(0, 7) : c.sha}'
+                ' · +${c.additions} −${c.deletions}',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+              if (c.branch != null && c.branch!.isNotEmpty) ...[
+                const SizedBox(height: AppDimens.spacingXs),
+                Row(
+                  children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: _BranchGraphRow.branchColor(c.branch!),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: AppDimens.spacingXs),
+                    Text(
+                      c.branch!,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              if (c.filesChanged.isNotEmpty) ...[
+                const SizedBox(height: AppDimens.spacingSm),
+                Wrap(
+                  spacing: AppDimens.spacingXs,
+                  runSpacing: AppDimens.spacingXs,
+                  children: [
+                    for (final f in c.filesChanged.take(8))
+                      Chip(
+                        label: Text(f, style: theme.textTheme.labelSmall),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: AppDimens.spacingMd),
+              Row(
+                children: [
+                  Icon(
+                    Icons.auto_awesome_outlined,
+                    size: 18,
+                    color: scheme.primary,
+                  ),
+                  const SizedBox(width: AppDimens.spacingSm),
+                  Text(
+                    'AI work summary',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (explanation != null && !explaining)
+                    IconButton(
+                      tooltip: 'Regenerate',
+                      onPressed: () => vm.explain(c.sha, force: true),
+                      icon: const Icon(Icons.refresh, size: 18),
+                    ),
+                ],
+              ),
+              const SizedBox(height: AppDimens.spacingSm),
+              if (explaining)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: AppDimens.spacingMd),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (explanation != null)
+                MarkdownView(data: explanation)
+              else if (vm.explainError != null)
+                Text(
+                  'Could not generate the summary. Please try again.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.error,
+                  ),
+                )
+              else
+                const SizedBox.shrink(),
+            ],
+          ),
         );
       },
     );
@@ -171,8 +2456,22 @@ String _rangeLabel(DiscordMessagesViewModel vm) {
   return 'Date range';
 }
 
-class _DiscordTab extends StatelessWidget {
+// Discord tab — a collapsible, fixed-height digest panel (mirrors the Summary
+// tab's day-report panel, D4) on top, and the AI chat over the team's Discord
+// messages below. The shared AppBar Refresh fills the window's digests; the
+// shared range scopes both the digest display and the chat reads. No per-tab
+// refresh / date / backfill controls (D3) — just a read-only scope label.
+class _DiscordTab extends StatefulWidget {
   const _DiscordTab();
+
+  @override
+  State<_DiscordTab> createState() => _DiscordTabState();
+}
+
+class _DiscordTabState extends State<_DiscordTab> {
+  // Whether the upper digest panel is expanded. Collapsed shows just its header
+  // row, giving the chat the full height.
+  bool _digestExpanded = true;
 
   @override
   Widget build(BuildContext context) {
@@ -186,103 +2485,181 @@ class _DiscordTab extends StatelessWidget {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!ctx.mounted) return;
             vm.acknowledgeUpdated();
-            ScaffoldMessenger.of(ctx).showSnackBar(
-              const SnackBar(content: Text('Updated ✓')),
-            );
+            ScaffoldMessenger.of(
+              ctx,
+            ).showSnackBar(const SnackBar(content: Text('Updated ✓')));
           });
         }
+        // Cap the digest panel at ~45% of the viewport so many days never push
+        // the chat off screen — it scrolls internally instead (D4).
+        final panelMaxHeight = MediaQuery.of(ctx).size.height * 0.45;
         return Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppDimens.spacingMd,
-                AppDimens.spacingMd,
-                AppDimens.spacingMd,
-                AppDimens.spacingSm,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (vm.digest != null) ...[
-                    _DigestCard(digest: vm.digest!, vm: vm),
-                    const SizedBox(height: AppDimens.spacingMd),
-                  ],
-                  Wrap(
-                    alignment: WrapAlignment.end,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: AppDimens.spacingSm,
-                    runSpacing: AppDimens.spacingSm,
-                    children: [
-                      if (vm.lastUpdatedAt != null)
-                        Text(
-                          'Updated ${_hhmm(vm.lastUpdatedAt!)}',
-                          style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
-                                color:
-                                    Theme.of(ctx).colorScheme.onSurfaceVariant,
-                              ),
-                        ),
-                      OutlinedButton.icon(
-                        onPressed: vm.settingRange
-                            ? null
-                            : () async {
-                                final now = DateTime.now();
-                                // Default the picker to the user's saved range
-                                // so it stays at the position they set.
-                                final initial = (vm.rangeStart != null &&
-                                        vm.rangeEnd != null)
-                                    ? DateTimeRange(
-                                        start: vm.rangeStart!,
-                                        end: vm.rangeEnd!,
-                                      )
-                                    : DateTimeRange(start: now, end: now);
-                                final picked = await showDateRangePicker(
-                                  context: ctx,
-                                  firstDate: DateTime(2020),
-                                  lastDate: now,
-                                  initialDateRange: initial,
-                                );
-                                if (picked == null) return;
-                                await vm.setRange(picked.start, picked.end);
-                                if (!ctx.mounted) return;
-                                ScaffoldMessenger.of(ctx).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Range set to ${_dayKey(picked.start)} ~ '
-                                      '${_dayKey(picked.end)}. '
-                                      'Tap Refresh to backfill.',
-                                    ),
-                                  ),
-                                );
-                              },
-                        icon: vm.settingRange
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.date_range_outlined),
-                        label: Text(_rangeLabel(vm)),
-                      ),
-                      FilledButton.icon(
-                        onPressed: vm.refreshing ? null : vm.refresh,
-                        icon: vm.refreshing
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.refresh),
-                        label: Text(vm.refreshing ? 'Fetching…' : 'Refresh'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+            _DigestPanel(
+              vm: vm,
+              expanded: _digestExpanded,
+              maxHeight: panelMaxHeight,
+              onToggle: () =>
+                  setState(() => _digestExpanded = !_digestExpanded),
             ),
+            const Divider(height: 1),
             const Expanded(child: _DiscordChat()),
           ],
         );
       },
+    );
+  }
+}
+
+// D4: the upper digest panel. A tappable header row ('Discord digest' + day
+// count + chevron) collapses/expands the whole panel; when expanded the per-day
+// digest cards live in a fixed-height, internally scrollable region. Mirrors
+// _ReportsPanel. The per-day _DigestCards are unchanged inside.
+class _DigestPanel extends StatefulWidget {
+  const _DigestPanel({
+    required this.vm,
+    required this.expanded,
+    required this.maxHeight,
+    required this.onToggle,
+  });
+
+  final DiscordMessagesViewModel vm;
+  final bool expanded;
+  final double maxHeight;
+  final VoidCallback onToggle;
+
+  @override
+  State<_DigestPanel> createState() => _DigestPanelState();
+}
+
+class _DigestPanelState extends State<_DigestPanel> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final vm = widget.vm;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        InkWell(
+          onTap: widget.onToggle,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppDimens.spacingMd,
+              AppDimens.spacingSm,
+              AppDimens.spacingSm,
+              AppDimens.spacingSm,
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.forum_outlined, size: 20, color: scheme.primary),
+                const SizedBox(width: AppDimens.spacingSm),
+                Text(
+                  'Discord digest',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: AppDimens.spacingSm),
+                _CountChip(
+                  icon: Icons.calendar_today_outlined,
+                  label: '${vm.digests.length}',
+                ),
+                const SizedBox(width: AppDimens.spacingSm),
+                // Read-only scope label — the saved backfill range (or a "saving"
+                // spinner). Refresh + range are now the shared AppBar actions.
+                if (vm.settingRange)
+                  const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  Flexible(
+                    child: Text(
+                      _rangeLabel(vm),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                const Spacer(),
+                AnimatedRotation(
+                  turns: widget.expanded ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  child: const Icon(Icons.expand_more),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (widget.expanded)
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: widget.maxHeight),
+            child: vm.digests.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppDimens.spacingMd,
+                      0,
+                      AppDimens.spacingMd,
+                      AppDimens.spacingMd,
+                    ),
+                    child: Text(
+                      '這個範圍還沒有摘要。用上方的「重新整理目前範圍」拉取訊息。',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  )
+                // Scrollbar pinned flush to the panel's far-right edge: the
+                // ListView carries no right padding, so the scrollbar gutter sits
+                // at the outermost right. Each child gets its own right inset.
+                : Scrollbar(
+                    controller: _scrollController,
+                    thumbVisibility: true,
+                    child: ListView(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.fromLTRB(
+                        AppDimens.spacingMd,
+                        0,
+                        0,
+                        AppDimens.spacingMd,
+                      ),
+                      shrinkWrap: true,
+                      children: [
+                        // One digest card per day in the visible window that HAS
+                        // a digest doc (newest first). Days without a digest are
+                        // skipped.
+                        for (var i = 0; i < vm.digests.length; i++) ...[
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              right: AppDimens.spacingSm,
+                            ),
+                            child: _DigestCard(
+                              key: ValueKey(vm.digests[i].date),
+                              digest: vm.digests[i],
+                              vm: vm,
+                              // Newest day expanded by default, older collapsed.
+                              initiallyExpanded: i == 0,
+                            ),
+                          ),
+                          const SizedBox(height: AppDimens.spacingMd),
+                        ],
+                      ],
+                    ),
+                  ),
+          ),
+      ],
     );
   }
 }
@@ -292,16 +2669,22 @@ class _DiscordTab extends StatelessWidget {
 // collapse/expand; the lock button animates; the card border animates to a
 // "frozen" tint when locked.
 class _DigestCard extends StatefulWidget {
-  const _DigestCard({required this.digest, required this.vm});
+  const _DigestCard({
+    super.key,
+    required this.digest,
+    required this.vm,
+    this.initiallyExpanded = true,
+  });
   final DiscordDigest digest;
   final DiscordMessagesViewModel vm;
+  final bool initiallyExpanded;
 
   @override
   State<_DigestCard> createState() => _DigestCardState();
 }
 
 class _DigestCardState extends State<_DigestCard> {
-  bool _expanded = true;
+  late bool _expanded = widget.initiallyExpanded;
   final _adjustController = TextEditingController();
 
   @override
@@ -312,9 +2695,11 @@ class _DigestCardState extends State<_DigestCard> {
 
   void _submitAdjust() {
     final text = _adjustController.text;
-    if (text.trim().isEmpty || widget.vm.editingDigest) return;
+    if (text.trim().isEmpty || widget.vm.isEditingDigest(widget.digest.date)) {
+      return;
+    }
     _adjustController.clear();
-    widget.vm.editDigest(text);
+    widget.vm.editDigest(widget.digest.date, text);
   }
 
   @override
@@ -324,6 +2709,8 @@ class _DigestCardState extends State<_DigestCard> {
     final digest = widget.digest;
     final vm = widget.vm;
     final locked = digest.locked;
+    final editing = vm.isEditingDigest(digest.date);
+    final toggling = vm.isTogglingLock(digest.date);
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
@@ -352,12 +2739,18 @@ class _DigestCardState extends State<_DigestCard> {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.auto_awesome_outlined,
-                      size: 20, color: scheme.primary),
+                  Icon(
+                    Icons.auto_awesome_outlined,
+                    size: 20,
+                    color: scheme.primary,
+                  ),
                   const SizedBox(width: AppDimens.spacingSm),
-                  Text('Discord digest',
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w600)),
+                  Text(
+                    'Discord digest · ${digest.date}',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   if (locked) ...[
                     const SizedBox(width: AppDimens.spacingSm),
                     Icon(Icons.lock, size: 16, color: scheme.primary),
@@ -366,8 +2759,8 @@ class _DigestCardState extends State<_DigestCard> {
                   // Animated lock toggle.
                   IconButton(
                     tooltip: locked ? 'Unlock digest' : 'Lock digest',
-                    onPressed: vm.togglingLock ? null : vm.toggleLock,
-                    icon: vm.togglingLock
+                    onPressed: toggling ? null : () => vm.toggleLock(digest),
+                    icon: toggling
                         ? const SizedBox(
                             width: 18,
                             height: 18,
@@ -378,7 +2771,9 @@ class _DigestCardState extends State<_DigestCard> {
                             transitionBuilder: (child, anim) => ScaleTransition(
                               scale: anim,
                               child: RotationTransition(
-                                  turns: anim, child: child),
+                                turns: anim,
+                                child: child,
+                              ),
                             ),
                             child: Icon(
                               locked ? Icons.lock : Icons.lock_open,
@@ -414,11 +2809,18 @@ class _DigestCardState extends State<_DigestCard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // Long digests can overflow the card; cap the height
-                        // and let the markdown scroll within it.
+                        // and let the markdown scroll within it. The markdown
+                        // body shrink-wraps to its content width, so force the
+                        // scroll viewport to fill the card width — otherwise the
+                        // scrollbar floats in the middle where the text ends
+                        // instead of pinning to the card's right edge.
                         ConstrainedBox(
                           constraints: const BoxConstraints(maxHeight: 360),
                           child: SingleChildScrollView(
-                            child: MarkdownView(data: digest.markdown),
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: MarkdownView(data: digest.markdown),
+                            ),
                           ),
                         ),
                         const SizedBox(height: AppDimens.spacingSm),
@@ -427,14 +2829,18 @@ class _DigestCardState extends State<_DigestCard> {
                         if (locked)
                           Row(
                             children: [
-                              Icon(Icons.lock_outline,
-                                  size: 16, color: scheme.outline),
+                              Icon(
+                                Icons.lock_outline,
+                                size: 16,
+                                color: scheme.outline,
+                              ),
                               const SizedBox(width: AppDimens.spacingXs),
                               Expanded(
                                 child: Text(
                                   'Locked — unlock to let AI adjust this summary.',
-                                  style: theme.textTheme.bodySmall
-                                      ?.copyWith(color: scheme.outline),
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: scheme.outline,
+                                  ),
                                 ),
                               ),
                             ],
@@ -448,12 +2854,11 @@ class _DigestCardState extends State<_DigestCard> {
                                   controller: _adjustController,
                                   minLines: 1,
                                   maxLines: 3,
-                                  enabled: !vm.editingDigest,
+                                  enabled: !editing,
                                   textInputAction: TextInputAction.send,
                                   onSubmitted: (_) => _submitAdjust(),
                                   decoration: const InputDecoration(
-                                    hintText:
-                                        'Ask AI to adjust this summary…',
+                                    hintText: 'Ask AI to adjust this summary…',
                                     border: OutlineInputBorder(),
                                     isDense: true,
                                   ),
@@ -462,14 +2867,14 @@ class _DigestCardState extends State<_DigestCard> {
                               const SizedBox(width: AppDimens.spacingSm),
                               IconButton.filledTonal(
                                 tooltip: 'Adjust with AI',
-                                onPressed:
-                                    vm.editingDigest ? null : _submitAdjust,
-                                icon: vm.editingDigest
+                                onPressed: editing ? null : _submitAdjust,
+                                icon: editing
                                     ? const SizedBox(
                                         width: 18,
                                         height: 18,
                                         child: CircularProgressIndicator(
-                                            strokeWidth: 2),
+                                          strokeWidth: 2,
+                                        ),
                                       )
                                     : const Icon(Icons.auto_fix_high),
                               ),
@@ -479,8 +2884,9 @@ class _DigestCardState extends State<_DigestCard> {
                           const SizedBox(height: AppDimens.spacingXs),
                           Text(
                             'Could not update the digest. Please try again.',
-                            style: theme.textTheme.bodySmall
-                                ?.copyWith(color: scheme.error),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.error,
+                            ),
                           ),
                         ],
                       ],
@@ -548,8 +2954,9 @@ class _DiscordChatState extends State<_DiscordChat> {
                   ? LayoutBuilder(
                       builder: (ctx, constraints) => SingleChildScrollView(
                         child: ConstrainedBox(
-                          constraints:
-                              BoxConstraints(minHeight: constraints.maxHeight),
+                          constraints: BoxConstraints(
+                            minHeight: constraints.maxHeight,
+                          ),
                           child: const Center(
                             child: EmptyState(
                               icon: Icons.auto_awesome_outlined,
@@ -575,6 +2982,7 @@ class _DiscordChatState extends State<_DiscordChat> {
               controller: _controller,
               sending: vm.sending,
               onSend: () => _send(vm),
+              onNewSession: vm.sending ? null : vm.newSession,
             ),
           ],
         );
@@ -633,8 +3041,9 @@ class _ChatTurnView extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 2, right: 4),
                 child: Text(
                   _hhmm(turn.createdAt!),
-                  style: theme.textTheme.labelSmall
-                      ?.copyWith(color: scheme.onSurfaceVariant),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
               ),
           ],
@@ -650,18 +3059,25 @@ class _ChatTurnView extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.auto_awesome_outlined,
-                  size: 18, color: scheme.primary),
+              Icon(
+                Icons.auto_awesome_outlined,
+                size: 18,
+                color: scheme.primary,
+              ),
               const SizedBox(width: AppDimens.spacingSm),
-              Text('AI',
-                  style: theme.textTheme.labelLarge
-                      ?.copyWith(fontWeight: FontWeight.w600)),
+              Text(
+                'AI',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               if (turn.createdAt != null) ...[
                 const SizedBox(width: AppDimens.spacingSm),
                 Text(
                   _hhmm(turn.createdAt!),
-                  style: theme.textTheme.labelSmall
-                      ?.copyWith(color: scheme.onSurfaceVariant),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ],
@@ -714,8 +3130,9 @@ class _SourcesPanel extends StatelessWidget {
                 const SizedBox(width: AppDimens.spacingXs),
                 Text(
                   'Related conversations (${snippets.length})',
-                  style: theme.textTheme.labelMedium
-                      ?.copyWith(fontWeight: FontWeight.w600),
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -733,8 +3150,7 @@ class _SourcesPanel extends StatelessWidget {
               // Visible divider so distinct conversations read as separate
               // clusters.
               separatorBuilder: (_, _) => const Padding(
-                padding:
-                    EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
+                padding: EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
                 child: Divider(height: 1),
               ),
               itemBuilder: (_, i) => _SnippetBlock(snippet: snippets[i]),
@@ -807,8 +3223,9 @@ class _SnippetMessage extends StatelessWidget {
               const SizedBox(width: AppDimens.spacingSm),
               Text(
                 time,
-                style: theme.textTheme.labelSmall
-                    ?.copyWith(color: scheme.onSurfaceVariant),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
             ],
           ],
@@ -861,11 +3278,16 @@ class _ChatInputBar extends StatelessWidget {
     required this.controller,
     required this.sending,
     required this.onSend,
+    required this.onNewSession,
   });
 
   final TextEditingController controller;
   final bool sending;
   final VoidCallback onSend;
+
+  /// Clears the conversation to start a fresh session (D5). Null disables it
+  /// (e.g. while a question is in flight).
+  final VoidCallback? onNewSession;
 
   @override
   Widget build(BuildContext context) {
@@ -883,6 +3305,12 @@ class _ChatInputBar extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
+            // Start a new chat session — clears the transcript (D5).
+            IconButton(
+              tooltip: '開啟新 session',
+              onPressed: sending ? null : onNewSession,
+              icon: const Icon(Icons.restart_alt),
+            ),
             Expanded(
               child: TextField(
                 controller: controller,

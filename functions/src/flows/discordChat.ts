@@ -13,11 +13,13 @@ import type OpenAI from 'openai';
 
 import { getOpenAI, MODELS } from '../config';
 import { discordChatSystem } from '../prompts/discordChat';
+import { taipeiRangeBounds } from '../tools/dailyIntel';
 import {
   searchDiscordMessages,
   listDaySummaries,
   getDaySummary,
   type DiscordSnippet,
+  type SearchRange,
 } from '../tools/discordSearch';
 
 /** One prior conversation turn passed in from the client. */
@@ -30,6 +32,9 @@ export interface DiscordChatInput {
   repoId: string;
   question: string;
   history?: ChatTurn[];
+  /** Optional active window (both-or-neither, YYYY-MM-DD); scopes AI reads. */
+  startDate?: string;
+  endDate?: string;
 }
 
 export interface DiscordChatResult {
@@ -119,9 +124,30 @@ export async function discordChatFlow(
   const { repoId, question } = input;
   const history = Array.isArray(input.history) ? input.history : [];
 
+  // Time-scope: when the client passes the active window, every read tool is
+  // restricted to it (messages now accumulate forever — additive-only storage).
+  let range: SearchRange | undefined;
+  if (input.startDate && input.endDate) {
+    try {
+      const { start, end } = taipeiRangeBounds(input.startDate, input.endDate);
+      range = { start, end, startDate: input.startDate, endDate: input.endDate };
+    } catch (err) {
+      logger.warn('discordChatFlow: bad range, ignoring (unscoped)', {
+        repoId,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        err: String(err),
+      });
+    }
+  }
+
+  const systemPrompt = range
+    ? `${discordChatSystem}\n\nScope: only messages and digests between ${range.startDate} and ${range.endDate} (inclusive, Asia/Taipei) are available. Do NOT ask for or reference days outside this window.`
+    : discordChatSystem;
+
   const openai = getOpenAI();
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: 'system', content: discordChatSystem },
+    { role: 'system', content: systemPrompt },
     ...history
       .slice(-MAX_HISTORY_TURNS)
       .filter((t) => t && (t.role === 'user' || t.role === 'assistant') && t.content)
@@ -167,11 +193,21 @@ export async function discordChatFlow(
         const args = safeParse(call.function.arguments);
         switch (call.function.name) {
           case 'listDaySummaries': {
-            const days = await listDaySummaries(repoId);
+            const days = await listDaySummaries(repoId, range);
             return { tool_call_id: call.id, content: JSON.stringify(days) };
           }
           case 'getDaySummary': {
-            const day = await getDaySummary(repoId, String(args.date ?? ''));
+            const date = String(args.date ?? '');
+            // Honor the active window — refuse out-of-scope day reads.
+            if (range && (date < range.startDate || date > range.endDate)) {
+              return {
+                tool_call_id: call.id,
+                content: JSON.stringify({
+                  error: `out of scope: ${date} is outside ${range.startDate}..${range.endDate}`,
+                }),
+              };
+            }
+            const day = await getDaySummary(repoId, date);
             return {
               tool_call_id: call.id,
               content: JSON.stringify(day ?? { error: 'no digest for that day' }),
@@ -182,6 +218,7 @@ export async function discordChatFlow(
               repoId,
               String(args.query ?? ''),
               typeof args.limit === 'number' ? args.limit : undefined,
+              range,
             );
             for (const s of found) surfaced.set(snippetKey(s), s);
             return { tool_call_id: call.id, content: JSON.stringify(found) };

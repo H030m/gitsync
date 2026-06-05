@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitsync/models/commit_graph.dart';
+import 'package:gitsync/models/daily_brief.dart';
 import 'package:gitsync/models/discord_chat.dart';
 import 'package:gitsync/models/repo.dart';
 import 'package:gitsync/models/sub_task.dart';
@@ -68,7 +70,35 @@ class _FakeFunctionsService implements FunctionsService {
   @override
   Future<String> summarizeDay({
     required String repoId,
+    required String startDate,
+    String? endDate,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<DailyBriefReply> dailyBrief({
+    required String repoId,
     required String date,
+    String? endDate,
+    required String question,
+    List<DailyBriefTurn> history = const [],
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<String> explainCommit({
+    required String repoId,
+    required String sha,
+    bool force = false,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<CommitGraph> getCommitGraph({
+    required String repoId,
+    String? startDate,
+    String? endDate,
+    bool force = false,
   }) =>
       throw UnimplementedError();
 
@@ -123,6 +153,8 @@ class _FakeFunctionsService implements FunctionsService {
     required String repoId,
     required String question,
     List<DiscordChatTurn> history = const [],
+    String? startDate,
+    String? endDate,
   }) =>
       throw UnimplementedError();
 
