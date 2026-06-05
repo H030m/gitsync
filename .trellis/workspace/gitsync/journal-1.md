@@ -454,3 +454,36 @@ setDiscordRange prune removed (additive-only storage; regression test asserts ou
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: Fix digest card markdown scrollbar floating mid-card
+
+**Date**: 2026-06-05
+**Task**: Fix digest card markdown scrollbar floating mid-card
+**Branch**: `feature/summary-intel-hub`
+
+### Summary
+
+The collapsible Discord digest card capped its markdown at maxHeight:360 inside a vertical SingleChildScrollView. MarkdownBody shrink-wraps to content width, and in a crossAxisAlignment.start Column the scroll view took loose width constraints and collapsed to that intrinsic width, so the desktop scrollbar floated in the middle of the card. Wrapped the child in SizedBox(width: double.infinity) to fill the card width and pin the scrollbar to the right edge. Codified the pitfall in frontend component-guidelines.md (extends the just-archived pin-panel-scrollbars task). flutter analyze clean.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d3ebb09` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

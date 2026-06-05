@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 13
+- **Total Sessions**: 14
 - **Last Active**: 2026-06-05
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~456 | Active |
+| `journal-1.md` | ~489 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 14 | 2026-06-05 | Fix digest card markdown scrollbar floating mid-card | `d3ebb09` | `feature/summary-intel-hub` |
 | 13 | 2026-06-05 | One date one refresh: additive Discord + scoped AI + unified UX | `4fc80cf` | `feature/summary-intel-hub` |
 | 12 | 2026-06-05 | Discord digests: per-day cards in visible window | `1629b82` | `feature/summary-intel-hub` |
 | 11 | 2026-06-05 | Decouple Discord from shared range + reports panel + chat new session | `ee1bd3a` | `feature/summary-intel-hub` |
