@@ -312,7 +312,7 @@ class _SummaryTabState extends State<_SummaryTab> {
 // chevron) collapses/expands the whole panel; when expanded the day cards live
 // in a fixed-height, internally scrollable region (so many days don't push the
 // chat off screen). The day cards keep their own per-card collapse.
-class _ReportsPanel extends StatelessWidget {
+class _ReportsPanel extends StatefulWidget {
   const _ReportsPanel({
     required this.dayCount,
     required this.expanded,
@@ -328,6 +328,19 @@ class _ReportsPanel extends StatelessWidget {
   final List<Widget> cards;
 
   @override
+  State<_ReportsPanel> createState() => _ReportsPanelState();
+}
+
+class _ReportsPanelState extends State<_ReportsPanel> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
@@ -335,7 +348,7 @@ class _ReportsPanel extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         InkWell(
-          onTap: onToggle,
+          onTap: widget.onToggle,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(
               AppDimens.spacingMd,
@@ -356,11 +369,11 @@ class _ReportsPanel extends StatelessWidget {
                 const SizedBox(width: AppDimens.spacingSm),
                 _CountChip(
                   icon: Icons.calendar_today_outlined,
-                  label: '$dayCount',
+                  label: '${widget.dayCount}',
                 ),
                 const Spacer(),
                 AnimatedRotation(
-                  turns: expanded ? 0.5 : 0,
+                  turns: widget.expanded ? 0.5 : 0,
                   duration: const Duration(milliseconds: 200),
                   child: const Icon(Icons.expand_more),
                 ),
@@ -368,18 +381,34 @@ class _ReportsPanel extends StatelessWidget {
             ),
           ),
         ),
-        if (expanded)
+        if (widget.expanded)
           ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: maxHeight),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(
-                AppDimens.spacingMd,
-                0,
-                AppDimens.spacingMd,
-                AppDimens.spacingMd,
+            constraints: BoxConstraints(maxHeight: widget.maxHeight),
+            // Scrollbar pinned flush to the panel's far-right edge: the ListView
+            // carries no right padding, so the scrollbar gutter sits at the
+            // outermost right. Each child gets its own right inset instead.
+            child: Scrollbar(
+              controller: _scrollController,
+              thumbVisibility: true,
+              child: ListView(
+                controller: _scrollController,
+                padding: const EdgeInsets.fromLTRB(
+                  AppDimens.spacingMd,
+                  0,
+                  0,
+                  AppDimens.spacingMd,
+                ),
+                shrinkWrap: true,
+                children: [
+                  for (final card in widget.cards)
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        right: AppDimens.spacingSm,
+                      ),
+                      child: card,
+                    ),
+                ],
               ),
-              shrinkWrap: true,
-              children: cards,
             ),
           ),
       ],
@@ -2486,7 +2515,7 @@ class _DiscordTabState extends State<_DiscordTab> {
 // count + chevron) collapses/expands the whole panel; when expanded the per-day
 // digest cards live in a fixed-height, internally scrollable region. Mirrors
 // _ReportsPanel. The per-day _DigestCards are unchanged inside.
-class _DigestPanel extends StatelessWidget {
+class _DigestPanel extends StatefulWidget {
   const _DigestPanel({
     required this.vm,
     required this.expanded,
@@ -2500,14 +2529,28 @@ class _DigestPanel extends StatelessWidget {
   final VoidCallback onToggle;
 
   @override
+  State<_DigestPanel> createState() => _DigestPanelState();
+}
+
+class _DigestPanelState extends State<_DigestPanel> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final vm = widget.vm;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         InkWell(
-          onTap: onToggle,
+          onTap: widget.onToggle,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(
               AppDimens.spacingMd,
@@ -2552,7 +2595,7 @@ class _DigestPanel extends StatelessWidget {
                   ),
                 const Spacer(),
                 AnimatedRotation(
-                  turns: expanded ? 0.5 : 0,
+                  turns: widget.expanded ? 0.5 : 0,
                   duration: const Duration(milliseconds: 200),
                   child: const Icon(Icons.expand_more),
                 ),
@@ -2560,9 +2603,9 @@ class _DigestPanel extends StatelessWidget {
             ),
           ),
         ),
-        if (expanded)
+        if (widget.expanded)
           ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: maxHeight),
+            constraints: BoxConstraints(maxHeight: widget.maxHeight),
             child: vm.digests.isEmpty
                 ? Padding(
                     padding: const EdgeInsets.fromLTRB(
@@ -2578,29 +2621,42 @@ class _DigestPanel extends StatelessWidget {
                       ),
                     ),
                   )
-                : ListView(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppDimens.spacingMd,
-                      0,
-                      AppDimens.spacingMd,
-                      AppDimens.spacingMd,
-                    ),
-                    shrinkWrap: true,
-                    children: [
-                      // One digest card per day in the visible window that HAS a
-                      // digest doc (newest first). Days without a digest are
-                      // skipped.
-                      for (var i = 0; i < vm.digests.length; i++) ...[
-                        _DigestCard(
-                          key: ValueKey(vm.digests[i].date),
-                          digest: vm.digests[i],
-                          vm: vm,
-                          // Newest day expanded by default, older collapsed.
-                          initiallyExpanded: i == 0,
-                        ),
-                        const SizedBox(height: AppDimens.spacingMd),
+                // Scrollbar pinned flush to the panel's far-right edge: the
+                // ListView carries no right padding, so the scrollbar gutter sits
+                // at the outermost right. Each child gets its own right inset.
+                : Scrollbar(
+                    controller: _scrollController,
+                    thumbVisibility: true,
+                    child: ListView(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.fromLTRB(
+                        AppDimens.spacingMd,
+                        0,
+                        0,
+                        AppDimens.spacingMd,
+                      ),
+                      shrinkWrap: true,
+                      children: [
+                        // One digest card per day in the visible window that HAS
+                        // a digest doc (newest first). Days without a digest are
+                        // skipped.
+                        for (var i = 0; i < vm.digests.length; i++) ...[
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              right: AppDimens.spacingSm,
+                            ),
+                            child: _DigestCard(
+                              key: ValueKey(vm.digests[i].date),
+                              digest: vm.digests[i],
+                              vm: vm,
+                              // Newest day expanded by default, older collapsed.
+                              initiallyExpanded: i == 0,
+                            ),
+                          ),
+                          const SizedBox(height: AppDimens.spacingMd),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
           ),
       ],

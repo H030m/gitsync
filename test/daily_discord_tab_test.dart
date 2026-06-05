@@ -279,6 +279,8 @@ void main() {
     // Expanded: the panel header + the day cards are visible.
     expect(find.text('Discord digest'), findsOneWidget); // panel header
     expect(find.text('Discord digest · 2026-06-04'), findsOneWidget);
+    // The expanded digest panel pins a Scrollbar flush to its right edge.
+    expect(find.byType(Scrollbar), findsWidgets);
 
     // Collapse the panel via its header → day cards disappear, header stays.
     await tester.tap(find.text('Discord digest'));

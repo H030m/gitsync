@@ -143,6 +143,8 @@ void main() {
     expect(find.text('日報'), findsOneWidget);
     expect(find.byKey(ValueKey(DailyReportViewModel.dayKeyOf(now))),
         findsOneWidget);
+    // The expanded panel pins a Scrollbar flush to its right edge.
+    expect(find.byType(Scrollbar), findsWidgets);
 
     // Collapsing the whole panel via its header hides every day card.
     await tester.tap(find.text('日報'));
