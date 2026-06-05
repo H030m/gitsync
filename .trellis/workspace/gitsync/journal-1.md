@@ -553,3 +553,36 @@ User flagged the four-chart Stats didn't match references/GitSync StatsView.tsx.
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: Stats: commit-share toggle + GitHub names
+
+**Date**: 2026-06-06
+**Task**: Stats: commit-share toggle + GitHub names
+**Branch**: `feature/summary-intel-hub`
+
+### Summary
+
+貢獻度 tab toggles between all-history commit share (fetchAllCommits, default) and done-task share; member labels join users/{uid} to githubLogin with name/uid fallback so no raw UIDs remain. 63 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `35ef550` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
