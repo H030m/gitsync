@@ -619,3 +619,36 @@ buildAuthorGroups two-pass merge fixes duplicate humans (login vs git-name bucke
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: Kanban DnD + prototype alignment
+
+**Date**: 2026-06-06
+**Task**: Kanban DnD + prototype alignment
+**Branch**: `feature/summary-intel-hub`
+
+### Summary
+
+TasksBoard restyled per prototype (CJK tabs/columns, tonal headers, count chips, assignee circles, empty state) + LongPressDraggable/DragTarget status changes. TodoDeps.tsx judged redundant (same graph as 關聯圖 tab) — skipped. 67 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8266b9c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
