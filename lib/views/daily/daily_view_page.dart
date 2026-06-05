@@ -47,31 +47,35 @@ class _DailyViewPageState extends State<DailyViewPage> {
   }
 
   // Fans the shared range out to every tab's ViewModel. Setting a range scopes
-  // Summary (per-day cards), the daily-brief chat, the Commits list+graph, and
-  // the Discord DISPLAY only (which day's digest shows) — never the destructive
-  // backfill callable. Clearing returns each tab to its default.
+  // Summary (per-day cards), the daily-brief chat, the Commits list+graph, the
+  // Discord digest display + persisted backfill range, and the Discord chat's
+  // read window. Clearing returns each tab to its default.
   void _onRangeChanged() {
     final range = _rangeVm?.range;
     final report = context.read<DailyReportViewModel>();
     final chat = context.read<DailyBriefChatViewModel>();
     final commits = context.read<CommitsViewModel>();
     final discord = context.read<DiscordMessagesViewModel>();
+    final discordChat = context.read<DiscordChatViewModel>();
     if (range != null) {
       report.setRange(range.start, range.end);
       chat.setRange(range.start, range.end);
       commits.setRange(range.start, range.end);
-      // Display-only: re-points the shown digest day. Does NOT call
-      // setDiscordRange / prune — backfill is now an explicit Discord-tab
-      // action (D1).
-      discord.setViewRange(range.start, range.end);
+      // D1+D3: setDiscordRange is now additive-only, so binding the shared range
+      // to Discord is safe again — it persists the range (bot re-pulls + dedups)
+      // and mirrors into the digest display. D2: the Discord chat reads the same
+      // window.
+      discord.setRange(range.start, range.end);
+      discordChat.setRange(range.start, range.end);
     } else {
       final now = DateTime.now();
       report.clearRange();
       chat.setRange(now, now);
       commits.clearRange();
-      // Clears only the Discord display scope; the digest day falls back to the
-      // saved backfill range (or today). No callable, no prune (D1).
+      // Clears only the Discord display scope (no callable — additive store
+      // keeps everything). The chat returns to an unscoped (recent) read.
       discord.clearViewRange();
+      discordChat.clearRange();
     }
   }
 
@@ -88,7 +92,7 @@ class _DailyViewPageState extends State<DailyViewPage> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Daily'),
-          actions: const [_SharedRangeAction()],
+          actions: const [_SharedRefreshAction(), _SharedRangeAction()],
           bottom: const TabBar(
             tabs: [
               Tab(text: 'Summary'),
@@ -101,6 +105,42 @@ class _DailyViewPageState extends State<DailyViewPage> {
           children: [_SummaryTab(), _CommitsTab(), _DiscordTab()],
         ),
       ),
+    );
+  }
+}
+
+// The one shared Refresh for all three tabs (D3), pinned in the AppBar next to
+// the shared range picker. Refreshes everything for the current window:
+//   - Commits: forces a branch-graph reload (the list view is realtime).
+//   - Discord: re-requests a per-day backfill across the window (≤31 days; the
+//     bot dedups), so missing days fill in.
+//   - Summary: nothing (reports stream realtime; generation stays per-day).
+// Disabled while either the graph or the Discord sweep is already in flight.
+class _SharedRefreshAction extends StatelessWidget {
+  const _SharedRefreshAction();
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer2<CommitsViewModel, DiscordMessagesViewModel>(
+      builder: (ctx, commits, discord, _) {
+        final busy = commits.graphLoading || discord.refreshing;
+        return IconButton(
+          tooltip: '重新整理目前範圍',
+          icon: busy
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.refresh),
+          onPressed: busy
+              ? null
+              : () {
+                  commits.loadGraph(force: true);
+                  discord.refreshWindow();
+                },
+        );
+      },
     );
   }
 }
@@ -1187,16 +1227,8 @@ class _CommitsTab extends StatelessWidget {
                     ),
                   ),
                   const Spacer(),
-                  // Manual refresh for the branch graph (it's fetched on demand
-                  // and won't otherwise pick up new pushes while on screen).
-                  if (vm.viewMode == CommitsViewMode.branch)
-                    IconButton(
-                      tooltip: 'Refresh graph',
-                      icon: const Icon(Icons.refresh, size: 20),
-                      onPressed: vm.graphLoading
-                          ? null
-                          : () => vm.loadGraph(force: true),
-                    ),
+                  // Refresh is now the single shared AppBar action (D3); the
+                  // branch graph reloads from there.
                   // Branch topology vs the flat, filterable commit list (D4).
                   SegmentedButton<CommitsViewMode>(
                     segments: const [
@@ -2395,39 +2427,22 @@ String _rangeLabel(DiscordMessagesViewModel vm) {
   return 'Date range';
 }
 
-// Explicit Discord backfill picker — the one place the destructive
-// `setDiscordRange` callable is reached. Pick a window, persist it (prune +
-// refetch on the next Refresh), then prompt the user to Refresh.
-Future<void> _pickBackfillRange(
-  BuildContext context,
-  DiscordMessagesViewModel vm,
-) async {
-  final now = DateTime.now();
-  final initial = (vm.rangeStart != null && vm.rangeEnd != null)
-      ? DateTimeRange(start: vm.rangeStart!, end: vm.rangeEnd!)
-      : DateTimeRange(start: now, end: now);
-  final picked = await showDateRangePicker(
-    context: context,
-    firstDate: DateTime(2020),
-    lastDate: now,
-    initialDateRange: initial,
-  );
-  if (picked == null) return;
-  await vm.setRange(picked.start, picked.end);
-  if (!context.mounted) return;
-  ScaffoldMessenger.of(context).clearSnackBars();
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text(
-        'Range set to ${_monthDay(picked.start)} ~ ${_monthDay(picked.end)}. '
-        'Tap Refresh to backfill.',
-      ),
-    ),
-  );
+// Discord tab — a collapsible, fixed-height digest panel (mirrors the Summary
+// tab's day-report panel, D4) on top, and the AI chat over the team's Discord
+// messages below. The shared AppBar Refresh fills the window's digests; the
+// shared range scopes both the digest display and the chat reads. No per-tab
+// refresh / date / backfill controls (D3) — just a read-only scope label.
+class _DiscordTab extends StatefulWidget {
+  const _DiscordTab();
+
+  @override
+  State<_DiscordTab> createState() => _DiscordTabState();
 }
 
-class _DiscordTab extends StatelessWidget {
-  const _DiscordTab();
+class _DiscordTabState extends State<_DiscordTab> {
+  // Whether the upper digest panel is expanded. Collapsed shows just its header
+  // row, giving the chat the full height.
+  bool _digestExpanded = true;
 
   @override
   Widget build(BuildContext context) {
@@ -2446,107 +2461,149 @@ class _DiscordTab extends StatelessWidget {
             ).showSnackBar(const SnackBar(content: Text('Updated ✓')));
           });
         }
+        // Cap the digest panel at ~45% of the viewport so many days never push
+        // the chat off screen — it scrolls internally instead (D4).
+        final panelMaxHeight = MediaQuery.of(ctx).size.height * 0.45;
         return Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppDimens.spacingMd,
-                AppDimens.spacingMd,
-                AppDimens.spacingMd,
-                AppDimens.spacingSm,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // One digest card per day in the visible window that HAS a
-                  // digest doc (newest first). Days without a digest are
-                  // skipped; an empty window shows no card.
-                  for (var i = 0; i < vm.digests.length; i++) ...[
-                    _DigestCard(
-                      key: ValueKey(vm.digests[i].date),
-                      digest: vm.digests[i],
-                      vm: vm,
-                      // Newest day expanded by default, older days collapsed.
-                      initiallyExpanded: i == 0,
-                    ),
-                    const SizedBox(height: AppDimens.spacingMd),
-                  ],
-                  Wrap(
-                    alignment: WrapAlignment.end,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: AppDimens.spacingSm,
-                    runSpacing: AppDimens.spacingSm,
-                    children: [
-                      if (vm.lastUpdatedAt != null)
-                        Text(
-                          'Updated ${_hhmm(vm.lastUpdatedAt!)}',
-                          style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
-                            color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      // Read-only scope label — the saved backfill range. The
-                      // shared AppBar range only re-points which day's digest
-                      // SHOWS; it never writes this saved range (D1).
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (vm.settingRange)
-                            const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          else
-                            Icon(
-                              Icons.date_range_outlined,
-                              size: 16,
-                              color:
-                                  Theme.of(ctx).colorScheme.onSurfaceVariant,
-                            ),
-                          const SizedBox(width: AppDimens.spacingXs),
-                          Text(
-                            _rangeLabel(vm),
-                            style:
-                                Theme.of(ctx).textTheme.labelMedium?.copyWith(
-                                      color: Theme.of(ctx)
-                                          .colorScheme
-                                          .onSurfaceVariant,
-                                    ),
-                          ),
-                        ],
-                      ),
-                      // Explicit, opt-in backfill picker — the ONLY path to the
-                      // destructive setDiscordRange callable (prune + refetch).
-                      OutlinedButton.icon(
-                        onPressed: vm.settingRange
-                            ? null
-                            : () => _pickBackfillRange(ctx, vm),
-                        icon: const Icon(Icons.date_range, size: 18),
-                        label: const Text('設定回補範圍'),
-                      ),
-                      FilledButton.icon(
-                        onPressed: vm.refreshing ? null : vm.refresh,
-                        icon: vm.refreshing
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.refresh),
-                        label: Text(vm.refreshing ? 'Fetching…' : 'Refresh'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+            _DigestPanel(
+              vm: vm,
+              expanded: _digestExpanded,
+              maxHeight: panelMaxHeight,
+              onToggle: () =>
+                  setState(() => _digestExpanded = !_digestExpanded),
             ),
+            const Divider(height: 1),
             const Expanded(child: _DiscordChat()),
           ],
         );
       },
+    );
+  }
+}
+
+// D4: the upper digest panel. A tappable header row ('Discord digest' + day
+// count + chevron) collapses/expands the whole panel; when expanded the per-day
+// digest cards live in a fixed-height, internally scrollable region. Mirrors
+// _ReportsPanel. The per-day _DigestCards are unchanged inside.
+class _DigestPanel extends StatelessWidget {
+  const _DigestPanel({
+    required this.vm,
+    required this.expanded,
+    required this.maxHeight,
+    required this.onToggle,
+  });
+
+  final DiscordMessagesViewModel vm;
+  final bool expanded;
+  final double maxHeight;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        InkWell(
+          onTap: onToggle,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppDimens.spacingMd,
+              AppDimens.spacingSm,
+              AppDimens.spacingSm,
+              AppDimens.spacingSm,
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.forum_outlined, size: 20, color: scheme.primary),
+                const SizedBox(width: AppDimens.spacingSm),
+                Text(
+                  'Discord digest',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: AppDimens.spacingSm),
+                _CountChip(
+                  icon: Icons.calendar_today_outlined,
+                  label: '${vm.digests.length}',
+                ),
+                const SizedBox(width: AppDimens.spacingSm),
+                // Read-only scope label — the saved backfill range (or a "saving"
+                // spinner). Refresh + range are now the shared AppBar actions.
+                if (vm.settingRange)
+                  const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  Flexible(
+                    child: Text(
+                      _rangeLabel(vm),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                const Spacer(),
+                AnimatedRotation(
+                  turns: expanded ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  child: const Icon(Icons.expand_more),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (expanded)
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: vm.digests.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppDimens.spacingMd,
+                      0,
+                      AppDimens.spacingMd,
+                      AppDimens.spacingMd,
+                    ),
+                    child: Text(
+                      '這個範圍還沒有摘要。用上方的「重新整理目前範圍」拉取訊息。',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppDimens.spacingMd,
+                      0,
+                      AppDimens.spacingMd,
+                      AppDimens.spacingMd,
+                    ),
+                    shrinkWrap: true,
+                    children: [
+                      // One digest card per day in the visible window that HAS a
+                      // digest doc (newest first). Days without a digest are
+                      // skipped.
+                      for (var i = 0; i < vm.digests.length; i++) ...[
+                        _DigestCard(
+                          key: ValueKey(vm.digests[i].date),
+                          digest: vm.digests[i],
+                          vm: vm,
+                          // Newest day expanded by default, older collapsed.
+                          initiallyExpanded: i == 0,
+                        ),
+                        const SizedBox(height: AppDimens.spacingMd),
+                      ],
+                    ],
+                  ),
+          ),
+      ],
     );
   }
 }
@@ -2862,6 +2919,7 @@ class _DiscordChatState extends State<_DiscordChat> {
               controller: _controller,
               sending: vm.sending,
               onSend: () => _send(vm),
+              onNewSession: vm.sending ? null : vm.newSession,
             ),
           ],
         );
@@ -3157,11 +3215,16 @@ class _ChatInputBar extends StatelessWidget {
     required this.controller,
     required this.sending,
     required this.onSend,
+    required this.onNewSession,
   });
 
   final TextEditingController controller;
   final bool sending;
   final VoidCallback onSend;
+
+  /// Clears the conversation to start a fresh session (D5). Null disables it
+  /// (e.g. while a question is in flight).
+  final VoidCallback? onNewSession;
 
   @override
   Widget build(BuildContext context) {
@@ -3179,6 +3242,12 @@ class _ChatInputBar extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
+            // Start a new chat session — clears the transcript (D5).
+            IconButton(
+              tooltip: '開啟新 session',
+              onPressed: sending ? null : onNewSession,
+              icon: const Icon(Icons.restart_alt),
+            ),
             Expanded(
               child: TextField(
                 controller: controller,

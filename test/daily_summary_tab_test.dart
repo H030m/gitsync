@@ -220,8 +220,9 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('the shared range scopes the other tabs but NEVER triggers the '
-      'Discord backfill callable, on set OR clear', (tester) async {
+  testWidgets('the shared range scopes the other tabs AND binds the Discord '
+      'backfill range (additive-only callable), reverted from 06-04 — set',
+      (tester) async {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
@@ -239,60 +240,32 @@ void main() {
       start: now.subtract(const Duration(days: 2)),
       end: now,
     ));
-    // The shared range only re-points the Discord DISPLAY (view range); it must
-    // never call the destructive setDiscordRange callable. settingRange staying
-    // false proves no callable fired (D1 decouple).
+    // SEMANTICS REVERTED (06-05, D1): setDiscordRange is now additive-only
+    // (deletes nothing), so binding the shared range to Discord is safe again.
+    // The shared range now DOES call vm.setRange → settingRange flips true
+    // before the fake resolves (the 06-04 test asserted the opposite because
+    // the callable used to be destructive). It also mirrors into the display
+    // view range immediately.
     await tester.pump();
-    expect(discord.settingRange, isFalse);
+    expect(discord.settingRange, isTrue);
     expect(discord.viewEnd, isNotNull);
     await tester.pumpAndSettle();
+    expect(discord.settingRange, isFalse);
 
     // Commits + report VMs both took the shared range.
     expect(commits.hasRange, isTrue);
     expect(report.hasRange, isTrue);
-    expect(discord.settingRange, isFalse);
 
-    // Clearing resets the other three tabs and clears the Discord view scope —
-    // still no callable, still no prune.
+    // Clearing resets the other three tabs and clears the Discord view scope.
     intel.clear();
     await tester.pump();
     expect(commits.hasRange, isFalse);
     expect(report.hasRange, isFalse);
-    expect(discord.settingRange, isFalse);
     expect(discord.viewEnd, isNull);
+    await tester.pumpAndSettle();
 
     // Drain any fake-backend delayed timers (e.g. the commits-graph reload that
     // clearRange kicks off) so the harness doesn't flag a pending timer.
     await tester.pump(const Duration(seconds: 1));
-  });
-
-  testWidgets('the Discord tab backfill button still drives setRange '
-      '(the destructive callable)', (tester) async {
-    await tester.pumpWidget(_harness());
-    await tester.pumpAndSettle();
-
-    final ctx = tester.element(find.byType(DailyViewPage));
-    final discord = ctx.read<DiscordMessagesViewModel>();
-
-    // Switch to the Discord tab.
-    await tester.tap(find.text('Discord'));
-    await tester.pumpAndSettle();
-
-    // The explicit backfill picker is present.
-    final button = find.widgetWithText(OutlinedButton, '設定回補範圍');
-    expect(button, findsOneWidget);
-
-    // Open the range picker and confirm a window. showDateRangePicker opens
-    // with a Save action; the default selection is today..today.
-    await tester.tap(button);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Save'));
-    await tester.pump();
-
-    // The explicit path DOES call vm.setRange (the persistent callable) — its
-    // in-flight flag flips true before the fake resolves.
-    expect(discord.settingRange, isTrue);
-    await tester.pumpAndSettle();
-    expect(discord.settingRange, isFalse);
   });
 }

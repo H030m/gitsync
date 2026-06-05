@@ -222,8 +222,8 @@ void main() {
     expect(find.text('AI work summary'), findsOneWidget);
   });
 
-  testWidgets('refresh button refetches and keeps the branch graph visible',
-      (tester) async {
+  testWidgets('the shared AppBar refresh refetches and keeps the branch graph '
+      'visible', (tester) async {
     tester.view.physicalSize = const Size(1200, 2400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -237,7 +237,10 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tap(find.byTooltip('Refresh graph'));
+    // The per-tab refresh button is gone (D3); refresh is the shared AppBar
+    // action (reachable from every tab).
+    expect(find.byTooltip('Refresh graph'), findsNothing);
+    await tester.tap(find.byTooltip('重新整理目前範圍'));
     await tester.pumpAndSettle();
 
     // The existing graph stays visible through the (forced) reload.

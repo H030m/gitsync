@@ -142,10 +142,14 @@ abstract class FunctionsService {
   /// agentic loop: it searches the ingested messages, then answers. Returns the
   /// answer plus the messages it surfaced (for the scrollable "sources" panel).
   /// [history] is prior turns, oldest first, for follow-up context.
+  /// [startDate]..[endDate] (both YYYY-MM-DD, both-or-neither) scope the read to
+  /// a time window; omit both for an unscoped (recent-messages) read.
   Future<DiscordChatReply> discordChat({
     required String repoId,
     required String question,
     List<DiscordChatTurn> history = const [],
+    String? startDate,
+    String? endDate,
   });
 
   // ---- FCM ---------------------------------------------------------------
@@ -372,11 +376,16 @@ class _LiveFunctionsService implements FunctionsService {
     required String repoId,
     required String question,
     List<DiscordChatTurn> history = const [],
+    String? startDate,
+    String? endDate,
   }) async {
     final res = await _callable('discordChat').call({
       'repoId': repoId,
       'question': question,
       'history': history.map((t) => t.toMap()).toList(),
+      // Only sent when scoped; the backend treats absent as unscoped (D2).
+      'startDate': ?startDate,
+      'endDate': ?endDate,
     });
     return DiscordChatReply.fromMap(Map<String, dynamic>.from(res.data as Map));
   }

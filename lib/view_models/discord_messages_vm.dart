@@ -11,6 +11,14 @@ import '../repositories/discord_message_repo.dart';
 import '../repositories/repo_repo.dart';
 import '../services/functions_service.dart';
 
+/// Drives the Daily page's Discord tab: streams messages + the visible window's
+/// digests, and owns the Discord half of the shared Refresh ([refreshWindow]).
+///
+/// State model (post-06-05): the shared AppBar range SET calls [setRange] —
+/// which persists the backfill range (now ADDITIVE-ONLY, D1; nothing is
+/// deleted) AND mirrors into the display view range for instant feedback. The
+/// shared range CLEAR calls [clearViewRange] (display only, no callable). The
+/// visible window precedence stays view → saved → today.
 class DiscordMessagesViewModel with ChangeNotifier {
   DiscordMessagesViewModel({
     required String repoId,
@@ -69,10 +77,13 @@ class DiscordMessagesViewModel with ChangeNotifier {
   /// Range end parsed from the repo doc's `discordEndDate`, null if unset.
   DateTime? get rangeEnd => _rangeEnd;
 
-  // Display-only view range (the shared AppBar scope). Decoupled from the saved
-  // backfill range: it never calls the destructive `setDiscordRange` callable —
-  // it only re-points the digest day (precedence below). Null when no shared
-  // scope is active (falls back to the saved range / today).
+  // Display view range (the shared AppBar scope). Re-points which days' digests
+  // SHOW. Since `setDiscordRange` is now additive-only (D1), the shared range
+  // SET path persists via [setRange] AND mirrors into this view range for
+  // instant display (no waiting on the repo-doc round-trip). Null when no shared
+  // scope is active (falls back to the saved range / today). State model: the
+  // shared range SET → [setRange] (persist + display); CLEAR → [clearViewRange]
+  // (display only, no callable).
   DateTime? _viewStart;
   DateTime? _viewEnd;
 
@@ -180,8 +191,8 @@ class DiscordMessagesViewModel with ChangeNotifier {
   }
 
   // Display-only: re-points what the Discord tab SHOWS (the digest day) to the
-  // shared view range. Never calls the `setDiscordRange` callable and never
-  // prunes — purely a view scope. Pairs with [clearViewRange].
+  // shared view range. Never calls the `setDiscordRange` callable — purely a
+  // view scope (storage is additive-only, D1). Pairs with [clearViewRange].
   void setViewRange(DateTime start, DateTime end) {
     _viewStart = start;
     _viewEnd = end;
@@ -190,7 +201,7 @@ class DiscordMessagesViewModel with ChangeNotifier {
   }
 
   // Clears the display-only view range; the digest day falls back to the saved
-  // backfill range end (or today). No callable, no prune.
+  // backfill range end (or today). No callable (storage is additive-only, D1).
   void clearViewRange() {
     _viewStart = null;
     _viewEnd = null;
@@ -249,11 +260,16 @@ class DiscordMessagesViewModel with ChangeNotifier {
     notifyListeners();
   }
 
-  // Sets the backfill date range for this repo's Discord channels. After this,
-  // the next refresh re-pulls the range (already-ingested messages dedupe). The
-  // new range arrives via the repo stream, so we don't set it locally.
+  // Sets the backfill date range for this repo's Discord channels. Now
+  // additive-only (D1): the bot re-pulls the window and dedups by messageId; no
+  // out-of-window docs are deleted. Mirrors the range into the display view
+  // range immediately (so the digest panel re-points without waiting on the
+  // repo-doc round-trip); the persisted range also arrives via the repo stream.
   Future<void> setRange(DateTime start, DateTime end) async {
     if (_settingRange) return;
+    _viewStart = start;
+    _viewEnd = end;
+    _repointDigests();
     _settingRange = true;
     notifyListeners();
     try {
@@ -264,6 +280,50 @@ class DiscordMessagesViewModel with ChangeNotifier {
       );
     } finally {
       _settingRange = false;
+      notifyListeners();
+    }
+  }
+
+  // The Discord half of the shared AppBar Refresh (D3): re-requests an on-demand
+  // backfill for EVERY day in the visible window (view → saved → today), oldest
+  // first, capped at 31 days. The bot dedups already-ingested messages, so this
+  // only fills in missing days. Sequential awaits keep it simple; [refreshing]
+  // stays true for the whole sweep.
+  Future<void> refreshWindow() async {
+    if (_refreshing) return;
+    _refreshing = true;
+    notifyListeners();
+
+    // Normalize to whole days, oldest..newest, capped at 31.
+    var start = DateTime(_windowStart.year, _windowStart.month, _windowStart.day);
+    var end = DateTime(_windowEnd.year, _windowEnd.month, _windowEnd.day);
+    if (end.isBefore(start)) {
+      final tmp = start;
+      start = end;
+      end = tmp;
+    }
+    final days = <DateTime>[];
+    for (var d = start;
+        !d.isAfter(end) && days.length < 31;
+        d = d.add(const Duration(days: 1))) {
+      days.add(d);
+    }
+
+    try {
+      for (final day in days) {
+        try {
+          await _functions.requestDiscordFetch(
+            repoId: _repoId,
+            date: _keyOf(day),
+          );
+        } catch (_) {
+          // Best-effort per day — one failed enqueue shouldn't abort the sweep.
+        }
+      }
+    } finally {
+      _refreshing = false;
+      _lastUpdatedAt = DateTime.now();
+      _justUpdated = true;
       notifyListeners();
     }
   }

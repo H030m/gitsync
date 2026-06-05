@@ -153,6 +153,8 @@ class _FakeFunctionsService implements FunctionsService {
     required String repoId,
     required String question,
     List<DiscordChatTurn> history = const [],
+    String? startDate,
+    String? endDate,
   }) =>
       throw UnimplementedError();
 
