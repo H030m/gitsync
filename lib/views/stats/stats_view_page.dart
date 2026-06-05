@@ -19,9 +19,10 @@ class StatsViewPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return ChangeNotifierProxyProvider2<TasksBoardViewModel, MembersViewModel,
         StatsViewModel>(
-      create: (_) => StatsViewModel(),
-      update: (_, tasks, members, prev) => (prev ?? StatsViewModel())
-        ..updateFromUpstream(tasks: tasks, members: members),
+      create: (_) => StatsViewModel(repoId: repoId),
+      update: (_, tasks, members, prev) =>
+          (prev ?? StatsViewModel(repoId: repoId))
+            ..updateFromUpstream(tasks: tasks, members: members),
       child: DefaultTabController(
         length: 2,
         child: Scaffold(
@@ -38,7 +39,7 @@ class StatsViewPage extends StatelessWidget {
             builder: (ctx, vm, _) {
               return TabBarView(
                 children: [
-                  _ContributionTab(contributions: vm.contributions),
+                  _ContributionTab(vm: vm),
                   _ProgressTab(progress: vm.memberProgress),
                 ],
               );
@@ -52,16 +53,77 @@ class StatsViewPage extends StatelessWidget {
 
 // ---- Tab 1: 貢獻度 (contribution pie) --------------------------------------
 
-class _ContributionTab extends StatelessWidget {
-  const _ContributionTab({required this.contributions});
-  final List<Contribution> contributions;
+/// Which basis the 貢獻度 pie is computed from.
+enum _ContributionBasis { commit, task }
+
+class _ContributionTab extends StatefulWidget {
+  const _ContributionTab({required this.vm});
+  final StatsViewModel vm;
+
+  @override
+  State<_ContributionTab> createState() => _ContributionTabState();
+}
+
+class _ContributionTabState extends State<_ContributionTab> {
+  // Default to the commit basis — the all-history commit share is the headline
+  // the user asked for.
+  _ContributionBasis _basis = _ContributionBasis.commit;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final vm = widget.vm;
+
+    final isCommit = _basis == _ContributionBasis.commit;
+    final contributions =
+        isCommit ? vm.commitContributions : vm.contributions;
+    final caption = isCommit
+        ? '全部 commit 累計的貢獻度'
+        : '已完成的任務累計的貢獻度';
+
+    final toggle = Padding(
+      padding: const EdgeInsets.only(bottom: AppDimens.spacingMd),
+      child: Center(
+        child: SegmentedButton<_ContributionBasis>(
+          showSelectedIcon: false,
+          segments: const [
+            ButtonSegment(
+              value: _ContributionBasis.commit,
+              label: Text('commit'),
+            ),
+            ButtonSegment(
+              value: _ContributionBasis.task,
+              label: Text('任務'),
+            ),
+          ],
+          selected: {_basis},
+          onSelectionChanged: (s) => setState(() => _basis = s.first),
+        ),
+      ),
+    );
+
+    // Commit basis is still loading its one-shot fetch.
+    if (isCommit && vm.commitsLoading) {
+      return ListView(
+        padding: const EdgeInsets.all(AppDimens.spacingMd),
+        children: [
+          toggle,
+          const Padding(
+            padding: EdgeInsets.all(AppDimens.spacingLg),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        ],
+      );
+    }
 
     if (contributions.isEmpty) {
-      return const _EmptyHint('尚無已完成的任務');
+      return ListView(
+        padding: const EdgeInsets.all(AppDimens.spacingMd),
+        children: [
+          toggle,
+          _EmptyHint(isCommit ? '尚無 commit 紀錄' : '尚無已完成的任務'),
+        ],
+      );
     }
 
     final palette = _categoricalPalette(scheme);
@@ -73,6 +135,7 @@ class _ContributionTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(AppDimens.spacingMd),
       children: [
+        toggle,
         Card(
           margin: EdgeInsets.zero,
           child: Padding(
@@ -149,7 +212,7 @@ class _ContributionTab extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppDimens.spacingMd),
-        const _CaptionCard('已完成的任務累計的貢獻度'),
+        _CaptionCard(caption),
       ],
     );
   }

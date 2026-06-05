@@ -38,6 +38,9 @@ class _StubCommitRepository implements CommitRepository {
 
   @override
   Future<Commit?> getCommit(String repoId, String sha) async => null;
+
+  @override
+  Future<List<Commit>> fetchAllCommits(String repoId) async => const [];
 }
 
 void main() {

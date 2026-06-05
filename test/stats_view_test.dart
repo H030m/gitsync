@@ -41,9 +41,17 @@ void main() {
     expect(find.text('貢獻度'), findsWidgets);
     expect(find.text('進度表'), findsOneWidget);
 
-    // Tab 1 (default): contribution caption + legend percentage text.
+    // Tab 1 defaults to the commit basis → its caption is the all-commit one.
+    expect(find.text('全部 commit 累計的貢獻度'), findsOneWidget);
+    expect(find.text('已完成的任務累計的貢獻度'), findsNothing);
+
+    // Toggle to the 任務 (task) basis → caption switches; legend shows the
+    // done-task percentage (the only done task is demo-user-001's → 100%).
+    await tester.tap(find.text('任務'));
+    await tester.pumpAndSettle();
+
     expect(find.text('已完成的任務累計的貢獻度'), findsOneWidget);
-    // The only done task is demo-user-001's → 100% legend chip.
+    expect(find.text('全部 commit 累計的貢獻度'), findsNothing);
     expect(
       find.textContaining('100%'),
       findsWidgets,

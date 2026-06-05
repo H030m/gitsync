@@ -19,6 +19,11 @@ abstract class CommitRepository {
       String repoId, DateTime startDay, DateTime endDay);
 
   Future<Commit?> getCommit(String repoId, String sha);
+
+  /// One-shot fetch of EVERY commit doc in the repo (no limit, no ordering).
+  /// Used by Stats for all-history contribution math. Tolerates failures at the
+  /// call site (caller degrades to an empty list).
+  Future<List<Commit>> fetchAllCommits(String repoId);
 }
 
 // NOTE: The `commits` collection is write-blocked for clients (Firestore
@@ -79,5 +84,14 @@ class _LiveCommitRepository implements CommitRepository {
     final data = snap.data();
     if (data == null) return null;
     return Commit.fromMap(data, snap.id);
+  }
+
+  @override
+  Future<List<Commit>> fetchAllCommits(String repoId) async {
+    final snap = await _db
+        .collection(FirestorePaths.commits(repoId))
+        .get()
+        .timeout(_timeout);
+    return snap.docs.map((d) => Commit.fromMap(d.data(), d.id)).toList();
   }
 }
