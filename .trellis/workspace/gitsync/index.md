@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 15
+- **Total Sessions**: 16
 - **Last Active**: 2026-06-06
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~522 | Active |
+| `journal-1.md` | ~555 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 16 | 2026-06-06 | Stats rebuilt to match the design prototype | `8059494` | `feature/summary-intel-hub` |
 | 15 | 2026-06-06 | Stats page: four real charts | `690cb8e` | `feature/summary-intel-hub` |
 | 14 | 2026-06-05 | Fix digest card markdown scrollbar floating mid-card | `d3ebb09` | `feature/summary-intel-hub` |
 | 13 | 2026-06-05 | One date one refresh: additive Discord + scoped AI + unified UX | `4fc80cf` | `feature/summary-intel-hub` |

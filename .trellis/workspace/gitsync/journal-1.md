@@ -520,3 +520,36 @@ Replaced placeholder bars with fl_chart: task-status donut (center total + legen
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: Stats rebuilt to match the design prototype
+
+**Date**: 2026-06-06
+**Task**: Stats rebuilt to match the design prototype
+**Branch**: `feature/summary-intel-hub`
+
+### Summary
+
+User flagged the four-chart Stats didn't match references/GitSync StatsView.tsx. Rebuilt: two tabs (貢獻度 contribution pie of done-task share with in-slice names/legend/caption; 進度表 per-member progress bars with expandable task lists, done struck-through). VM now tasks+members only (commits upstream removed). Member labels fall back to userId (Member model has no name field). 58 flutter tests green. Lesson: check references/ prototypes before designing UI pages.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8059494` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
