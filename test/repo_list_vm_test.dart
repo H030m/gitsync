@@ -94,6 +94,15 @@ class _FakeFunctionsService implements FunctionsService {
       throw UnimplementedError();
 
   @override
+  Future<String> summarizeAuthorWork({
+    required String repoId,
+    String? login,
+    List<String> names = const [],
+    bool force = false,
+  }) =>
+      throw UnimplementedError();
+
+  @override
   Future<CommitGraph> getCommitGraph({
     required String repoId,
     String? startDate,

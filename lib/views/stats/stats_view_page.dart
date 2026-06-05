@@ -6,6 +6,7 @@ import '../../theme/app_dimens.dart';
 import '../../view_models/members_vm.dart';
 import '../../view_models/stats_vm.dart';
 import '../../view_models/tasks_board_vm.dart';
+import '../../widgets/markdown_view.dart';
 
 // StatsViewPage — faithful rebuild of the design prototype's two-tab Stats
 // screen (StatsView.tsx): a 貢獻度 contribution pie and a 進度表 per-member
@@ -40,7 +41,7 @@ class StatsViewPage extends StatelessWidget {
               return TabBarView(
                 children: [
                   _ContributionTab(vm: vm),
-                  _ProgressTab(progress: vm.memberProgress),
+                  _ProgressTab(vm: vm),
                 ],
               );
             },
@@ -158,13 +159,9 @@ class _ContributionTabState extends State<_ContributionTab> {
                                 value: c.item.doneCount.toDouble(),
                                 color: c.color,
                                 radius: 90,
-                                title: c.item.label,
-                                titlePositionPercentageOffset: 0.6,
-                                titleStyle: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: _onSliceColor(scheme),
-                                ),
+                                // D2: no in-slice titles — the legend below
+                                // carries every author name + share.
+                                showTitle: false,
                               ),
                           ],
                         ),
@@ -218,18 +215,28 @@ class _ContributionTabState extends State<_ContributionTab> {
   }
 }
 
-// ---- Tab 2: 進度表 (per-member progress + task lists) -----------------------
+// ---- Tab 2: 進度表 (per-author AI work summaries) --------------------------
 
 class _ProgressTab extends StatelessWidget {
-  const _ProgressTab({required this.progress});
-  final List<MemberProgress> progress;
+  const _ProgressTab({required this.vm});
+  final StatsViewModel vm;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    if (progress.isEmpty) {
-      return const _EmptyHint('尚無已指派的任務');
+    if (vm.commitsLoading) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(AppDimens.spacingLg),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    final authors = vm.authorGroups;
+    if (authors.isEmpty) {
+      return const _EmptyHint('尚無 commit 紀錄');
     }
 
     final palette = _categoricalPalette(scheme);
@@ -243,10 +250,11 @@ class _ProgressTab extends StatelessWidget {
             padding: const EdgeInsets.all(AppDimens.spacingMd),
             child: Column(
               children: [
-                for (var i = 0; i < progress.length; i++) ...[
+                for (var i = 0; i < authors.length; i++) ...[
                   if (i > 0) const SizedBox(height: AppDimens.spacingMd),
-                  _MemberProgressRow(
-                    member: progress[i],
+                  _AuthorSummaryRow(
+                    vm: vm,
+                    author: authors[i],
                     color: palette[i % palette.length],
                   ),
                 ],
@@ -255,29 +263,43 @@ class _ProgressTab extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppDimens.spacingMd),
-        const _CaptionCard('每個人當前未完成任務的進度'),
+        const _CaptionCard('每位作者的 commit 佔比與 AI 工作統整'),
       ],
     );
   }
 }
 
-class _MemberProgressRow extends StatefulWidget {
-  const _MemberProgressRow({required this.member, required this.color});
-  final MemberProgress member;
+class _AuthorSummaryRow extends StatefulWidget {
+  const _AuthorSummaryRow({
+    required this.vm,
+    required this.author,
+    required this.color,
+  });
+  final StatsViewModel vm;
+  final AuthorGroup author;
   final Color color;
 
   @override
-  State<_MemberProgressRow> createState() => _MemberProgressRowState();
+  State<_AuthorSummaryRow> createState() => _AuthorSummaryRowState();
 }
 
-class _MemberProgressRowState extends State<_MemberProgressRow> {
+class _AuthorSummaryRowState extends State<_AuthorSummaryRow> {
   bool _expanded = false;
+
+  void _toggle() {
+    setState(() => _expanded = !_expanded);
+    if (_expanded) {
+      // First expand triggers the AI summary load (no-op if already cached).
+      widget.vm.loadAuthorSummary(widget.author);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final m = widget.member;
+    final g = widget.author;
+    final key = g.key;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -285,17 +307,19 @@ class _MemberProgressRowState extends State<_MemberProgressRow> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              m.label,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: scheme.primary,
-                fontWeight: FontWeight.w600,
+            Expanded(
+              child: Text(
+                g.label,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: scheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
             Text(
-              '${m.pct}%',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: scheme.primary,
+              '${g.commitCount} commits · ${g.pct}%',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -305,7 +329,7 @@ class _MemberProgressRowState extends State<_MemberProgressRow> {
         ClipRRect(
           borderRadius: BorderRadius.circular(AppDimens.radiusSm),
           child: LinearProgressIndicator(
-            value: m.pct / 100,
+            value: g.pct / 100,
             minHeight: 8,
             color: widget.color,
             backgroundColor: scheme.surfaceContainerHighest,
@@ -313,7 +337,7 @@ class _MemberProgressRowState extends State<_MemberProgressRow> {
         ),
         const SizedBox(height: AppDimens.spacingXs),
         InkWell(
-          onTap: () => setState(() => _expanded = !_expanded),
+          onTap: _toggle,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: AppDimens.spacingXs),
             child: Row(
@@ -340,58 +364,87 @@ class _MemberProgressRowState extends State<_MemberProgressRow> {
               left: AppDimens.spacingSm,
               top: AppDimens.spacingXs,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (final t in m.tasks) _TaskLine(task: t),
-              ],
-            ),
+            child: _AuthorSummaryBody(vm: widget.vm, author: g, summaryKey: key),
           ),
       ],
     );
   }
 }
 
-class _TaskLine extends StatelessWidget {
-  const _TaskLine({required this.task});
-  final ProgressTask task;
+class _AuthorSummaryBody extends StatelessWidget {
+  const _AuthorSummaryBody({
+    required this.vm,
+    required this.author,
+    required this.summaryKey,
+  });
+  final StatsViewModel vm;
+  final AuthorGroup author;
+  final String summaryKey;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 7, right: AppDimens.spacingSm),
-            child: Container(
-              width: 4,
-              height: 4,
-              decoration: BoxDecoration(
-                color: task.done
-                    ? scheme.outlineVariant
-                    : scheme.onSurfaceVariant,
-                shape: BoxShape.circle,
+
+    if (vm.isSummarizing(summaryKey)) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: AppDimens.spacingSm),
+            Text('AI 工作總結產生中…'),
+          ],
+        ),
+      );
+    }
+
+    final error = vm.summaryError(summaryKey);
+    if (error != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
+        child: InkWell(
+          onTap: () => vm.loadAuthorSummary(author, force: true),
+          child: Text(
+            '產生失敗，點此重試',
+            style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
+          ),
+        ),
+      );
+    }
+
+    final markdown = vm.authorSummary(summaryKey);
+    if (markdown == null) {
+      // Expanded but not yet requested (defensive — the row kicks off the load).
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'AI 工作總結',
+                style: theme.textTheme.labelSmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
               ),
             ),
-          ),
-          Expanded(
-            child: Text(
-              task.title,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: task.done
-                    ? scheme.onSurfaceVariant
-                    : scheme.onSurface,
-                decoration:
-                    task.done ? TextDecoration.lineThrough : TextDecoration.none,
-              ),
+            IconButton(
+              tooltip: '重新產生',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.refresh, size: 16),
+              onPressed: () => vm.loadAuthorSummary(author, force: true),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
+        MarkdownView(data: markdown),
+      ],
     );
   }
 }
@@ -488,7 +541,3 @@ List<Color> _categoricalPalette(ColorScheme scheme) => [
       scheme.tertiaryContainer,
       scheme.secondaryContainer,
     ];
-
-// Contrast color for the member name drawn inside a pie slice.
-Color _onSliceColor(ColorScheme scheme) =>
-    scheme.brightness == Brightness.dark ? scheme.onPrimaryContainer : Colors.white;

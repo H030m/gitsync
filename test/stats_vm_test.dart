@@ -145,78 +145,7 @@ void main() {
     });
   });
 
-  group('computeMemberProgress', () {
-    test('pct = done / assigned, rounded', () {
-      final tasks = [
-        _task('1', TaskStatus.done, assigneeId: 'alice'),
-        _task('2', TaskStatus.done, assigneeId: 'alice'),
-        _task('3', TaskStatus.todo, assigneeId: 'alice'),
-        _task('4', TaskStatus.inProgress, assigneeId: 'alice'),
-      ];
-      final progress = StatsViewModel.computeMemberProgress(
-        tasks,
-        [_member('alice')],
-        const {},
-      );
-
-      // 2 done of 4 assigned → 50%.
-      expect(progress.single.pct, 50);
-      expect(progress.single.tasks.length, 4);
-    });
-
-    test('task list is ordered pending-first, then done, preserving order', () {
-      final tasks = [
-        _task('1', TaskStatus.done, assigneeId: 'alice', title: 'doneA'),
-        _task('2', TaskStatus.todo, assigneeId: 'alice', title: 'todoA'),
-        _task('3', TaskStatus.done, assigneeId: 'alice', title: 'doneB'),
-        _task('4', TaskStatus.inProgress, assigneeId: 'alice', title: 'wipA'),
-      ];
-      final progress = StatsViewModel.computeMemberProgress(
-        tasks,
-        [_member('alice')],
-        const {},
-      );
-
-      final titles = progress.single.tasks.map((t) => t.title).toList();
-      // pending (todoA, wipA) keep original order, then done (doneA, doneB).
-      expect(titles, ['todoA', 'wipA', 'doneA', 'doneB']);
-      expect(progress.single.tasks.map((t) => t.done).toList(),
-          [false, false, true, true]);
-    });
-
-    test('excludes unassigned tasks; one entry per assignee', () {
-      final tasks = [
-        _task('1', TaskStatus.done, assigneeId: 'alice'),
-        _task('2', TaskStatus.todo, assigneeId: 'bob'),
-        _task('3', TaskStatus.done), // unassigned → excluded
-      ];
-      final progress = StatsViewModel.computeMemberProgress(
-        tasks,
-        [_member('alice'), _member('bob')],
-        const {},
-      );
-
-      expect(progress.map((p) => p.assigneeId).toSet(), {'alice', 'bob'});
-      // alice 1/1 = 100, bob 0/1 = 0; sorted pct desc → alice first.
-      expect(progress.first.assigneeId, 'alice');
-      expect(progress.first.pct, 100);
-      expect(progress.last.assigneeId, 'bob');
-      expect(progress.last.pct, 0);
-    });
-
-    test('falls back to the raw id when not in the roster', () {
-      final tasks = [
-        _task('1', TaskStatus.todo, assigneeId: 'ghost-user'),
-      ];
-      final progress =
-          StatsViewModel.computeMemberProgress(tasks, const [], const {});
-
-      expect(progress.single.label, 'ghost-user');
-      expect(progress.single.pct, 0);
-    });
-  });
-
-  group('computeCommitContributions', () {
+  group('buildAuthorGroups (D1 identity canonicalization)', () {
     test('per-author share of all commits, sorted by count desc', () {
       final commits = [
         _commit('alice-dev'),
@@ -224,28 +153,73 @@ void main() {
         _commit('bob-ml'),
         _commit('alice-dev'),
       ];
-      final contribs = StatsViewModel.computeCommitContributions(commits);
+      final groups = StatsViewModel.buildAuthorGroups(commits);
 
       // 4 commits: alice-dev 3 (75%), bob-ml 1 (25%).
-      expect(contribs.map((c) => c.label).toList(), ['alice-dev', 'bob-ml']);
-      expect(contribs.first.doneCount, 3);
-      expect(contribs.first.pct, 75);
-      expect(contribs.last.doneCount, 1);
-      expect(contribs.last.pct, 25);
+      expect(groups.map((g) => g.label).toList(), ['alice-dev', 'bob-ml']);
+      expect(groups.first.commitCount, 3);
+      expect(groups.first.pct, 75);
+      expect(groups.last.commitCount, 1);
+      expect(groups.last.pct, 25);
     });
 
     test('no commits → empty list', () {
-      expect(StatsViewModel.computeCommitContributions(const []), isEmpty);
+      expect(StatsViewModel.buildAuthorGroups(const []), isEmpty);
     });
 
-    test('falls back to author.name, then "unknown", for the label', () {
-      final commits = [
+    test('falls back to the git name, then "unknown", for the label', () {
+      final groups = StatsViewModel.buildAuthorGroups([
         _commit('', name: 'No Login'),
         _commit('', name: ''), // neither → 'unknown'
-      ];
-      final contribs = StatsViewModel.computeCommitContributions(commits);
+      ]);
 
-      expect(contribs.map((c) => c.label).toSet(), {'No Login', 'unknown'});
+      expect(groups.map((g) => g.label).toSet(), {'No Login', 'unknown'});
+    });
+
+    test('merges login + name-only commits of one human into one group', () {
+      // H030m commits carry login; the GraphQL-backfilled ones carry only the
+      // git name 倪嘉駿 — both are the same person and must merge.
+      final commits = [
+        _commit('H030m', name: '倪嘉駿'),
+        _commit('H030m', name: '倪嘉駿'),
+        _commit('', name: '倪嘉駿'), // login-less backfill → learns → H030m
+        _commit('', name: '倪嘉駿'),
+      ];
+      final groups = StatsViewModel.buildAuthorGroups(commits);
+
+      expect(groups.length, 1);
+      final g = groups.single;
+      expect(g.label, 'H030m'); // canonical login casing
+      expect(g.login, 'H030m');
+      expect(g.commitCount, 4);
+      expect(g.pct, 100);
+      expect(g.names, contains('倪嘉駿'));
+    });
+
+    test('merges name-casing variants (temmie vs Temmie) of one login', () {
+      final commits = [
+        _commit('temmie', name: 'temmie'),
+        _commit('', name: 'Temmie'), // case-insensitive name match → temmie
+        _commit('', name: 'TEMMIE'),
+      ];
+      final groups = StatsViewModel.buildAuthorGroups(commits);
+
+      expect(groups.length, 1);
+      expect(groups.single.login, 'temmie');
+      expect(groups.single.commitCount, 3);
+    });
+
+    test('an unmatched name stays its own group', () {
+      final commits = [
+        _commit('H030m', name: '倪嘉駿'),
+        _commit('', name: 'Stranger'), // no login ever teaches this name
+      ];
+      final groups = StatsViewModel.buildAuthorGroups(commits);
+
+      expect(groups.length, 2);
+      expect(groups.map((g) => g.label).toSet(), {'H030m', 'Stranger'});
+      final stranger = groups.firstWhere((g) => g.label == 'Stranger');
+      expect(stranger.login, isNull);
     });
   });
 

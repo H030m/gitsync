@@ -5,6 +5,7 @@ import '../models/member.dart';
 import '../models/task.dart';
 import '../repositories/commit_repo.dart';
 import '../repositories/user_repo.dart';
+import '../services/functions_service.dart';
 import 'members_vm.dart';
 import 'tasks_board_vm.dart';
 
@@ -32,44 +33,54 @@ class Contribution {
   final int pct;
 }
 
-/// One member's progress over their own assigned tasks, with the task list.
+/// A canonical commit author identity, merging the login-keyed and name-keyed
+/// buckets a single human can split into (GraphQL-backfilled commits can lack
+/// `author.login`). See [StatsViewModel.buildAuthorGroups].
 @immutable
-class MemberProgress {
-  const MemberProgress({
-    required this.assigneeId,
+class AuthorGroup {
+  const AuthorGroup({
+    required this.key,
     required this.label,
+    required this.commitCount,
+    required this.names,
+    required this.login,
     required this.pct,
-    required this.tasks,
   });
 
-  final String assigneeId;
+  /// Stable bucket key: lowercase login when resolvable, else normalized name.
+  final String key;
+
+  /// Display label: the canonical GitHub login (original casing) when known,
+  /// else the (raw) git name.
   final String label;
 
-  /// done / (all tasks assigned to this member), 0..100 (rounded).
+  /// Number of commits in this bucket.
+  final int commitCount;
+
+  /// Distinct raw git names seen for this author (order of first appearance).
+  final List<String> names;
+
+  /// The canonical GitHub login (original casing) when known, else null.
+  final String? login;
+
+  /// This author's share of ALL commits, 0..100 (rounded).
   final int pct;
-
-  /// This member's tasks, pending first then done, each in original order.
-  final List<ProgressTask> tasks;
-}
-
-/// A single task line in a member's progress detail list.
-@immutable
-class ProgressTask {
-  const ProgressTask({required this.title, required this.done});
-
-  final String title;
-  final bool done;
 }
 
 // Derived statistics view (StatsViewPage) built from TasksBoardViewModel and
 // MembersViewModel, plus an all-history commit fetch and async member-name
 // resolution. Plug the two upstream VMs in via ChangeNotifierProxyProvider2.
 //
-// Three derivations:
-//   * `contributions`       — per-member share of COMPLETED tasks (task basis).
-//   * `commitContributions` — per-author share of ALL commits (commit basis),
-//                             independent of the Daily page's loaded window.
-//   * `memberProgress`      — per-member done/assigned progress + task list.
+// Derivations:
+//   * `contributions`       — per-member share of COMPLETED tasks (task basis,
+//                             貢獻度 tab's 任務 toggle).
+//   * `authorGroups`        — canonical commit authors over ALL history, one
+//                             entry per human (login/name buckets merged).
+//   * `commitContributions` — per-author share of ALL commits, derived from
+//                             `authorGroups` (貢獻度 tab's commit toggle).
+//
+// The 進度表 tab lists `authorGroups` with an AI work summary per author,
+// fetched on demand via [FunctionsService.summarizeAuthorWork] and cached here.
 //
 // Member labels resolve to GitHub names (users/{uid}.githubLogin, fallback
 // .name, fallback uid) via UserRepository, cached so each uid is looked up once.
@@ -79,15 +90,18 @@ class StatsViewModel with ChangeNotifier {
     required String repoId,
     CommitRepository? commitRepository,
     UserRepository? userRepository,
+    FunctionsService? functionsService,
   })  : _repoId = repoId,
         _commitRepo = commitRepository ?? CommitRepository(),
-        _userRepo = userRepository ?? UserRepository() {
+        _userRepo = userRepository ?? UserRepository(),
+        _functions = functionsService ?? FunctionsService() {
     _loadAllCommits();
   }
 
   final String _repoId;
   final CommitRepository _commitRepo;
   final UserRepository _userRepo;
+  final FunctionsService _functions;
 
   TasksBoardViewModel? _tasksVm;
   MembersViewModel? _membersVm;
@@ -102,12 +116,25 @@ class StatsViewModel with ChangeNotifier {
   /// basis pie shows a spinner until this clears.
   bool get commitsLoading => _commitsLoading;
 
-  List<Contribution> _commitContributions = const [];
+  List<AuthorGroup> _authorGroups = const [];
 
-  /// Per-author share of ALL commits in the repo (label = author.login,
-  /// fallback author.name, fallback 'unknown'). Always reflects the full
-  /// history, never the Daily page's loaded window. See [computeCommitContributions].
-  List<Contribution> get commitContributions => _commitContributions;
+  /// Canonical commit authors over ALL history, one entry per human (login- and
+  /// name-keyed buckets merged), sorted by commit count descending. Drives both
+  /// the commit-basis pie and the 進度表 author list. See [buildAuthorGroups].
+  List<AuthorGroup> get authorGroups => _authorGroups;
+
+  /// Per-author share of ALL commits in the repo, derived from [authorGroups]
+  /// (one slice per canonical human). Always reflects the full history, never
+  /// the Daily page's loaded window.
+  List<Contribution> get commitContributions => [
+        for (final g in _authorGroups)
+          Contribution(
+            assigneeId: g.key,
+            label: g.label,
+            doneCount: g.commitCount,
+            pct: g.pct,
+          ),
+      ];
 
   Future<void> _loadAllCommits() async {
     try {
@@ -118,7 +145,7 @@ class StatsViewModel with ChangeNotifier {
       _allCommits = const [];
     } finally {
       _commitsLoading = false;
-      _commitContributions = computeCommitContributions(_allCommits);
+      _authorGroups = buildAuthorGroups(_allCommits);
       notifyListeners();
     }
   }
@@ -163,12 +190,6 @@ class StatsViewModel with ChangeNotifier {
   /// zero done. See [computeContributions].
   List<Contribution> get contributions => _contributions;
 
-  List<MemberProgress> _memberProgress = const [];
-
-  /// Per-member done/assigned progress with their ordered task list, one entry
-  /// per member that has at least one assigned task. See [computeMemberProgress].
-  List<MemberProgress> get memberProgress => _memberProgress;
-
   // Receives upstream updates from ChangeNotifierProxyProvider2.
   void updateFromUpstream({
     required TasksBoardViewModel tasks,
@@ -186,7 +207,51 @@ class StatsViewModel with ChangeNotifier {
     final members = _membersVm?.members ?? const <Member>[];
 
     _contributions = computeContributions(tasks, members, _names);
-    _memberProgress = computeMemberProgress(tasks, members, _names);
+  }
+
+  // ---- Per-author AI work summaries (進度表) --------------------------------
+
+  // author key → cached markdown summary.
+  final Map<String, String> _summaries = {};
+  // author keys with a summarize call in flight.
+  final Set<String> _summarizing = {};
+  // author key → last error message (cleared on a fresh attempt).
+  final Map<String, String> _summaryErrors = {};
+
+  /// The cached AI work summary markdown for [key] (an [AuthorGroup.key]), or
+  /// null if not yet loaded.
+  String? authorSummary(String key) => _summaries[key];
+
+  /// True while a [summarizeAuthorWork] call for [key] is in flight.
+  bool isSummarizing(String key) => _summarizing.contains(key);
+
+  /// The last error message for [key]'s summary attempt, or null.
+  String? summaryError(String key) => _summaryErrors[key];
+
+  /// Loads (or regenerates with [force]) the AI work summary for [g] via the
+  /// callable, caching the markdown. Duplicate in-flight calls are ignored.
+  Future<void> loadAuthorSummary(AuthorGroup g, {bool force = false}) async {
+    if (_summarizing.contains(g.key)) return;
+    if (!force && _summaries.containsKey(g.key)) return;
+
+    _summarizing.add(g.key);
+    _summaryErrors.remove(g.key);
+    notifyListeners();
+
+    try {
+      final markdown = await _functions.summarizeAuthorWork(
+        repoId: _repoId,
+        login: (g.login != null && g.login!.isNotEmpty) ? g.login : null,
+        names: g.names,
+        force: force,
+      );
+      _summaries[g.key] = markdown;
+    } catch (e) {
+      _summaryErrors[g.key] = e.toString();
+    } finally {
+      _summarizing.remove(g.key);
+      notifyListeners();
+    }
   }
 
   /// Per-member share of all DONE tasks. Each member's pct = their done count /
@@ -230,96 +295,98 @@ class StatsViewModel with ChangeNotifier {
     return list;
   }
 
-  /// Per-member progress over their OWN assigned tasks. pct = done / assigned
-  /// count, rounded (0..100). Each entry's task list is ordered pending-first
-  /// then done, preserving original order within each group. Only assignees with
-  /// at least one assigned task get an entry; unassigned tasks are excluded.
-  /// Sorted by pct descending, then by label. The [names] map (uid → resolved
-  /// GitHub name) supplies labels; absent entries fall back to the raw id.
-  /// Exposed for unit testing.
-  static List<MemberProgress> computeMemberProgress(
-    List<Task> tasks,
-    List<Member> members,
-    Map<String, String> names,
-  ) {
-    final byId = {for (final m in members) m.userId: m};
+  /// Canonicalizes commit authors into one [AuthorGroup] per human, merging the
+  /// login-keyed and name-keyed buckets a single person can split into
+  /// (GraphQL-backfilled commits can lack `author.login`).
+  ///
+  /// Pass 1 learns a name→login mapping from every commit carrying BOTH a
+  /// non-empty login and name (nameKey = trimmed + lowercased name →
+  /// lowercased login; the original login casing of the first sighting is kept
+  /// for display).
+  ///
+  /// Pass 2 buckets every commit: by its login when present, else by the login
+  /// learned for its name, else by its normalized name. The bucket key is the
+  /// lowercase login when resolvable, else the normalized name. The display
+  /// label is the canonical login (original casing) when known, else the raw
+  /// name (falling back to 'unknown').
+  ///
+  /// pct = bucket commit count / total commit count, rounded (0..100). Sorted
+  /// by commit count descending, then by label. Empty when there are no
+  /// commits. Exposed for unit testing.
+  static List<AuthorGroup> buildAuthorGroups(List<Commit> commits) {
+    String norm(String s) => s.trim().toLowerCase();
 
-    final byAssignee = <String, List<Task>>{};
-    for (final t in tasks) {
-      final id = t.assigneeId;
-      if (id == null || id.isEmpty) continue;
-      byAssignee.putIfAbsent(id, () => []).add(t);
-    }
-
-    final list = <MemberProgress>[];
-    for (final entry in byAssignee.entries) {
-      final assigned = entry.value;
-      final doneCount =
-          assigned.where((t) => t.status == TaskStatus.done).length;
-      final pct = assigned.isEmpty
-          ? 0
-          : ((doneCount / assigned.length) * 100).round();
-
-      final pending = [
-        for (final t in assigned)
-          if (t.status != TaskStatus.done)
-            ProgressTask(title: t.title, done: false),
-      ];
-      final completed = [
-        for (final t in assigned)
-          if (t.status == TaskStatus.done)
-            ProgressTask(title: t.title, done: true),
-      ];
-
-      list.add(MemberProgress(
-        assigneeId: entry.key,
-        label: _labelFor(entry.key, byId, names),
-        pct: pct,
-        tasks: [...pending, ...completed],
-      ));
-    }
-
-    list.sort((a, b) {
-      final byPct = b.pct.compareTo(a.pct);
-      return byPct != 0 ? byPct : a.label.compareTo(b.label);
-    });
-    return list;
-  }
-
-  /// Per-author share of ALL commits. Each author's pct = their commit count /
-  /// total commit count, rounded to an int (0..100). Labels resolve to the
-  /// commit author's GitHub login, falling back to author.name, then 'unknown'.
-  /// Authors are grouped by that resolved label. Sorted by commit count
-  /// descending, then by label. Empty when there are no commits. Exposed for
-  /// unit testing.
-  static List<Contribution> computeCommitContributions(List<Commit> commits) {
-    final counts = <String, int>{};
+    // Pass 1: learn nameKey → login (lowercase), keeping the first-seen
+    // original login casing for display.
+    final nameToLogin = <String, String>{}; // nameKey → login (lowercase)
+    final loginDisplay = <String, String>{}; // login (lowercase) → orig casing
     for (final c in commits) {
-      final label = _commitAuthorLabel(c.author);
-      counts.update(label, (v) => v + 1, ifAbsent: () => 1);
+      final login = c.author.login.trim();
+      final name = c.author.name.trim();
+      if (login.isEmpty) continue;
+      final loginKey = login.toLowerCase();
+      loginDisplay.putIfAbsent(loginKey, () => login);
+      if (name.isNotEmpty) {
+        nameToLogin.putIfAbsent(norm(name), () => loginKey);
+      }
+    }
+
+    // Pass 2: bucket every commit.
+    final counts = <String, int>{};
+    final names = <String, List<String>>{}; // key → distinct raw names
+    final logins = <String, String?>{}; // key → login (lowercase) or null
+    for (final c in commits) {
+      final login = c.author.login.trim();
+      final name = c.author.name.trim();
+
+      String key;
+      String? loginKey;
+      if (login.isNotEmpty) {
+        loginKey = login.toLowerCase();
+        key = loginKey;
+      } else if (name.isNotEmpty && nameToLogin.containsKey(norm(name))) {
+        loginKey = nameToLogin[norm(name)];
+        key = loginKey!;
+      } else if (name.isNotEmpty) {
+        key = norm(name);
+      } else {
+        key = 'unknown';
+      }
+
+      counts.update(key, (v) => v + 1, ifAbsent: () => 1);
+      logins.putIfAbsent(key, () => loginKey);
+      // Record the canonical login casing if this is a richer sighting.
+      if (loginKey != null && logins[key] == null) logins[key] = loginKey;
+      final bucketNames = names.putIfAbsent(key, () => []);
+      if (name.isNotEmpty && !bucketNames.contains(name)) {
+        bucketNames.add(name);
+      }
     }
 
     final total = counts.values.fold<int>(0, (a, b) => a + b);
 
     final list = [
       for (final entry in counts.entries)
-        Contribution(
-          assigneeId: entry.key,
-          label: entry.key,
-          doneCount: entry.value,
-          pct: total == 0 ? 0 : ((entry.value / total) * 100).round(),
-        ),
+        () {
+          final loginKey = logins[entry.key];
+          final display = loginKey != null ? loginDisplay[loginKey] : null;
+          final bucketNames = names[entry.key] ?? const <String>[];
+          final label = display ??
+              (bucketNames.isNotEmpty ? bucketNames.first : 'unknown');
+          return AuthorGroup(
+            key: entry.key,
+            label: label,
+            commitCount: entry.value,
+            names: List<String>.unmodifiable(bucketNames),
+            login: display,
+            pct: total == 0 ? 0 : ((entry.value / total) * 100).round(),
+          );
+        }(),
     ]..sort((a, b) {
-        final byCount = b.doneCount.compareTo(a.doneCount);
+        final byCount = b.commitCount.compareTo(a.commitCount);
         return byCount != 0 ? byCount : a.label.compareTo(b.label);
       });
     return list;
-  }
-
-  static String _commitAuthorLabel(CommitAuthor author) {
-    if (author.login.isNotEmpty) return author.login;
-    if (author.name.isNotEmpty) return author.name;
-    return 'unknown';
   }
 
   // Resolves a member uid to its display label. Prefers the async-resolved
