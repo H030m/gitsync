@@ -421,3 +421,36 @@ Recovery had restored 39 messages + digests for 6/3-6/4, but the tab only showed
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: One date one refresh: additive Discord + scoped AI + unified UX
+
+**Date**: 2026-06-05
+**Task**: One date one refresh: additive Discord + scoped AI + unified UX
+**Branch**: `feature/summary-intel-hub`
+
+### Summary
+
+setDiscordRange prune removed (additive-only storage; regression test asserts out-of-window docs survive); discordChat accepts startDate/endDate, search/digest tools filter to the window, system prompt states the scope. One AppBar refresh fans out (graph force + per-day discord fetches <=31d); per-tab refresh/backfill/date controls removed; digest cards in <=45% collapsible panel; discord chat newSession. Deployed setDiscordRange+discordChat. 181 functions + 49 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4fc80cf` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
