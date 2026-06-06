@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 19
+- **Total Sessions**: 20
 - **Last Active**: 2026-06-06
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~654 | Active |
+| `journal-1.md` | ~687 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 20 | 2026-06-06 | Rich task cards: GitHub issue sync + AI handoff + push to next assignee | `b693ab8`..`8f6b21b` | `feature/rich-task-cards-ai-handoff` |
 | 19 | 2026-06-06 | Kanban DnD + prototype alignment | `8266b9c` | `feature/summary-intel-hub` |
 | 18 | 2026-06-06 | Stats: identity merge + AI author summaries | `0ada841` | `feature/summary-intel-hub` |
 | 17 | 2026-06-06 | Stats: commit-share toggle + GitHub names | `35ef550` | `feature/summary-intel-hub` |

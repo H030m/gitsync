@@ -652,3 +652,36 @@ TasksBoard restyled per prototype (CJK tabs/columns, tonal headers, count chips,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: Rich task cards: GitHub issue sync + AI handoff + push to next assignee
+
+**Date**: 2026-06-06
+**Task**: Rich task cards: GitHub issue sync + AI handoff + push to next assignee
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+Implemented task 06-06 in 4 slices on feature/rich-task-cards-ai-handoff. (1) Rich TaskDetailsPage: subtasks, dependencies, acceptanceCriteria, inline assignee picker, issue/PR chips, handoff with Generate/Regenerate; extended MembersViewModel to cache userId->AppUser profiles. (2) Push delivery: wired PushMessagingService.initialize after sign-in (live only), FCM data-payload deep-link on tap, Firestore-listener in-app assignment banner in RepoShell (seeded on first non-loading snapshot). (3) generateHandoffFlow: single-completion over pre-gathered prerequisites/commits/Discord/roster, force splits manual(force=true) vs auto(force=false), auto-run best-effort from onTaskUpdated. (4) Assignee->GitHub issue sync via githubClient.setIssueAssignees, folded into onTaskUpdated before the status guard (shared event.id => can't add a 2nd trigger). Found most backend already existed (issue sync, auto-dispatch, notify). flutter analyze clean (1 pre-existing unrelated info), 71 flutter tests + 201 functions tests green. Spec learnings captured (Rule D.1, AI-flow shape, FCM/banner patterns).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b693ab8..8f6b21b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
