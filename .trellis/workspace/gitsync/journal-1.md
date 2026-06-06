@@ -718,3 +718,36 @@ Made the issue/PR chips on TaskDetailsPage open the real GitHub page: added url_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 22: Import GitHub collaborators as repo members
+
+**Date**: 2026-06-06
+**Task**: Import GitHub collaborators as repo members
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+Added importCollaborators callable (githubClient.listCollaborators + map githubLogin->existing user -> add member; pending list for un-signed-in collaborators) + assignee-picker action + client/fake. Answers 'only self assignable': members are Firebase-uid-keyed/client-write-blocked, so teammates must have a GitSync account. tsc clean, 205 functions + 71 flutter tests green. Needs deploy (importCollaborators + generateHandoff + onTaskUpdated).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
