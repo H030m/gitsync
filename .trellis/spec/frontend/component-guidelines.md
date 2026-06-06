@@ -113,6 +113,34 @@ layout (`lib/views/tasks/widgets/task_graph_tab.dart`). Conventions learned:
 
 ---
 
+## Resolving a userId → profile (name / avatar / githubLogin)
+
+`Member` (`repos/{repoId}/members/{uid}`) only carries `userId` + role + workload counts; the
+human profile (`name`, `avatarUrl`, `githubLogin`) lives in `users/{uid}`. To show a member's
+name/avatar (assignee row, picker), resolve the profile in a **ViewModel**, never by importing
+`UserRepository` into the View. `MembersViewModel` caches profiles (`profileFor(uid)` /
+`labelFor(uid)`), resolving each uid once via `UserRepository.getUser` and notifying as lookups
+land — mirrors `StatsViewModel`'s name-resolution cache. Reuse it; don't re-resolve in the widget.
+
+## Push notifications (FCM) + in-app banners
+
+- **Only initialize FCM in live mode.** `FirebaseMessaging` needs an initialized Firebase app,
+  which fake-backend mode skips. Guard the `PushMessagingService.initialize(uid)` call with
+  `!AppConfig.useFakeBackend` (it's wired in the sign-in success path). `initialize` is idempotent.
+- **Deep-link taps via the FCM `data` payload, not the notification body.** The backend
+  (`tools/notify.ts notifyAssignee(..., data)`) sends `{ type, repoId, taskId }`; the client reads
+  `m.data['repoId'|'taskId']` in `onMessageOpenedApp` + `getInitialMessage` (cold start) and routes
+  via `NavigationService.goTaskDetails`, falling back to `goNotify()`.
+- **Foreground "assigned to me" UX = a Firestore listener, not FCM.** A `ChangeNotifier`/widget
+  watches the repo's tasks for `assigneeId == currentUid`; this works in BOTH fake and live modes
+  (FCM only covers background/closed). **Seed the baseline on the first non-loading snapshot**
+  (`if (vm.loading) return;` then capture the current assigned-set once) so existing assignments
+  aren't announced as new — only later transitions fire the banner. `RepoShell` does this and shows
+  a SnackBar with a "View" action. Show it from a post-frame callback (the listener can fire
+  mid-build).
+
+---
+
 ## Scope discipline (`AI_AGENT_RULES.md §3.2`)
 
 Implement only what was asked. Don't add confirmation dialogs, undo snackbars, analytics, extra
