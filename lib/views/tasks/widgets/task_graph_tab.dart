@@ -213,11 +213,27 @@ class _TaskGraphTabState extends State<TaskGraphTab> {
 
     final byId = {for (final t in tasks) t.id: t};
 
-    final graph = Graph();
+    // Split into connected (part of at least one dependency edge) and isolated
+    // (degree 0). graphview's Sugiyama parks edgeless nodes at (0,0) where they
+    // overlap, so isolated tasks are rendered in their own "Unlinked" strip
+    // instead of inside the DAG — each shows as its own standalone node.
+    final connectedIds = <String>{};
     for (final t in tasks) {
+      for (final depId in t.dependsOn) {
+        if (byId.containsKey(depId)) {
+          connectedIds.add(t.id);
+          connectedIds.add(depId);
+        }
+      }
+    }
+    final connected = [for (final t in tasks) if (connectedIds.contains(t.id)) t];
+    final isolated = [for (final t in tasks) if (!connectedIds.contains(t.id)) t];
+
+    final graph = Graph();
+    for (final t in connected) {
       graph.addNode(Node.Id(t.id));
     }
-    for (final t in tasks) {
+    for (final t in connected) {
       for (final depId in t.dependsOn) {
         if (byId.containsKey(depId)) {
           graph.addEdge(Node.Id(depId), Node.Id(t.id));
@@ -261,23 +277,70 @@ class _TaskGraphTabState extends State<TaskGraphTab> {
                 boundaryMargin: const EdgeInsets.all(double.infinity),
                 minScale: 0.1,
                 maxScale: 4,
-                child: GraphView(
+                child: Column(
                   key: _graphKey,
-                  graph: graph,
-                  algorithm: SugiyamaAlgorithm(configuration),
-                  paint: edgePaint,
-                  builder: (Node node) {
-                    final task = byId[node.key!.value];
-                    if (task == null) return const SizedBox.shrink();
-                    return _TaskNode(
-                      task: task,
-                      statusLabel: _statusLabel(s, task.status),
-                      isLinkSource: task.id == _linkSource,
-                      onTap: () => _onNodeTap(task),
-                      onLongPressStart: (d) =>
-                          _showNodeMenu(task, d.globalPosition),
-                    );
-                  },
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Standalone (unlinked) tasks: their own row, always visible.
+                    if (isolated.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(AppDimens.spacingSm),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              s.unlinked.toUpperCase(),
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: scheme.primary,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                            const SizedBox(height: AppDimens.spacingSm),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                for (final t in isolated)
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      right: AppDimens.spacingMd,
+                                    ),
+                                    child: _TaskNode(
+                                      task: t,
+                                      statusLabel: _statusLabel(s, t.status),
+                                      isLinkSource: t.id == _linkSource,
+                                      onTap: () => _onNodeTap(t),
+                                      onLongPressStart: (d) =>
+                                          _showNodeMenu(t, d.globalPosition),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (connected.isNotEmpty)
+                      GraphView(
+                        graph: graph,
+                        algorithm: SugiyamaAlgorithm(configuration),
+                        paint: edgePaint,
+                        builder: (Node node) {
+                          final task = byId[node.key!.value];
+                          if (task == null) return const SizedBox.shrink();
+                          return _TaskNode(
+                            task: task,
+                            statusLabel: _statusLabel(s, task.status),
+                            isLinkSource: task.id == _linkSource,
+                            onTap: () => _onNodeTap(task),
+                            onLongPressStart: (d) =>
+                                _showNodeMenu(task, d.globalPosition),
+                          );
+                        },
+                      ),
+                  ],
                 ),
               ),
             ),

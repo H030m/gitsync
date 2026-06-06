@@ -136,6 +136,7 @@ class AppStrings {
 
   // ---- Graph ----
   String get noTasksYet => _('No tasks yet', '還沒有任務');
+  String get unlinked => _('Unlinked', '未連結');
   String get addTaskTooltip => _('Add task', '新增任務');
   String get openDetails => _('Open details', '開啟細節');
   String get linkFromHere => _('Link from here…', '從這裡連線…');
