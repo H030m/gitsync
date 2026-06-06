@@ -33,6 +33,14 @@ field-by-field schema of every collection.
 - `tasks` / `users` / repo root → the app writes (rules check membership / ownership).
 - Never invent a new collection or field without proposing it in `docs/MEMORY.md` first.
 
+> **Membership model**: `members/{uid}` is keyed by **Firebase Auth uid** and is
+> **client-write-blocked** — only Cloud Functions write it. A person becomes a member by
+> (a) **self-join** (`addRepo` adds the caller when they connect a repo) or (b)
+> `importCollaborators` (pulls the repo's GitHub collaborators and adds those who **already have a
+> GitSync account** — `users.githubLogin == login`). Collaborators who've never signed in have no
+> uid, so they can't be members/assignees (returned as `pending`). Assigning a task to someone
+> therefore requires them to have signed in at least once.
+
 ---
 
 ## Concurrency rules (triggers & webhooks run concurrently)
@@ -52,6 +60,16 @@ From [`ARCHITECTURE.md §4.4`](../../../docs/ARCHITECTURE.md) — violating thes
 - **Rule D — never put slow side-effects in the idempotency transaction.** Mark the key,
   *exit* the transaction, *then* call OpenAI / GitHub, then write results back. MVP accepts
   an occasional null `aiSummary`/`embedding` on failure + a manual "regenerate" button.
+  - **Rule D.1 — one trigger per doc path; fold related concerns in, don't add a second
+    trigger.** `markIdempotent(event.id)` keys on `event.id`, which is the SAME for every
+    function bound to the same document write. So a *second* trigger on the same path (e.g. a
+    new `onTaskAssigneeChanged` alongside `onTaskUpdated`) would call `markIdempotent` with an
+    id the first trigger already consumed → it silently returns `!fresh` and never runs. Put
+    the new concern inside the existing trigger instead. Concrete (06-06): assignee→GitHub-issue
+    sync lives at the TOP of `onTaskUpdated` (before the `status==='done'` transition guard), so
+    it runs on every task update — manual reassignment AND `assignTaskFlow`'s downstream
+    auto-assign — while the done-only downstream logic stays gated below. Each folded-in concern
+    gets its own `try/catch` so one failing on a given event never aborts the others.
 - **Rule E — match the trigger type to how the source doc is written.** If the producing
   write **creates** the doc already in its terminal state, `onDocumentUpdated` will **never
   fire** (it only fires on updates to an existing doc). The webhook's `handlePR` writes

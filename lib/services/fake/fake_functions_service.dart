@@ -29,6 +29,14 @@ class FakeFunctionsService implements FunctionsService {
     await Future.delayed(AppConfig.simulatedLatency * 2);
   }
 
+  @override
+  Future<({int added, int alreadyMembers, List<String> pending})>
+      importCollaborators({required String repoId}) async {
+    await Future.delayed(AppConfig.simulatedLatency * 3);
+    // Pretend two collaborators already had accounts and one hasn't signed in.
+    return (added: 2, alreadyMembers: 1, pending: const ['octocat']);
+  }
+
   // ---- AI flows ----------------------------------------------------------
 
   @override

@@ -619,3 +619,135 @@ buildAuthorGroups two-pass merge fixes duplicate humans (login vs git-name bucke
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: Kanban DnD + prototype alignment
+
+**Date**: 2026-06-06
+**Task**: Kanban DnD + prototype alignment
+**Branch**: `feature/summary-intel-hub`
+
+### Summary
+
+TasksBoard restyled per prototype (CJK tabs/columns, tonal headers, count chips, assignee circles, empty state) + LongPressDraggable/DragTarget status changes. TodoDeps.tsx judged redundant (same graph as 關聯圖 tab) — skipped. 67 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8266b9c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 20: Rich task cards: GitHub issue sync + AI handoff + push to next assignee
+
+**Date**: 2026-06-06
+**Task**: Rich task cards: GitHub issue sync + AI handoff + push to next assignee
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+Implemented task 06-06 in 4 slices on feature/rich-task-cards-ai-handoff. (1) Rich TaskDetailsPage: subtasks, dependencies, acceptanceCriteria, inline assignee picker, issue/PR chips, handoff with Generate/Regenerate; extended MembersViewModel to cache userId->AppUser profiles. (2) Push delivery: wired PushMessagingService.initialize after sign-in (live only), FCM data-payload deep-link on tap, Firestore-listener in-app assignment banner in RepoShell (seeded on first non-loading snapshot). (3) generateHandoffFlow: single-completion over pre-gathered prerequisites/commits/Discord/roster, force splits manual(force=true) vs auto(force=false), auto-run best-effort from onTaskUpdated. (4) Assignee->GitHub issue sync via githubClient.setIssueAssignees, folded into onTaskUpdated before the status guard (shared event.id => can't add a 2nd trigger). Found most backend already existed (issue sync, auto-dispatch, notify). flutter analyze clean (1 pre-existing unrelated info), 71 flutter tests + 201 functions tests green. Spec learnings captured (Rule D.1, AI-flow shape, FCM/banner patterns).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b693ab8..8f6b21b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 21: Clickable GitHub issue/PR links in task detail
+
+**Date**: 2026-06-06
+**Task**: Clickable GitHub issue/PR links in task detail
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+Made the issue/PR chips on TaskDetailsPage open the real GitHub page: added url_launcher and a shell-scoped RepoViewModel (streams repo doc → repo.url); built issues/N + pull/N URLs, graceful non-tappable when URL unknown. flutter analyze clean, 71 flutter tests green. Follow-up to 06-06-rich-task-cards-ai-handoff.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 22: Import GitHub collaborators as repo members
+
+**Date**: 2026-06-06
+**Task**: Import GitHub collaborators as repo members
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+Added importCollaborators callable (githubClient.listCollaborators + map githubLogin->existing user -> add member; pending list for un-signed-in collaborators) + assignee-picker action + client/fake. Answers 'only self assignable': members are Firebase-uid-keyed/client-write-blocked, so teammates must have a GitSync account. tsc clean, 205 functions + 71 flutter tests green. Needs deploy (importCollaborators + generateHandoff + onTaskUpdated).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

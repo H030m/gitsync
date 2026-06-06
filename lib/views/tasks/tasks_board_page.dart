@@ -7,9 +7,19 @@ import '../../theme/app_dimens.dart';
 import '../../view_models/tasks_board_vm.dart';
 import 'widgets/task_graph_tab.dart';
 
-// TasksBoardPage — kanban + relation-graph tabs.
-// TODO: implement drag-and-drop kanban + relation graph per prototype
-// `tasks/TasksBoard.tsx`.
+// TasksBoardPage — kanban (看板) + dependency-graph (關聯圖) tabs.
+// Faithful restyle of the prototype `tasks/TasksBoard.tsx`: tonal column headers,
+// count chips, rich cards (摘要 / 負責人 / 交接 / 依賴) and long-press
+// drag-and-drop between columns. Responsive: wide viewports fill the page with
+// three Expanded columns; narrow ones fall back to fixed-width horizontal
+// scrolling. See task 06-06.
+
+// Layout tuning. A column needs ~240dp for the rich card content to breathe; the
+// board switches to fill mode once three of those + gaps + padding fit.
+const double _kMinColumnWidth = 240;
+const double _kColumnGap = AppDimens.spacingSm + 2;
+const double _kBoardHPad = AppDimens.spacingSm + AppDimens.spacingXs;
+
 class TasksBoardPage extends StatelessWidget {
   const TasksBoardPage({super.key, required this.repoId});
   final String repoId;
@@ -20,18 +30,19 @@ class TasksBoardPage extends StatelessWidget {
       length: 2,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Tasks'),
+          title: const Text('任務'),
           bottom: const TabBar(
             tabs: [
-              Tab(icon: Icon(Icons.view_kanban), text: 'Board'),
-              Tab(icon: Icon(Icons.account_tree), text: 'Graph'),
+              Tab(text: '看板'),
+              Tab(text: '關聯圖'),
             ],
           ),
         ),
         floatingActionButton: FloatingActionButton(
-          onPressed: () =>
-              Provider.of<NavigationService>(context, listen: false)
-                  .goAddTodo(repoId),
+          onPressed: () => Provider.of<NavigationService>(
+            context,
+            listen: false,
+          ).goAddTodo(repoId),
           child: const Icon(Icons.add),
         ),
         body: Consumer<TasksBoardViewModel>(
@@ -52,140 +63,309 @@ class TasksBoardPage extends StatelessWidget {
   }
 }
 
+// Per-column visual tokens. Tints are derived from the active ColorScheme via an
+// exhaustive switch on TaskStatus (no hardcoded hexes) so light + dark both read
+// as a graded primary family: header background (tonal), accent (label + chip),
+// and the column label.
+class _ColumnTheme {
+  const _ColumnTheme({
+    required this.label,
+    required this.tonal,
+    required this.accent,
+  });
+  final String label;
+  final Color tonal;
+  final Color accent;
+
+  static _ColumnTheme of(ColorScheme scheme, TaskStatus status) {
+    return switch (status) {
+      TaskStatus.todo => _ColumnTheme(
+        label: '待辦',
+        tonal: scheme.surfaceContainerHighest,
+        accent: scheme.primary.withValues(alpha: 0.55),
+      ),
+      TaskStatus.inProgress => _ColumnTheme(
+        label: '進行中',
+        tonal: scheme.primaryContainer,
+        accent: scheme.primary,
+      ),
+      TaskStatus.done => _ColumnTheme(
+        label: '完成',
+        tonal: scheme.secondaryContainer,
+        accent: scheme.secondary,
+      ),
+    };
+  }
+}
+
 class _BoardTab extends StatelessWidget {
   const _BoardTab({required this.vm});
   final TasksBoardViewModel vm;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: _Column(
-              title: 'To do',
-              tasks: vm.todo,
-              accent: scheme.outline,
+    final allEmpty = vm.tasks.isEmpty;
+    if (allEmpty) return const _EmptyBoard();
+
+    const columns = [TaskStatus.todo, TaskStatus.inProgress, TaskStatus.done];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Width needed for three real columns side by side (padding + 2 gaps).
+        const fillThreshold =
+            3 * _kMinColumnWidth + 2 * _kColumnGap + 2 * _kBoardHPad;
+        final fill = constraints.maxWidth >= fillThreshold;
+
+        if (fill) {
+          // Desktop/tablet: three Expanded columns fill the page width.
+          return Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: _kBoardHPad,
+              vertical: AppDimens.spacingSm,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var i = 0; i < columns.length; i++) ...[
+                  if (i > 0) const SizedBox(width: _kColumnGap),
+                  Expanded(
+                    child: _BoardColumn(
+                      vm: vm,
+                      status: columns[i],
+                      tasks: _tasksFor(vm, columns[i]),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          );
+        }
+
+        // Phone: fixed-width columns scrolling horizontally.
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(
+            horizontal: _kBoardHPad,
+            vertical: AppDimens.spacingSm,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var i = 0; i < columns.length; i++) ...[
+                if (i > 0) const SizedBox(width: _kColumnGap),
+                SizedBox(
+                  width: _kMinColumnWidth,
+                  child: _BoardColumn(
+                    vm: vm,
+                    status: columns[i],
+                    tasks: _tasksFor(vm, columns[i]),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  static List<Task> _tasksFor(TasksBoardViewModel vm, TaskStatus status) =>
+      switch (status) {
+        TaskStatus.todo => vm.todo,
+        TaskStatus.inProgress => vm.inProgress,
+        TaskStatus.done => vm.done,
+      };
+}
+
+// Centered card shown when every column is empty — mirrors the prototype copy.
+class _EmptyBoard extends StatelessWidget {
+  const _EmptyBoard();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppDimens.spacingLg),
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(AppDimens.spacingLg),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.add,
+                    size: 32,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: AppDimens.spacingMd),
+                Text(
+                  '您還未輸入專案架構',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: scheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: AppDimens.spacingXs),
+                Text(
+                  '請點擊右下角 + 號來新增 TODOs',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
           ),
-          Expanded(
-            child: _Column(
-              title: 'In progress',
-              tasks: vm.inProgress,
-              accent: scheme.primary,
-            ),
-          ),
-          Expanded(
-            child: _Column(
-              title: 'Done',
-              tasks: vm.done,
-              accent: scheme.secondary,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 }
 
-class _Column extends StatelessWidget {
-  const _Column({
-    required this.title,
+// One kanban column: a tonal header (label + count chip) over a
+// secondary-background card list. Width is set by the parent (Expanded in fill
+// mode, fixed SizedBox in scroll mode). The body is a DragTarget that accepts
+// cards from other columns and writes the new status through the ViewModel.
+class _BoardColumn extends StatefulWidget {
+  const _BoardColumn({
+    required this.vm,
+    required this.status,
     required this.tasks,
-    required this.accent,
   });
-  final String title;
-  final List<Task> tasks;
-  final Color accent;
 
+  final TasksBoardViewModel vm;
+  final TaskStatus status;
+  final List<Task> tasks;
+
+  @override
+  State<_BoardColumn> createState() => _BoardColumnState();
+}
+
+class _BoardColumnState extends State<_BoardColumn> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppDimens.spacingSm + AppDimens.spacingXs,
-            vertical: AppDimens.spacingSm,
+    final scheme = theme.colorScheme;
+    final colTheme = _ColumnTheme.of(scheme, widget.status);
+
+    return DragTarget<Task>(
+      onWillAcceptWithDetails: (details) =>
+          details.data.status != widget.status,
+      onAcceptWithDetails: (details) => _accept(details.data),
+      builder: (context, candidate, rejected) {
+        final hovering = candidate.isNotEmpty;
+        return Container(
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(AppDimens.radiusLg),
+            border: Border.all(
+              color: hovering ? colTheme.accent : Colors.transparent,
+              width: 2,
+            ),
           ),
-          child: Row(
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
             children: [
+              // Tonal header: accent label + count chip.
               Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: AppDimens.spacingSm),
-              Expanded(
-                child: Text(
-                  title,
-                  style: theme.textTheme.titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w700),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                color: colTheme.tonal,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppDimens.spacingSm + AppDimens.spacingXs,
+                  vertical: AppDimens.spacingSm,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        colTheme.label,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: colTheme.accent,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    _CountChip(
+                      count: widget.tasks.length,
+                      accent: colTheme.accent,
+                    ),
+                  ],
                 ),
               ),
-              _CountBadge(count: tasks.length, color: accent),
+              // Card list (secondary background), tinted while hovering.
+              Container(
+                color: hovering
+                    ? colTheme.accent.withValues(alpha: 0.08)
+                    : Colors.transparent,
+                padding: const EdgeInsets.all(AppDimens.spacingSm),
+                constraints: const BoxConstraints(minHeight: 120),
+                child: widget.tasks.isEmpty
+                    ? SizedBox(
+                        height: 80,
+                        child: Center(
+                          child: Text(
+                            '—',
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      )
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (final t in widget.tasks)
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                bottom: AppDimens.spacingSm,
+                              ),
+                              child: _TaskCard(
+                                vm: widget.vm,
+                                task: t,
+                                accent: colTheme.accent,
+                              ),
+                            ),
+                        ],
+                      ),
+              ),
             ],
           ),
-        ),
-        Expanded(
-          child: tasks.isEmpty
-              ? Center(
-                  child: Text(
-                    '—',
-                    style: theme.textTheme.bodyLarge
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                  ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.only(bottom: AppDimens.spacingLg),
-                  itemCount: tasks.length,
-                  itemBuilder: (ctx, i) {
-                    final t = tasks[i];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(
-                        horizontal: AppDimens.spacingSm,
-                        vertical: AppDimens.spacingXs,
-                      ),
-                      child: ListTile(
-                        title: Text(
-                          t.title,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        subtitle: t.description.isEmpty
-                            ? null
-                            : Text(
-                                t.description,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                        onTap: () => Provider.of<NavigationService>(ctx,
-                                listen: false)
-                            .goTaskDetails(
-                                Provider.of<TasksBoardViewModel>(ctx,
-                                        listen: false)
-                                    .repoId,
-                                t.id),
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
+        );
+      },
     );
+  }
+
+  Future<void> _accept(Task task) async {
+    try {
+      await widget.vm.updateStatus(task.id, widget.status);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(content: Text('更新狀態失敗：$e')));
+    }
   }
 }
 
-// Small pill showing the number of tasks in a board column.
-class _CountBadge extends StatelessWidget {
-  const _CountBadge({required this.count, required this.color});
+// Small pill showing the number of cards in a column: accent @ ~20% bg + accent
+// text, per the prototype.
+class _CountChip extends StatelessWidget {
+  const _CountChip({required this.count, required this.accent});
   final int count;
-  final Color color;
+  final Color accent;
 
   @override
   Widget build(BuildContext context) {
@@ -195,15 +375,191 @@ class _CountBadge extends StatelessWidget {
         vertical: 2,
       ),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
+        color: accent.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(AppDimens.radiusLg),
       ),
       child: Text(
         '$count',
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: color,
-              fontWeight: FontWeight.w700,
+          color: accent,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+// A draggable rich task card. Long-press to drag between columns; tap to open
+// TaskDetails. The drag feedback is constrained to the column's inner width
+// (via LayoutBuilder) so the ghost doesn't blow up to an unbounded size.
+class _TaskCard extends StatelessWidget {
+  const _TaskCard({required this.vm, required this.task, required this.accent});
+
+  final TasksBoardViewModel vm;
+  final Task task;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final card = _CardBody(task: task, accent: accent);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // The card is laid out at the column's inner width; reuse it for the
+        // drag ghost so it stays bounded in both layout modes.
+        final width = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : _kMinColumnWidth;
+        return LongPressDraggable<Task>(
+          data: task,
+          feedback: Material(
+            color: Colors.transparent,
+            child: Opacity(
+              opacity: 0.9,
+              child: SizedBox(
+                width: width,
+                child: _CardBody(task: task, accent: accent, elevated: true),
+              ),
             ),
+          ),
+          childWhenDragging: Opacity(opacity: 0.4, child: card),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+            onTap: () => Provider.of<NavigationService>(
+              context,
+              listen: false,
+            ).goTaskDetails(vm.repoId, task.id),
+            child: card,
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _CardBody extends StatelessWidget {
+  const _CardBody({
+    required this.task,
+    required this.accent,
+    this.elevated = false,
+  });
+
+  final Task task;
+  final Color accent;
+  final bool elevated;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(AppDimens.spacingSm + 2),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.shadow.withValues(alpha: elevated ? 0.22 : 0.08),
+            blurRadius: elevated ? 10 : 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Title — 工作標題.
+          Text(
+            task.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: scheme.onSurface,
+              fontWeight: FontWeight.w600,
+              height: 1.25,
+            ),
+          ),
+          // Description snippet — 工作摘要 (omitted when empty).
+          if (task.description.trim().isNotEmpty) ...[
+            const SizedBox(height: AppDimens.spacingXs),
+            Text(
+              task.description,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+                height: 1.3,
+              ),
+            ),
+          ],
+          const SizedBox(height: AppDimens.spacingSm),
+          // Bottom row: left = 依賴/交接 indicators, right = 負責人 chip.
+          Row(
+            children: [
+              if (task.dependsOn.isNotEmpty) ...[
+                Icon(Icons.link, size: 14, color: scheme.onSurfaceVariant),
+                const SizedBox(width: 2),
+                Text(
+                  '${task.dependsOn.length}',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: AppDimens.spacingSm),
+              ],
+              if (task.handoffDoc != null)
+                Icon(
+                  Icons.description_outlined,
+                  size: 14,
+                  color: scheme.onSurfaceVariant,
+                ),
+              const Spacer(),
+              _AssigneeCircle(assigneeId: task.assigneeId, accent: accent),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Bottom-right initial circle: accent-tinted with the assignee's first character
+// when assigned, otherwise a plain grey circle (unassigned).
+class _AssigneeCircle extends StatelessWidget {
+  const _AssigneeCircle({required this.assigneeId, required this.accent});
+  final String? assigneeId;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final id = assigneeId;
+    if (id == null || id.isEmpty) {
+      return Container(
+        width: 20,
+        height: 20,
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest,
+          shape: BoxShape.circle,
+        ),
+      );
+    }
+    final initial = id.substring(0, 1).toUpperCase();
+    return Container(
+      width: 20,
+      height: 20,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.2),
+        shape: BoxShape.circle,
+      ),
+      child: Text(
+        initial,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: accent,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }

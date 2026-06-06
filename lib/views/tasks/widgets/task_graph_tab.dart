@@ -7,10 +7,16 @@ import '../../../services/navigation.dart';
 import '../../../theme/app_dimens.dart';
 import '../../../view_models/tasks_board_vm.dart';
 
-// Dependency-DAG visualization of a repo's tasks (TasksBoardPage "Graph" tab).
+// Dependency-DAG visualization of a repo's tasks (TasksBoardPage "關聯圖" tab).
 // Nodes = tasks, edges = `dependsOn` (prerequisite -> dependent). Built with the
 // `graphview` package using a top-down Sugiyama (layered) layout, wrapped in an
 // InteractiveViewer for pan/zoom. See task 06-02-task-graph-view.
+//
+// 06-06 D3 (light touch): arrowheads are already drawn (`addTriangleToEdge`) and
+// nodes are themed via an exhaustive status switch below. The prototype's
+// "fill lighter with depth" gradient would require a BFS depth pass + layout
+// awareness — out of scope for a light touch, so we keep the status palette and
+// do NOT rework the Sugiyama layout.
 class TaskGraphTab extends StatelessWidget {
   const TaskGraphTab({super.key, required this.vm});
 

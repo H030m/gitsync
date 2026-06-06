@@ -319,6 +319,52 @@ export async function createIssue(
   return { number: res.data.number, htmlUrl: res.data.html_url };
 }
 
+/**
+ * Replaces the assignees on a GitHub issue (PATCH
+ * /repos/{owner}/{repo}/issues/{number} with `assignees`). Pass an empty array
+ * to clear. Used to keep a task's linked GitHub issue assignee in sync with the
+ * in-app assignee. All GitHub API access stays in this file (ARCHITECTURE.md §6.4).
+ */
+export async function setIssueAssignees(
+  owner: string,
+  repo: string,
+  accessToken: string,
+  issueNumber: number,
+  assignees: string[],
+): Promise<void> {
+  const octokit = getOctokit(accessToken);
+  await octokit.issues.update({
+    owner,
+    repo,
+    issue_number: issueNumber,
+    assignees,
+  });
+}
+
+export interface Collaborator {
+  login: string;
+  avatarUrl: string | null;
+}
+
+/**
+ * Lists a repo's GitHub collaborators (GET /repos/{owner}/{repo}/collaborators).
+ * Used to import teammates as GitSync repo members. Requires the token holder to
+ * have at least pull access; Octokit throws (status 403/404) otherwise. All
+ * GitHub API access stays in this file (ARCHITECTURE.md §6.4).
+ */
+export async function listCollaborators(
+  owner: string,
+  repo: string,
+  accessToken: string,
+): Promise<Collaborator[]> {
+  const octokit = getOctokit(accessToken);
+  const res = await octokit.repos.listCollaborators({ owner, repo, per_page: 100 });
+  return res.data.map((c) => ({
+    login: c.login,
+    avatarUrl: c.avatar_url ?? null,
+  }));
+}
+
 export interface RepoAccess {
   githubRepoId: number;
   defaultBranch: string;

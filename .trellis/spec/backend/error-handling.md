@@ -114,9 +114,37 @@ try {
 
 ---
 
+## AI flow shape: agentic vs single-completion (pick by caller)
+
+Two flow shapes exist; pick by how the flow is invoked:
+
+- **Agentic function-calling loop** (`assignTaskFlow`, `summarizeDay`, `dailyBriefChat`) — for
+  user-initiated callables that benefit from the model drilling into data over several rounds.
+- **Single-completion with pre-gathered context** (`explainCommit`, `discordDailyDigest`, and
+  06-06 `generateHandoff`) — deterministically fetch all context, make ONE completion. **This is
+  the required shape when the flow runs best-effort from a trigger** (e.g. `onTaskUpdated` calls
+  `generateHandoffFlow`): bounded latency/cost, no multi-round loop that could stall the trigger,
+  and easy to unit-test (seed Firestore + scripted OpenAI). Keep every context-gather in its own
+  `try/catch → []/null` (commit query may need an undeployed composite index; Discord search and
+  roster reads are optional signals) so the one OpenAI call still runs on partial context.
+
+### Convention: `force` flag splits manual-regenerate from auto-cache
+
+A flow that both (a) auto-runs from a trigger and (b) is exposed as a manual "regenerate" callable
+takes a `force?: boolean`. The flow returns the cached field when `!force && existing`; the manual
+**handler** passes `force: true` (always fresh), the **trigger** passes `force: false` (fill only
+if absent, so re-firing on each newly-landed prerequisite doesn't redo work). Mirrors
+`explainCommit`'s cache. The cache write-back is best-effort (Rule D) — log + return the markdown
+even if the `update()` fails, so the caller still gets the result.
+
+---
+
 ## Common mistakes
 
 - Returning a plain object on error instead of throwing `HttpsError` (client can't distinguish).
+- Adding a second Firestore trigger on a path another trigger already watches — the shared
+  `event.id` makes `markIdempotent` swallow it (see database-guidelines Rule D.1); fold the concern
+  into the existing trigger instead.
 - Doing OpenAI work inside the idempotency transaction (Rule D) → lost data on retry.
 - Forgetting the lock `finally` → repo stuck "breaking down".
 - Heavy logic in the webhook handler → GitHub timeout + retry storm.

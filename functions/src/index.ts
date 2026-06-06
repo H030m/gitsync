@@ -9,6 +9,7 @@ export { breakdownTask } from './handlers/breakdownTask';
 export { forceUnlockBreakdown } from './handlers/forceUnlockBreakdown';
 export { assignTask } from './handlers/assignTask';
 export { generateHandoff } from './handlers/generateHandoff';
+export { importCollaborators } from './handlers/importCollaborators';
 export { summarizeDay } from './handlers/summarizeDay';
 export { dailyBrief } from './handlers/dailyBrief';
 export { explainCommit } from './handlers/explainCommit';

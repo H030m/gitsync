@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 18
+- **Total Sessions**: 22
 - **Last Active**: 2026-06-06
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~621 | Active |
+| `journal-1.md` | ~753 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,10 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 22 | 2026-06-06 | Import GitHub collaborators as repo members | HEAD | `feature/rich-task-cards-ai-handoff` |
+| 21 | 2026-06-06 | Clickable GitHub issue/PR links in task detail | HEAD | `feature/rich-task-cards-ai-handoff` |
+| 20 | 2026-06-06 | Rich task cards: GitHub issue sync + AI handoff + push to next assignee | `b693ab8`..`8f6b21b` | `feature/rich-task-cards-ai-handoff` |
+| 19 | 2026-06-06 | Kanban DnD + prototype alignment | `8266b9c` | `feature/summary-intel-hub` |
 | 18 | 2026-06-06 | Stats: identity merge + AI author summaries | `0ada841` | `feature/summary-intel-hub` |
 | 17 | 2026-06-06 | Stats: commit-share toggle + GitHub names | `35ef550` | `feature/summary-intel-hub` |
 | 16 | 2026-06-06 | Stats rebuilt to match the design prototype | `8059494` | `feature/summary-intel-hub` |

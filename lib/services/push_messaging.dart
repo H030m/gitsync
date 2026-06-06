@@ -2,38 +2,55 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 
 import '../repositories/user_repo.dart';
+import 'navigation.dart';
 
 // FCM wiring. Three responsibilities:
 //   1. Pull the FCM token and persist it to `users/{uid}.fcmToken`.
-//   2. Handle foreground notifications (show in-app banner or SnackBar).
-//   3. Route taps on notifications to the `/notify` screen.
+//   2. Handle foreground notifications (logged; the in-app assignment banner in
+//      RepoShell covers the foreground "you were assigned" UX via Firestore).
+//   3. Route taps on notifications to the matching task via the data payload
+//      ({ type, repoId, taskId } — see tools/notify.ts), falling back to /notify.
+//
+// NOTE: must only be initialized in live (Firebase) mode — FirebaseMessaging
+// requires an initialized Firebase app, which fake-backend mode skips.
 class PushMessagingService {
   PushMessagingService({UserRepository? userRepository})
       : _userRepository = userRepository ?? UserRepository();
 
   final FirebaseMessaging _fcm = FirebaseMessaging.instance;
   final UserRepository _userRepository;
+  NavigationService? _navigation;
+  bool _initialized = false;
 
-  Future<bool> initialize({required String userId}) async {
+  Future<bool> initialize({
+    required String userId,
+    NavigationService? navigation,
+  }) async {
+    if (_initialized) return true;
+    _navigation = navigation;
+
     final settings = await _fcm.requestPermission();
     if (settings.authorizationStatus != AuthorizationStatus.authorized) {
+      // Permission denied — leave uninitialized so a later sign-in can retry.
       return false;
     }
+    _initialized = true;
 
-    // Foreground messages.
+    // Foreground messages: log only. The in-app banner (RepoShell, Firestore
+    // listener on assigneeId == me) handles the user-facing foreground prompt.
     FirebaseMessaging.onMessage.listen((m) {
-      // Placeholder for in-app banner/SnackBar logic.
       debugPrint('[FCM foreground] ${m.notification?.title}');
     });
 
-    // User tapped a notification while the app was suspended.
-    FirebaseMessaging.onMessageOpenedApp.listen((m) {
-      // Placeholder for payload-based navigation to task/daily.
-      debugPrint('[FCM opened] ${m.data}');
-    });
+    // Tap while the app was backgrounded.
+    FirebaseMessaging.onMessageOpenedApp.listen(_handleTap);
 
     // Background messages need a top-level handler (see bottom of file).
     FirebaseMessaging.onBackgroundMessage(_backgroundHandler);
+
+    // Cold start: the app was launched by tapping a notification.
+    final initial = await _fcm.getInitialMessage();
+    if (initial != null) _handleTap(initial);
 
     final token = await _fcm.getToken();
     if (token != null) {
@@ -43,6 +60,23 @@ class PushMessagingService {
       _userRepository.updateFcmToken(userId, t);
     });
     return true;
+  }
+
+  // Deep-link a tapped notification to its task when the data payload carries
+  // repoId + taskId; otherwise land on the generic /notify screen.
+  void _handleTap(RemoteMessage m) {
+    final nav = _navigation;
+    if (nav == null) return;
+    final repoId = m.data['repoId'];
+    final taskId = m.data['taskId'];
+    if (repoId != null &&
+        repoId.isNotEmpty &&
+        taskId != null &&
+        taskId.isNotEmpty) {
+      nav.goTaskDetails(repoId, taskId);
+    } else {
+      nav.goNotify();
+    }
   }
 }
 
