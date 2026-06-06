@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 22
+- **Total Sessions**: 23
 - **Last Active**: 2026-06-06
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~753 | Active |
+| `journal-1.md` | ~786 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 23 | 2026-06-06 | GitHub avatar on kanban assignee circle | HEAD | `feature/rich-task-cards-ai-handoff` |
 | 22 | 2026-06-06 | Import GitHub collaborators as repo members | HEAD | `feature/rich-task-cards-ai-handoff` |
 | 21 | 2026-06-06 | Clickable GitHub issue/PR links in task detail | HEAD | `feature/rich-task-cards-ai-handoff` |
 | 20 | 2026-06-06 | Rich task cards: GitHub issue sync + AI handoff + push to next assignee | `b693ab8`..`8f6b21b` | `feature/rich-task-cards-ai-handoff` |

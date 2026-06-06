@@ -751,3 +751,36 @@ Added importCollaborators callable (githubClient.listCollaborators + map githubL
 ### Next Steps
 
 - None - task complete
+
+
+## Session 23: GitHub avatar on kanban assignee circle
+
+**Date**: 2026-06-06
+**Task**: GitHub avatar on kanban assignee circle
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+_AssigneeCircle uses MembersViewModel.profileFor(uid).avatarUrl as a CircleAvatar image with letter fallback; added MembersViewModel to the board test harness. analyze clean, board tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
