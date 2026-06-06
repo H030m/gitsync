@@ -784,3 +784,36 @@ _AssigneeCircle uses MembersViewModel.profileFor(uid).avatarUrl as a CircleAvata
 ### Next Steps
 
 - None - task complete
+
+
+## Session 24: Polish task dependency graph layout
+
+**Date**: 2026-06-06
+**Task**: Polish task dependency graph layout
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+Refined the 關聯圖: top-down Sugiyama with nodeSeparation 24 / levelSeparation 90, uniform 176x76 nodes, thin low-alpha edges + short bends, pinned status legend, one-shot fit-to-view via LayoutBuilder+GlobalKey+TransformationController(setEntry). User picked top-down (vs LR pipeline). analyze clean, 71 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
