@@ -916,3 +916,36 @@ Task detail card: add/remove prerequisites (scrollable cycle-filtered picker) + 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 28: Close linked GitHub issue on task delete
+
+**Date**: 2026-06-07
+**Task**: Close linked GitHub issue on task delete
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+onTaskDeleted trigger + githubClient.closeIssue: deleting a task closes its mirrored GitHub issue (REST can't delete issues). Best-effort/idempotent, creator token + owner/repo. 5 unit tests, tsc clean. Needs deploy.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
