@@ -33,6 +33,14 @@ field-by-field schema of every collection.
 - `tasks` / `users` / repo root → the app writes (rules check membership / ownership).
 - Never invent a new collection or field without proposing it in `docs/MEMORY.md` first.
 
+> **Membership model**: `members/{uid}` is keyed by **Firebase Auth uid** and is
+> **client-write-blocked** — only Cloud Functions write it. A person becomes a member by
+> (a) **self-join** (`addRepo` adds the caller when they connect a repo) or (b)
+> `importCollaborators` (pulls the repo's GitHub collaborators and adds those who **already have a
+> GitSync account** — `users.githubLogin == login`). Collaborators who've never signed in have no
+> uid, so they can't be members/assignees (returned as `pending`). Assigning a task to someone
+> therefore requires them to have signed in at least once.
+
 ---
 
 ## Concurrency rules (triggers & webhooks run concurrently)
