@@ -949,3 +949,36 @@ onTaskDeleted trigger + githubClient.closeIssue: deleting a task closes its mirr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 29: Fix dependency-graph panning
+
+**Date**: 2026-06-07
+**Task**: Fix dependency-graph panning
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+Fit-to-view regression: finite boundaryMargin(200) clamped panning after the initial fit. Switched to boundaryMargin all(infinity) + removed the dx/dy>=0 clamp so the graph centers on open and pans freely. analyze clean, board tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
