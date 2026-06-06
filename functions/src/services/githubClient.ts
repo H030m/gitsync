@@ -319,6 +319,28 @@ export async function createIssue(
   return { number: res.data.number, htmlUrl: res.data.html_url };
 }
 
+/**
+ * Replaces the assignees on a GitHub issue (PATCH
+ * /repos/{owner}/{repo}/issues/{number} with `assignees`). Pass an empty array
+ * to clear. Used to keep a task's linked GitHub issue assignee in sync with the
+ * in-app assignee. All GitHub API access stays in this file (ARCHITECTURE.md §6.4).
+ */
+export async function setIssueAssignees(
+  owner: string,
+  repo: string,
+  accessToken: string,
+  issueNumber: number,
+  assignees: string[],
+): Promise<void> {
+  const octokit = getOctokit(accessToken);
+  await octokit.issues.update({
+    owner,
+    repo,
+    issue_number: issueNumber,
+    assignees,
+  });
+}
+
 export interface RepoAccess {
   githubRepoId: number;
   defaultBranch: string;

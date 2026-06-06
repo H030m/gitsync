@@ -20,6 +20,9 @@ export const generateHandoff = onCall(
         'repoId and taskId are required',
       );
     }
-    return generateHandoffFlow({ repoId, taskId });
+    // Manual invocation (the "Regenerate handoff" button) always produces a
+    // fresh doc; the auto trigger (onTaskUpdated) calls the flow with force=false
+    // so it only fills in a missing handoff.
+    return generateHandoffFlow({ repoId, taskId, force: true });
   },
 );
