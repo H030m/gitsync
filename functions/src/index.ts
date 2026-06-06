@@ -36,6 +36,7 @@ export { botEditDigest } from './handlers/botEditDigest';
 // ---- Firestore triggers --------------------------------------------------
 export { onTaskCreated } from './triggers/onTaskCreated';
 export { onTaskUpdated } from './triggers/onTaskUpdated';
+export { onTaskDeleted } from './triggers/onTaskDeleted';
 export { onCommitCreated } from './triggers/onCommitCreated';
 export { onPRMerged } from './triggers/onPRMerged';
 export { onIssueWritten } from './triggers/onIssueWritten';
