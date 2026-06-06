@@ -94,6 +94,19 @@ layout (`lib/views/tasks/widgets/task_graph_tab.dart`). Conventions learned:
   `node.key!.value`. Map id → model object for the node widget.
 - Node colors come from `Theme.of(ctx).colorScheme` keyed on the status enum with an
   exhaustive `switch` (no `default`, so a new status is a compile error), per Styling above.
+- **Readable Sugiyama layout** (06-06 polish): keep `ORIENTATION_TOP_BOTTOM` but use a
+  small `nodeSeparation` (~24) + larger `levelSeparation` (~90) so siblings line up and
+  diagonal sweeps shorten; short `CurvedBendPointShape(curveLength: 8)` + thin, low-alpha
+  edge paint so nodes (not lines) carry the eye; **uniform node footprint** (fixed
+  width+height, title `maxLines: 2` ellipsis) so every layer aligns.
+- **Fit-to-view**: graphview lays out at intrinsic size, so wrap the `GraphView` in a
+  `LayoutBuilder` + `GlobalKey`, and in a one-shot post-frame callback measure
+  `key.currentContext.size`, compute `scale = min(viewportW/w, viewportH/h).clamp(.2,1)`,
+  and set the `TransformationController` (scale on the matrix diagonal, translate in
+  column 3 via `setEntry` — `Matrix4.translate/scale` are deprecated). Guard with a
+  `_fitted` flag re-armed when the node-id set changes, so it frames on open without
+  fighting the user's pan/zoom. A pinned (non-panning) status legend goes in the `Stack`
+  next to the `Positioned.fill` viewer.
 
 ---
 
