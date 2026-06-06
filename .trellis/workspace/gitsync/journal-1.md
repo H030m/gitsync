@@ -1015,3 +1015,36 @@ Lightweight i18n: AppLocale + persisted LocaleNotifier + AppStrings via context.
 ### Next Steps
 
 - None - task complete
+
+
+## Session 31: Unlinked tasks shown as standalone graph nodes
+
+**Date**: 2026-06-07
+**Task**: Unlinked tasks shown as standalone graph nodes
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+Degree-0 tasks were hidden at graphview's (0,0). Split connected vs isolated; DAG built from connected, isolated rendered in an 'Unlinked' row above it (same canvas + tap/link/delete). Manually-added tasks now appear and can be linked in. analyze clean, 79 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
