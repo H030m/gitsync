@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 24
+- **Total Sessions**: 25
 - **Last Active**: 2026-06-06
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~819 | Active |
+| `journal-1.md` | ~852 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 25 | 2026-06-06 | Interactive dependency-graph editing | HEAD | `feature/rich-task-cards-ai-handoff` |
 | 24 | 2026-06-06 | Polish task dependency graph layout | HEAD | `feature/rich-task-cards-ai-handoff` |
 | 23 | 2026-06-06 | GitHub avatar on kanban assignee circle | HEAD | `feature/rich-task-cards-ai-handoff` |
 | 22 | 2026-06-06 | Import GitHub collaborators as repo members | HEAD | `feature/rich-task-cards-ai-handoff` |

@@ -817,3 +817,36 @@ Refined the 關聯圖: top-down Sugiyama with nodeSeparation 24 / levelSeparatio
 ### Next Steps
 
 - None - task complete
+
+
+## Session 25: Interactive dependency-graph editing
+
+**Date**: 2026-06-06
+**Task**: Interactive dependency-graph editing
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+Add/connect/delete nodes in the 關聯圖: FAB add-node, long-press menu (open/link/delete), tap-to-connect prereq→dependent with cycle rejection, delete auto-bridges prereqs→dependents. Pure graph_edit_ops (wouldCreateCycle DFS + bridgeOnDelete DAG contraction) with 8 unit tests; new TaskRepository.updateDependsOn (+Fake); VM addDependency/deleteTaskBridging. analyze clean, 79 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
