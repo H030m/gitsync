@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/app_user.dart';
 import '../../models/member.dart';
@@ -8,6 +9,7 @@ import '../../services/functions_service.dart';
 import '../../services/navigation.dart';
 import '../../theme/app_dimens.dart';
 import '../../view_models/members_vm.dart';
+import '../../view_models/repo_vm.dart';
 import '../../view_models/tasks_board_vm.dart';
 import '../../widgets/markdown_view.dart';
 
@@ -60,6 +62,19 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
         );
     } finally {
       if (mounted) setState(() => _generatingHandoff = false);
+    }
+  }
+
+  Future<void> _openUrl(String url) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await launchUrl(
+      Uri.parse(url),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!ok && mounted) {
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(const SnackBar(content: Text('Could not open the link.')));
     }
   }
 
@@ -119,6 +134,10 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
           // the result shows immediately even when the backend doesn't write it
           // back into the stream (fake mode).
           final handoff = _localHandoff ?? task.handoffDoc;
+          // Repo URL (from the shell-scoped RepoViewModel) lets us deep-link the
+          // linked GitHub issue / PRs; null/empty → chips stay non-tappable.
+          final repoUrl = ctx.watch<RepoViewModel>().repo?.url;
+          final hasRepoUrl = repoUrl != null && repoUrl.isNotEmpty;
 
           return ListView(
             padding: const EdgeInsets.all(AppDimens.spacingMd),
@@ -207,9 +226,18 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
                       _RefChip(
                         icon: Icons.adjust,
                         label: 'Issue #${task.githubIssueNumber}',
+                        onTap: hasRepoUrl
+                            ? () => _openUrl(
+                                '$repoUrl/issues/${task.githubIssueNumber}')
+                            : null,
                       ),
                     for (final pr in task.linkedPRNumbers)
-                      _RefChip(icon: Icons.merge, label: 'PR #$pr'),
+                      _RefChip(
+                        icon: Icons.merge,
+                        label: 'PR #$pr',
+                        onTap:
+                            hasRepoUrl ? () => _openUrl('$repoUrl/pull/$pr') : null,
+                      ),
                   ],
                 ),
               ],
@@ -455,19 +483,27 @@ class _TaskRefTile extends StatelessWidget {
   }
 }
 
-// Small outlined chip for a GitHub issue / PR reference.
+// Small outlined chip for a GitHub issue / PR reference. Tappable (opens the
+// GitHub URL) when [onTap] is provided; otherwise a plain, non-interactive chip.
 class _RefChip extends StatelessWidget {
-  const _RefChip({required this.icon, required this.label});
+  const _RefChip({required this.icon, required this.label, this.onTap});
   final IconData icon;
   final String label;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Chip(
-      avatar: Icon(icon, size: 16, color: scheme.primary),
+    final avatar = Icon(icon, size: 16, color: scheme.primary);
+    final side = BorderSide(color: scheme.outlineVariant);
+    if (onTap == null) {
+      return Chip(avatar: avatar, label: Text(label), side: side);
+    }
+    return ActionChip(
+      avatar: avatar,
       label: Text(label),
-      side: BorderSide(color: scheme.outlineVariant),
+      side: side,
+      onPressed: onTap,
     );
   }
 }

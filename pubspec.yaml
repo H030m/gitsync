@@ -36,6 +36,9 @@ dependencies:
   # Task dependency DAG (TasksBoard Graph tab)
   graphview: ^1.2.0
 
+  # Open GitHub issue/PR links from the task detail page
+  url_launcher: ^6.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -10,6 +10,7 @@ import '../view_models/discord_chat_vm.dart';
 import '../view_models/discord_messages_vm.dart';
 import '../view_models/intel_range_vm.dart';
 import '../view_models/members_vm.dart';
+import '../view_models/repo_vm.dart';
 import '../view_models/tasks_board_vm.dart';
 import '../views/daily/daily_view_page.dart';
 import '../views/notify/notify_screen.dart';
@@ -69,6 +70,9 @@ final GoRouter appRouter = GoRouter(
         }
         return MultiProvider(
           providers: [
+            ChangeNotifierProvider(
+              create: (_) => RepoViewModel(repoId: repoId),
+            ),
             ChangeNotifierProvider(
               create: (_) => TasksBoardViewModel(repoId: repoId),
             ),
