@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../models/sub_task.dart';
 import '../../models/task.dart';
 import '../../services/authentication.dart';
@@ -96,8 +97,9 @@ class _AddTodoPageState extends State<AddTodoPage> {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     return Scaffold(
-      appBar: AppBar(title: const Text('Add task')),
+      appBar: AppBar(title: Text(s.addTaskTitle)),
       body: Padding(
         padding: const EdgeInsets.all(AppDimens.spacingMd),
         child: Column(
@@ -108,16 +110,16 @@ class _AddTodoPageState extends State<AddTodoPage> {
             if (!(_mode == _AddMode.ai && _step == 1)) ...[
               Center(
                 child: SegmentedButton<_AddMode>(
-                  segments: const [
+                  segments: [
                     ButtonSegment(
                       value: _AddMode.manual,
-                      icon: Icon(Icons.edit_outlined),
-                      label: Text('Manual'),
+                      icon: const Icon(Icons.edit_outlined),
+                      label: Text(s.manual),
                     ),
                     ButtonSegment(
                       value: _AddMode.ai,
-                      icon: Icon(Icons.auto_awesome),
-                      label: Text('AI breakdown'),
+                      icon: const Icon(Icons.auto_awesome),
+                      label: Text(s.aiBreakdown),
                     ),
                   ],
                   selected: {_mode},
@@ -144,6 +146,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
   }
 
   Widget _manualView() {
+    final s = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -151,9 +154,9 @@ class _AddTodoPageState extends State<AddTodoPage> {
           controller: _titleCtrl,
           autofocus: true,
           textInputAction: TextInputAction.next,
-          decoration: const InputDecoration(
-            labelText: 'Task title',
-            border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            labelText: s.taskTitleLabel,
+            border: const OutlineInputBorder(),
           ),
           onChanged: (_) => setState(() {}), // refresh submit-enabled state
         ),
@@ -162,9 +165,9 @@ class _AddTodoPageState extends State<AddTodoPage> {
           controller: _descCtrl,
           minLines: 3,
           maxLines: 6,
-          decoration: const InputDecoration(
-            labelText: 'Description (optional)',
-            border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            labelText: s.descriptionOptional,
+            border: const OutlineInputBorder(),
             alignLabelWithHint: true,
           ),
         ),
@@ -179,7 +182,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.add),
-          label: Text(_busy ? 'Adding…' : 'Add task'),
+          label: Text(_busy ? s.addingTask : s.addTaskTitle),
         ),
         if (_error != null) ...[
           const SizedBox(height: AppDimens.spacingMd),
@@ -191,18 +194,17 @@ class _AddTodoPageState extends State<AddTodoPage> {
   }
 
   Widget _inputStep() {
+    final s = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 360),
           child: TextField(
-            decoration: const InputDecoration(
-              labelText: 'Project spec',
-              hintText:
-                  'Paste your SPEC.md (Markdown) here — the AI breaks it '
-                  'into a high-level TODO list.',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: s.projectSpec,
+              hintText: s.projectSpecHint,
+              border: const OutlineInputBorder(),
               alignLabelWithHint: true,
             ),
             maxLines: null,
@@ -215,7 +217,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
         FilledButton.icon(
           onPressed: _busy || _goal.trim().isEmpty ? null : _runBreakdown,
           icon: const Icon(Icons.auto_awesome),
-          label: Text(_busy ? 'Breaking down…' : 'Break down with AI'),
+          label: Text(_busy ? s.breakingDown : s.breakDownWithAI),
         ),
         if (_error != null) ...[
           const SizedBox(height: AppDimens.spacingMd),
@@ -227,10 +229,11 @@ class _AddTodoPageState extends State<AddTodoPage> {
   }
 
   Widget _confirmStep() {
+    final s = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('Generated ${_subtasks.length} subtasks',
+        Text(s.generatedNSubtasks(_subtasks.length),
             style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: AppDimens.spacingSm),
         Expanded(
@@ -252,7 +255,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
           onPressed: () =>
               Provider.of<NavigationService>(context, listen: false)
                   .goTasks(widget.repoId),
-          child: const Text('Done'),
+          child: Text(s.done),
         ),
       ],
     );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../models/repo.dart';
 import '../../services/authentication.dart';
 import '../../services/navigation.dart';
@@ -15,20 +16,21 @@ class RepoListPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final auth = Provider.of<AuthenticationService>(context, listen: false);
     final uid = auth.currentUid;
     if (uid == null) {
       // ShellRoute is supposed to keep us off this page when signed out;
       // fall through to a sign-in prompt just in case.
-      return const Scaffold(
-        body: Center(child: Text('Not signed in')),
+      return Scaffold(
+        body: Center(child: Text(s.notSignedIn)),
       );
     }
 
     return ChangeNotifierProvider(
       create: (_) => RepoListViewModel(userId: uid),
       child: Scaffold(
-        appBar: AppBar(title: const Text('Your repos')),
+        appBar: AppBar(title: Text(s.yourRepos)),
         floatingActionButton: FloatingActionButton(
           onPressed: () => Provider.of<NavigationService>(context, listen: false)
               .goAddRepo(),
@@ -40,10 +42,10 @@ class RepoListPage extends StatelessWidget {
               return const Center(child: CircularProgressIndicator());
             }
             if (vm.repos.isEmpty) {
-              return const EmptyState(
+              return EmptyState(
                 icon: Icons.folder_open_outlined,
-                title: 'No repos yet',
-                message: 'Tap + to connect your first GitHub repository.',
+                title: s.noReposTitle,
+                message: s.noReposMsg,
               );
             }
             final scheme = Theme.of(ctx).colorScheme;
@@ -102,23 +104,21 @@ class RepoListPage extends StatelessWidget {
     RepoListViewModel vm,
     Repo repo,
   ) async {
+    final s = context.l10n;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        title: const Text('Remove repo?'),
-        content: Text(
-          'Remove ${repo.name}? This deletes the repo and all its '
-          'tasks/data. This cannot be undone.',
-        ),
+        title: Text(s.removeRepoTitle),
+        content: Text(s.removeRepoBody(repo.name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogCtx).pop(false),
-            child: const Text('Cancel'),
+            child: Text(s.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogCtx).pop(true),
             child: Text(
-              'Remove',
+              s.remove,
               style: TextStyle(
                 color: Theme.of(dialogCtx).colorScheme.error,
               ),
@@ -137,7 +137,7 @@ class RepoListPage extends StatelessWidget {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(vm.lastError ?? 'Failed to remove repo'),
+        content: Text(vm.lastError ?? s.removeRepoFailed),
         backgroundColor: Theme.of(context).colorScheme.error,
       ),
     );

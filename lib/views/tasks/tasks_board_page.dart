@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../models/task.dart';
 import '../../services/navigation.dart';
 import '../../theme/app_dimens.dart';
@@ -27,15 +28,16 @@ class TasksBoardPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     return DefaultTabController(
       length: 2,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('任務'),
-          bottom: const TabBar(
+          title: Text(s.tasksTitle),
+          bottom: TabBar(
             tabs: [
-              Tab(text: '看板'),
-              Tab(text: '關聯圖'),
+              Tab(text: s.boardTab),
+              Tab(text: s.graphTab),
             ],
           ),
         ),
@@ -78,20 +80,20 @@ class _ColumnTheme {
   final Color tonal;
   final Color accent;
 
-  static _ColumnTheme of(ColorScheme scheme, TaskStatus status) {
+  static _ColumnTheme of(ColorScheme scheme, AppStrings s, TaskStatus status) {
     return switch (status) {
       TaskStatus.todo => _ColumnTheme(
-        label: '待辦',
+        label: s.statusTodo,
         tonal: scheme.surfaceContainerHighest,
         accent: scheme.primary.withValues(alpha: 0.55),
       ),
       TaskStatus.inProgress => _ColumnTheme(
-        label: '進行中',
+        label: s.statusInProgress,
         tonal: scheme.primaryContainer,
         accent: scheme.primary,
       ),
       TaskStatus.done => _ColumnTheme(
-        label: '完成',
+        label: s.statusDone,
         tonal: scheme.secondaryContainer,
         accent: scheme.secondary,
       ),
@@ -191,6 +193,7 @@ class _EmptyBoard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final s = context.l10n;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(AppDimens.spacingLg),
@@ -215,7 +218,7 @@ class _EmptyBoard extends StatelessWidget {
                 ),
                 const SizedBox(height: AppDimens.spacingMd),
                 Text(
-                  '您還未輸入專案架構',
+                  s.emptyBoardTitle,
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyLarge?.copyWith(
                     color: scheme.onSurface,
@@ -223,7 +226,7 @@ class _EmptyBoard extends StatelessWidget {
                 ),
                 const SizedBox(height: AppDimens.spacingXs),
                 Text(
-                  '請點擊右下角 + 號來新增 TODOs',
+                  s.emptyBoardMsg,
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: scheme.onSurfaceVariant,
@@ -262,7 +265,8 @@ class _BoardColumnState extends State<_BoardColumn> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final colTheme = _ColumnTheme.of(scheme, widget.status);
+    final s = context.l10n;
+    final colTheme = _ColumnTheme.of(scheme, s, widget.status);
 
     return DragTarget<Task>(
       onWillAcceptWithDetails: (details) =>
@@ -351,13 +355,14 @@ class _BoardColumnState extends State<_BoardColumn> {
   }
 
   Future<void> _accept(Task task) async {
+    final s = context.l10n;
     try {
       await widget.vm.updateStatus(task.id, widget.status);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..clearSnackBars()
-        ..showSnackBar(SnackBar(content: Text('更新狀態失敗：$e')));
+        ..showSnackBar(SnackBar(content: Text(s.updateStatusFailed(e))));
     }
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:graphview/GraphView.dart';
 import 'package:provider/provider.dart';
 
+import '../../../l10n/app_strings.dart';
 import '../../../models/task.dart';
 import '../../../services/authentication.dart';
 import '../../../services/navigation.dart';
@@ -55,6 +56,7 @@ class _TaskGraphTabState extends State<TaskGraphTab> {
   }
 
   Future<void> _connectTo(String targetId) async {
+    final s = context.l10n;
     final source = _linkSource;
     setState(() => _linkSource = null);
     if (source == null || source == targetId) return;
@@ -66,16 +68,13 @@ class _TaskGraphTabState extends State<TaskGraphTab> {
       ..clearSnackBars()
       ..showSnackBar(
         SnackBar(
-          content: Text(
-            ok
-                ? 'Dependency added.'
-                : 'Can\'t link — it already exists or would create a cycle.',
-          ),
+          content: Text(ok ? s.dependencyAdded : s.cannotLink),
         ),
       );
   }
 
   Future<void> _showNodeMenu(Task task, Offset globalPos) async {
+    final s = context.l10n;
     final choice = await showMenu<String>(
       context: context,
       position: RelativeRect.fromLTRB(
@@ -84,10 +83,10 @@ class _TaskGraphTabState extends State<TaskGraphTab> {
         globalPos.dx,
         globalPos.dy,
       ),
-      items: const [
-        PopupMenuItem(value: 'open', child: Text('Open details')),
-        PopupMenuItem(value: 'link', child: Text('Link from here…')),
-        PopupMenuItem(value: 'delete', child: Text('Delete')),
+      items: [
+        PopupMenuItem(value: 'open', child: Text(s.openDetails)),
+        PopupMenuItem(value: 'link', child: Text(s.linkFromHere)),
+        PopupMenuItem(value: 'delete', child: Text(s.delete)),
       ],
     );
     if (!mounted || choice == null) return;
@@ -103,23 +102,21 @@ class _TaskGraphTabState extends State<TaskGraphTab> {
   }
 
   Future<void> _confirmDelete(Task task) async {
+    final s = context.l10n;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete task?'),
-        content: Text(
-          'Delete "${task.title}"? Its prerequisites will be reconnected to the '
-          'tasks that depend on it.',
-        ),
+        title: Text(s.deleteTaskQuestion),
+        content: Text(s.deleteTaskBody(task.title)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+            child: Text(s.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             child: Text(
-              'Delete',
+              s.delete,
               style: TextStyle(color: Theme.of(ctx).colorScheme.error),
             ),
           ),
@@ -131,6 +128,7 @@ class _TaskGraphTabState extends State<TaskGraphTab> {
   }
 
   Future<void> _addNodeDialog() async {
+    final s = context.l10n;
     final controller = TextEditingController();
     final messenger = ScaffoldMessenger.of(context);
     final uid =
@@ -138,21 +136,21 @@ class _TaskGraphTabState extends State<TaskGraphTab> {
     final title = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('New task'),
+        title: Text(s.addTaskTitle),
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(hintText: 'Task title'),
+          decoration: InputDecoration(hintText: s.taskTitleLabel),
           onSubmitted: (v) => Navigator.of(ctx).pop(v),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
+            child: Text(s.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(controller.text),
-            child: const Text('Add'),
+            child: Text(s.add),
           ),
         ],
       ),
@@ -163,7 +161,7 @@ class _TaskGraphTabState extends State<TaskGraphTab> {
     if (!mounted) return;
     messenger
       ..clearSnackBars()
-      ..showSnackBar(const SnackBar(content: Text('Task added.')));
+      ..showSnackBar(SnackBar(content: Text(s.taskAdded)));
   }
 
   // Frame the whole graph in the viewport the first time it lays out: scale to
@@ -195,13 +193,14 @@ class _TaskGraphTabState extends State<TaskGraphTab> {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final tasks = widget.vm.tasks;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
     if (tasks.isEmpty) {
       return Center(
-        child: Text('No tasks yet', style: theme.textTheme.bodyLarge),
+        child: Text(s.noTasksYet, style: theme.textTheme.bodyLarge),
       );
     }
 
@@ -272,6 +271,7 @@ class _TaskGraphTabState extends State<TaskGraphTab> {
                     if (task == null) return const SizedBox.shrink();
                     return _TaskNode(
                       task: task,
+                      statusLabel: _statusLabel(s, task.status),
                       isLinkSource: task.id == _linkSource,
                       onTap: () => _onNodeTap(task),
                       onLongPressStart: (d) =>
@@ -286,7 +286,7 @@ class _TaskGraphTabState extends State<TaskGraphTab> {
             Positioned(
               right: AppDimens.spacingSm,
               top: AppDimens.spacingSm,
-              child: _StatusLegend(),
+              child: _StatusLegend(strings: s),
             ),
             // Connect-mode banner.
             if (_linkSource != null)
@@ -305,7 +305,7 @@ class _TaskGraphTabState extends State<TaskGraphTab> {
               bottom: AppDimens.spacingMd,
               child: FloatingActionButton.small(
                 onPressed: _addNodeDialog,
-                tooltip: 'Add task',
+                tooltip: s.addTaskTooltip,
                 child: const Icon(Icons.add),
               ),
             ),
@@ -341,18 +341,27 @@ class _ConnectBanner extends StatelessWidget {
           children: [
             Flexible(
               child: Text(
-                'Tap the task that depends on "$sourceTitle"',
+                context.l10n.linkTargetPrompt(sourceTitle),
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: scheme.onInverseSurface),
               ),
             ),
             const SizedBox(width: AppDimens.spacingSm),
-            TextButton(onPressed: onCancel, child: const Text('Cancel')),
+            TextButton(onPressed: onCancel, child: Text(context.l10n.cancel)),
           ],
         ),
       ),
     );
   }
+}
+
+// Localized status label — shared by the node + legend.
+String _statusLabel(AppStrings s, TaskStatus st) {
+  return switch (st) {
+    TaskStatus.todo => s.statusTodo,
+    TaskStatus.inProgress => s.statusInProgress,
+    TaskStatus.done => s.statusDone,
+  };
 }
 
 // (bg, fg, accent) palette for a task status — shared by the node + legend.
@@ -378,6 +387,9 @@ class _ConnectBanner extends StatelessWidget {
 
 // Small pinned legend mapping the status dot colors.
 class _StatusLegend extends StatelessWidget {
+  const _StatusLegend({required this.strings});
+  final AppStrings strings;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -405,7 +417,8 @@ class _StatusLegend extends StatelessWidget {
               ),
             ),
             const SizedBox(width: AppDimens.spacingXs),
-            Text(status.wire, style: theme.textTheme.labelSmall),
+            Text(_statusLabel(strings, status),
+                style: theme.textTheme.labelSmall),
             const SizedBox(width: AppDimens.spacingSm),
           ],
         ],
@@ -417,12 +430,14 @@ class _StatusLegend extends StatelessWidget {
 class _TaskNode extends StatelessWidget {
   const _TaskNode({
     required this.task,
+    required this.statusLabel,
     required this.onTap,
     required this.onLongPressStart,
     this.isLinkSource = false,
   });
 
   final Task task;
+  final String statusLabel;
   final VoidCallback onTap;
   final void Function(LongPressStartDetails) onLongPressStart;
   final bool isLinkSource;
@@ -476,7 +491,7 @@ class _TaskNode extends StatelessWidget {
                 const SizedBox(width: AppDimens.spacingSm),
                 Expanded(
                   child: Text(
-                    task.status.wire,
+                    statusLabel,
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: fg.withValues(alpha: 0.75),
                       fontWeight: FontWeight.w600,

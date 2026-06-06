@@ -167,7 +167,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('您還未輸入專案架構'), findsOneWidget);
-    expect(find.text('請點擊右下角 + 號來新增 TODOs'), findsOneWidget);
+    expect(find.text('請點擊右下角 + 號來新增任務'), findsOneWidget);
     // No column headers render in the empty state.
     expect(find.text('待辦'), findsNothing);
   });

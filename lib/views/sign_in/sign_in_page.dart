@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/app_config.dart';
+import '../../l10n/app_strings.dart';
 import '../../services/navigation.dart';
 import '../../services/push_messaging.dart';
 import '../../theme/app_dimens.dart';
@@ -18,6 +19,7 @@ class SignInPage extends StatelessWidget {
       body: Center(
         child: Consumer<AuthViewModel>(
           builder: (ctx, vm, _) {
+            final s = ctx.l10n;
             final theme = Theme.of(ctx);
             final scheme = theme.colorScheme;
             return ConstrainedBox(
@@ -49,7 +51,7 @@ class SignInPage extends StatelessWidget {
                     ),
                     const SizedBox(height: AppDimens.spacingSm),
                     Text(
-                      'Your team\'s repos, tasks, and daily activity in one place.',
+                      s.appTagline,
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodyMedium
                           ?.copyWith(color: scheme.onSurfaceVariant),
@@ -89,8 +91,8 @@ class SignInPage extends StatelessWidget {
                               )
                             : const Icon(Icons.code),
                         label: Text(vm.isSigningIn
-                            ? 'Signing in…'
-                            : 'Sign in with GitHub'),
+                            ? s.signingIn
+                            : s.signInWithGitHub),
                       ),
                     ),
                     if (vm.lastError != null) ...[

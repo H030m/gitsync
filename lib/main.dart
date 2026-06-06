@@ -3,12 +3,15 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import 'config/app_config.dart';
 import 'firebase_options.dart';
+import 'l10n/app_locale.dart';
 import 'services/authentication.dart';
 import 'services/functions_service.dart';
+import 'services/locale_notifier.dart';
 import 'services/navigation.dart';
 import 'services/push_messaging.dart';
 import 'services/theme_mode_notifier.dart';
@@ -68,16 +71,24 @@ class GitSyncApp extends StatelessWidget {
         ChangeNotifierProvider<ThemeModeNotifier>(
           create: (_) => ThemeModeNotifier(),
         ),
+        ChangeNotifierProvider<LocaleNotifier>(create: (_) => LocaleNotifier()),
         ChangeNotifierProvider<AuthViewModel>(create: (_) => AuthViewModel()),
       ],
-      child: Consumer<ThemeModeNotifier>(
-        builder: (ctx, themeMode, _) {
+      child: Consumer2<ThemeModeNotifier, LocaleNotifier>(
+        builder: (ctx, themeMode, localeNotifier, _) {
           final nav = Provider.of<NavigationService>(ctx, listen: false);
           return MaterialApp.router(
             title: 'GitSync',
             theme: lightTheme,
             darkTheme: darkTheme,
             themeMode: themeMode.mode,
+            locale: localeNotifier.locale.locale,
+            supportedLocales: const [Locale('en'), Locale('zh', 'TW')],
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
             routerConfig: nav.router,
             debugShowCheckedModeBanner: false,
           );
