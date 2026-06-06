@@ -8,6 +8,7 @@ import '../../models/task.dart';
 import '../../services/functions_service.dart';
 import '../../services/navigation.dart';
 import '../../theme/app_dimens.dart';
+import '../../view_models/graph_edit_ops.dart';
 import '../../view_models/members_vm.dart';
 import '../../view_models/repo_vm.dart';
 import '../../view_models/tasks_board_vm.dart';
@@ -148,10 +149,100 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
     }
   }
 
+  // Open a scrollable picker of tasks eligible to become a prerequisite of
+  // [task] (excludes itself, current prerequisites, and any choice that would
+  // create a cycle), then link the picked one.
+  Future<void> _addPrerequisite(Task task) async {
+    final vm = context.read<TasksBoardViewModel>();
+    final messenger = ScaffoldMessenger.of(context);
+    final deps = {for (final t in vm.tasks) t.id: t.dependsOn};
+    final candidates = vm.tasks
+        .where((t) =>
+            t.id != task.id &&
+            !task.dependsOn.contains(t.id) &&
+            !wouldCreateCycle(deps, task.id, t.id))
+        .toList();
+    if (candidates.isEmpty) {
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(content: Text('No eligible tasks to add.')),
+        );
+      return;
+    }
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => _PrereqPicker(candidates: candidates),
+    );
+    if (picked == null || !mounted) return;
+    final ok = await vm.addDependency(task.id, picked);
+    if (!mounted || ok) return;
+    messenger
+      ..clearSnackBars()
+      ..showSnackBar(
+        const SnackBar(content: Text('Could not add that prerequisite.')),
+      );
+  }
+
+  Future<void> _removePrerequisite(Task task, String prereqId) async {
+    await context.read<TasksBoardViewModel>().removeDependency(task.id, prereqId);
+  }
+
+  Future<void> _deleteCurrentTask() async {
+    final vm = context.read<TasksBoardViewModel>();
+    final nav = context.read<NavigationService>();
+    Task? task;
+    for (final t in vm.tasks) {
+      if (t.id == widget.taskId) {
+        task = t;
+        break;
+      }
+    }
+    if (task == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete task?'),
+        content: Text(
+          'Delete "${task!.title}"? Its prerequisites will be reconnected to '
+          'the tasks that depend on it.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              'Delete',
+              style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await vm.deleteTaskBridging(widget.taskId);
+    if (!mounted) return;
+    nav.goTasks(widget.repoId);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Task details')),
+      appBar: AppBar(
+        title: const Text('Task details'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: 'Delete task',
+            onPressed: _deleteCurrentTask,
+          ),
+        ],
+      ),
       body: Consumer2<TasksBoardViewModel, MembersViewModel>(
         builder: (ctx, tasksVm, membersVm, _) {
           final task = tasksVm.tasks.firstWhere(
@@ -243,14 +334,32 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
                   _TaskRefTile(repoId: widget.repoId, task: t),
               ],
 
-              // ---- Dependencies ----
-              if (deps.isNotEmpty) ...[
-                const SizedBox(height: AppDimens.spacingLg),
-                _SectionTitle('Depends on'),
-                const SizedBox(height: AppDimens.spacingSm),
+              // ---- Dependencies (parents) ----
+              const SizedBox(height: AppDimens.spacingLg),
+              Row(
+                children: [
+                  Expanded(child: _SectionTitle('Depends on')),
+                  TextButton.icon(
+                    onPressed: () => _addPrerequisite(task),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Add'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppDimens.spacingSm),
+              if (deps.isEmpty)
+                Text(
+                  'No prerequisites. Tap Add to choose a parent task.',
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                )
+              else
                 for (final t in deps)
-                  _TaskRefTile(repoId: widget.repoId, task: t),
-              ],
+                  _TaskRefTile(
+                    repoId: widget.repoId,
+                    task: t,
+                    onRemove: () => _removePrerequisite(task, t.id),
+                  ),
 
               // ---- GitHub links ----
               if (task.githubIssueNumber != null ||
@@ -511,9 +620,15 @@ class _Avatar extends StatelessWidget {
 // A tappable row for a related task (subtask / dependency): title + status,
 // navigates to that task's detail page.
 class _TaskRefTile extends StatelessWidget {
-  const _TaskRefTile({required this.repoId, required this.task});
+  const _TaskRefTile({
+    required this.repoId,
+    required this.task,
+    this.onRemove,
+  });
   final String repoId;
   final Task task;
+  // When set, shows a ✕ to unlink this prerequisite.
+  final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -521,9 +636,69 @@ class _TaskRefTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: AppDimens.spacingSm),
       child: ListTile(
         title: Text(task.title, maxLines: 2, overflow: TextOverflow.ellipsis),
-        trailing: _StatusChip(status: task.status),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _StatusChip(status: task.status),
+            if (onRemove != null)
+              IconButton(
+                icon: const Icon(Icons.close, size: 18),
+                tooltip: 'Remove prerequisite',
+                onPressed: onRemove,
+              ),
+          ],
+        ),
         onTap: () => Provider.of<NavigationService>(context, listen: false)
             .goTaskDetails(repoId, task.id),
+      ),
+    );
+  }
+}
+
+// Scrollable bottom-sheet picker of tasks that can become a prerequisite.
+class _PrereqPicker extends StatelessWidget {
+  const _PrereqPicker({required this.candidates});
+  final List<Task> candidates;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppDimens.spacingMd,
+              0,
+              AppDimens.spacingMd,
+              AppDimens.spacingSm,
+            ),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Add a prerequisite',
+                style: theme.textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+          Flexible(
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: candidates.length,
+              itemBuilder: (ctx, i) {
+                final t = candidates[i];
+                return ListTile(
+                  leading: _StatusChip(status: t.status),
+                  title:
+                      Text(t.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+                  onTap: () => Navigator.of(ctx).pop(t.id),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

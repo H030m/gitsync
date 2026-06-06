@@ -87,6 +87,14 @@ class TasksBoardViewModel with ChangeNotifier {
     return true;
   }
 
+  /// Removes the prerequisite [prereqId] from [dependentId]'s dependencies.
+  Future<void> removeDependency(String dependentId, String prereqId) async {
+    final dependent = _taskById(dependentId);
+    if (dependent == null || !dependent.dependsOn.contains(prereqId)) return;
+    final next = [...dependent.dependsOn]..remove(prereqId);
+    await _repo.updateDependsOn(_repoId, dependentId, next);
+  }
+
   /// Deletes [taskId], bridging its prerequisites onto its dependents so the
   /// dependency chain isn't broken (DAG contraction — stays acyclic).
   Future<void> deleteTaskBridging(String taskId) async {

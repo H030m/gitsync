@@ -125,7 +125,7 @@ class _BoardTab extends StatelessWidget {
               vertical: AppDimens.spacingSm,
             ),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 for (var i = 0; i < columns.length; i++) ...[
                   if (i > 0) const SizedBox(width: _kColumnGap),
@@ -149,21 +149,26 @@ class _BoardTab extends StatelessWidget {
             horizontal: _kBoardHPad,
             vertical: AppDimens.spacingSm,
           ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (var i = 0; i < columns.length; i++) ...[
-                if (i > 0) const SizedBox(width: _kColumnGap),
-                SizedBox(
-                  width: _kMinColumnWidth,
-                  child: _BoardColumn(
-                    vm: vm,
-                    status: columns[i],
-                    tasks: _tasksFor(vm, columns[i]),
+          // Bound the columns to the viewport height so each one scrolls
+          // internally (otherwise many cards overflow vertically).
+          child: SizedBox(
+            height: constraints.maxHeight - AppDimens.spacingSm * 2,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < columns.length; i++) ...[
+                  if (i > 0) const SizedBox(width: _kColumnGap),
+                  SizedBox(
+                    width: _kMinColumnWidth,
+                    child: _BoardColumn(
+                      vm: vm,
+                      status: columns[i],
+                      tasks: _tasksFor(vm, columns[i]),
+                    ),
                   ),
-                ),
+                ],
               ],
-            ],
+            ),
           ),
         );
       },
@@ -277,7 +282,6 @@ class _BoardColumnState extends State<_BoardColumn> {
           clipBehavior: Clip.antiAlias,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
             children: [
               // Tonal header: accent label + count chip.
               Container(
@@ -306,41 +310,38 @@ class _BoardColumnState extends State<_BoardColumn> {
                   ],
                 ),
               ),
-              // Card list (secondary background), tinted while hovering.
-              Container(
-                color: hovering
-                    ? colTheme.accent.withValues(alpha: 0.08)
-                    : Colors.transparent,
-                padding: const EdgeInsets.all(AppDimens.spacingSm),
-                constraints: const BoxConstraints(minHeight: 120),
-                child: widget.tasks.isEmpty
-                    ? SizedBox(
-                        height: 80,
-                        child: Center(
+              // Card list (secondary background), tinted while hovering. Expands
+              // to fill the column height and scrolls when there are many tasks.
+              Expanded(
+                child: Container(
+                  color: hovering
+                      ? colTheme.accent.withValues(alpha: 0.08)
+                      : Colors.transparent,
+                  padding: const EdgeInsets.all(AppDimens.spacingSm),
+                  child: widget.tasks.isEmpty
+                      ? Center(
                           child: Text(
                             '—',
                             style: theme.textTheme.bodyLarge?.copyWith(
                               color: scheme.onSurfaceVariant,
                             ),
                           ),
-                        ),
-                      )
-                    : Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          for (final t in widget.tasks)
-                            Padding(
-                              padding: const EdgeInsets.only(
-                                bottom: AppDimens.spacingSm,
-                              ),
-                              child: _TaskCard(
-                                vm: widget.vm,
-                                task: t,
-                                accent: colTheme.accent,
-                              ),
+                        )
+                      : ListView.builder(
+                          padding: EdgeInsets.zero,
+                          itemCount: widget.tasks.length,
+                          itemBuilder: (_, i) => Padding(
+                            padding: const EdgeInsets.only(
+                              bottom: AppDimens.spacingSm,
                             ),
-                        ],
-                      ),
+                            child: _TaskCard(
+                              vm: widget.vm,
+                              task: widget.tasks[i],
+                              accent: colTheme.accent,
+                            ),
+                          ),
+                        ),
+                ),
               ),
             ],
           ),

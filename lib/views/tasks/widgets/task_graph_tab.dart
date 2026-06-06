@@ -275,9 +275,10 @@ class _TaskGraphTabState extends State<TaskGraphTab> {
                 ),
               ),
             ),
-            // Status legend, pinned (doesn't pan with the canvas).
+            // Status legend, pinned (doesn't pan with the canvas). Kept top-RIGHT
+            // so it never hides isolated nodes, which graphview parks at (0,0).
             Positioned(
-              left: AppDimens.spacingSm,
+              right: AppDimens.spacingSm,
               top: AppDimens.spacingSm,
               child: _StatusLegend(),
             ),
