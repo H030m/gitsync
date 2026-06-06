@@ -71,14 +71,36 @@ Widget _harness(_StubTaskRepo repo) {
   );
 }
 
-Task _task(String id, String title, TaskStatus status, {String? assignee}) =>
+Task _task(
+  String id,
+  String title,
+  TaskStatus status, {
+  String? assignee,
+  String description = '',
+  List<String> dependsOn = const [],
+  String? handoffDoc,
+}) =>
     Task(
       id: id,
       title: title,
       status: status,
       assigneeId: assignee,
+      description: description,
+      dependsOn: dependsOn,
+      handoffDoc: handoffDoc,
       createdBy: 'u1',
     );
+
+// Pump the board at a chosen logical surface size so layout-mode tests are
+// deterministic regardless of the host's default test window.
+Future<void> _pumpAt(WidgetTester tester, Widget app, Size size) async {
+  tester.view.devicePixelRatio = 1.0;
+  tester.view.physicalSize = size;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  await tester.pumpWidget(app);
+  await tester.pumpAndSettle();
+}
 
 void main() {
   testWidgets('columns render CJK labels and count chips matching task counts',
@@ -144,5 +166,64 @@ void main() {
     expect(find.text('請點擊右下角 + 號來新增 TODOs'), findsOneWidget);
     // No column headers render in the empty state.
     expect(find.text('待辦'), findsNothing);
+  });
+
+  testWidgets('card renders its description snippet (工作摘要)', (tester) async {
+    final repo = _StubTaskRepo([
+      _task('t1', 'Alpha', TaskStatus.todo,
+          description: 'wire up the login flow'),
+    ]);
+    await tester.pumpWidget(_harness(repo));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Alpha'), findsOneWidget);
+    expect(find.text('wire up the login flow'), findsOneWidget);
+  });
+
+  testWidgets('deps + handoff indicators appear when the task has them',
+      (tester) async {
+    final repo = _StubTaskRepo([
+      _task('t1', 'Alpha', TaskStatus.todo,
+          dependsOn: ['t2', 't3'], handoffDoc: '# handoff'),
+      _task('t2', 'Bare', TaskStatus.inProgress),
+    ]);
+    await tester.pumpWidget(_harness(repo));
+    await tester.pumpAndSettle();
+
+    // 依賴: link icon + the dependency count (2). 交接: doc icon.
+    expect(find.byIcon(Icons.link), findsOneWidget);
+    expect(find.text('2'), findsOneWidget);
+    expect(find.byIcon(Icons.description_outlined), findsOneWidget);
+  });
+
+  testWidgets('wide surface uses fill mode (no horizontal scroll)',
+      (tester) async {
+    final repo = _StubTaskRepo([
+      _task('t1', 'Alpha', TaskStatus.todo),
+      _task('t2', 'Gamma', TaskStatus.inProgress),
+    ]);
+    await _pumpAt(tester, _harness(repo), const Size(1200, 2400));
+
+    // Columns still render, but the board does not wrap them in a horizontal
+    // scroll view in fill mode.
+    expect(find.text('待辦'), findsOneWidget);
+    final horizontalScrollables = find.byWidgetPredicate(
+      (w) => w is SingleChildScrollView && w.scrollDirection == Axis.horizontal,
+    );
+    expect(horizontalScrollables, findsNothing);
+  });
+
+  testWidgets('narrow surface uses horizontal-scroll mode', (tester) async {
+    final repo = _StubTaskRepo([
+      _task('t1', 'Alpha', TaskStatus.todo),
+      _task('t2', 'Gamma', TaskStatus.inProgress),
+    ]);
+    await _pumpAt(tester, _harness(repo), const Size(500, 800));
+
+    expect(find.text('待辦'), findsOneWidget);
+    final horizontalScrollables = find.byWidgetPredicate(
+      (w) => w is SingleChildScrollView && w.scrollDirection == Axis.horizontal,
+    );
+    expect(horizontalScrollables, findsOneWidget);
   });
 }
