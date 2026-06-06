@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/task.dart';
 import '../repositories/task_repo.dart';
+import 'graph_edit_ops.dart';
 
 // Streams every task in a repo (TasksBoardPage + TaskDetailsPage).
 class TasksBoardViewModel with ChangeNotifier {
@@ -54,6 +55,45 @@ class TasksBoardViewModel with ChangeNotifier {
   }
 
   Future<void> deleteTask(String taskId) async {
+    await _repo.deleteTask(_repoId, taskId);
+  }
+
+  // ---- Dependency-graph editing -----------------------------------------
+
+  Map<String, List<String>> _depsMap() => {
+        for (final t in _tasks) t.id: t.dependsOn,
+      };
+
+  Task? _taskById(String id) {
+    for (final t in _tasks) {
+      if (t.id == id) return t;
+    }
+    return null;
+  }
+
+  /// Adds "[dependentId] depends on [prereqId]". Returns false without writing
+  /// when it would self-link, the edge already exists, or it would create a
+  /// cycle in the dependency DAG.
+  Future<bool> addDependency(String dependentId, String prereqId) async {
+    if (dependentId == prereqId) return false;
+    final dependent = _taskById(dependentId);
+    if (dependent == null || _taskById(prereqId) == null) return false;
+    if (dependent.dependsOn.contains(prereqId)) return false;
+    if (wouldCreateCycle(_depsMap(), dependentId, prereqId)) return false;
+    await _repo.updateDependsOn(_repoId, dependentId, [
+      ...dependent.dependsOn,
+      prereqId,
+    ]);
+    return true;
+  }
+
+  /// Deletes [taskId], bridging its prerequisites onto its dependents so the
+  /// dependency chain isn't broken (DAG contraction — stays acyclic).
+  Future<void> deleteTaskBridging(String taskId) async {
+    final changes = bridgeOnDelete(_depsMap(), taskId);
+    for (final entry in changes.entries) {
+      await _repo.updateDependsOn(_repoId, entry.key, entry.value);
+    }
     await _repo.deleteTask(_repoId, taskId);
   }
 

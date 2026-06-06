@@ -5,6 +5,7 @@ import 'package:graphview/GraphView.dart';
 import 'package:provider/provider.dart';
 
 import '../../../models/task.dart';
+import '../../../services/authentication.dart';
 import '../../../services/navigation.dart';
 import '../../../theme/app_dimens.dart';
 import '../../../view_models/tasks_board_vm.dart';
@@ -34,11 +35,135 @@ class _TaskGraphTabState extends State<TaskGraphTab> {
   // Fit-to-view runs once per built graph; re-armed when the task set changes.
   bool _fitted = false;
   int _fitSignature = 0;
+  // When set, we're in connect mode: this node is the prerequisite, and the next
+  // tapped node becomes its dependent.
+  String? _linkSource;
 
   @override
   void dispose() {
     _transform.dispose();
     super.dispose();
+  }
+
+  void _onNodeTap(Task task) {
+    if (_linkSource != null) {
+      _connectTo(task.id);
+    } else {
+      Provider.of<NavigationService>(context, listen: false)
+          .goTaskDetails(widget.vm.repoId, task.id);
+    }
+  }
+
+  Future<void> _connectTo(String targetId) async {
+    final source = _linkSource;
+    setState(() => _linkSource = null);
+    if (source == null || source == targetId) return;
+    final messenger = ScaffoldMessenger.of(context);
+    // Target depends on the source (source is the prerequisite).
+    final ok = await widget.vm.addDependency(targetId, source);
+    if (!mounted) return;
+    messenger
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            ok
+                ? 'Dependency added.'
+                : 'Can\'t link — it already exists or would create a cycle.',
+          ),
+        ),
+      );
+  }
+
+  Future<void> _showNodeMenu(Task task, Offset globalPos) async {
+    final choice = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        globalPos.dx,
+        globalPos.dy,
+        globalPos.dx,
+        globalPos.dy,
+      ),
+      items: const [
+        PopupMenuItem(value: 'open', child: Text('Open details')),
+        PopupMenuItem(value: 'link', child: Text('Link from here…')),
+        PopupMenuItem(value: 'delete', child: Text('Delete')),
+      ],
+    );
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case 'open':
+        Provider.of<NavigationService>(context, listen: false)
+            .goTaskDetails(widget.vm.repoId, task.id);
+      case 'link':
+        setState(() => _linkSource = task.id);
+      case 'delete':
+        _confirmDelete(task);
+    }
+  }
+
+  Future<void> _confirmDelete(Task task) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete task?'),
+        content: Text(
+          'Delete "${task.title}"? Its prerequisites will be reconnected to the '
+          'tasks that depend on it.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              'Delete',
+              style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await widget.vm.deleteTaskBridging(task.id);
+  }
+
+  Future<void> _addNodeDialog() async {
+    final controller = TextEditingController();
+    final messenger = ScaffoldMessenger.of(context);
+    final uid =
+        Provider.of<AuthenticationService>(context, listen: false).currentUid;
+    final title = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('New task'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Task title'),
+          onSubmitted: (v) => Navigator.of(ctx).pop(v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (title == null || title.trim().isEmpty || !mounted) return;
+    await widget.vm.addTask(Task(id: '', title: title.trim(), createdBy: uid ?? ''));
+    if (!mounted) return;
+    messenger
+      ..clearSnackBars()
+      ..showSnackBar(const SnackBar(content: Text('Task added.')));
   }
 
   // Frame the whole graph in the viewport the first time it lays out: scale to
@@ -139,7 +264,13 @@ class _TaskGraphTabState extends State<TaskGraphTab> {
                   builder: (Node node) {
                     final task = byId[node.key!.value];
                     if (task == null) return const SizedBox.shrink();
-                    return _TaskNode(task: task, vm: widget.vm);
+                    return _TaskNode(
+                      task: task,
+                      isLinkSource: task.id == _linkSource,
+                      onTap: () => _onNodeTap(task),
+                      onLongPressStart: (d) =>
+                          _showNodeMenu(task, d.globalPosition),
+                    );
                   },
                 ),
               ),
@@ -150,9 +281,69 @@ class _TaskGraphTabState extends State<TaskGraphTab> {
               top: AppDimens.spacingSm,
               child: _StatusLegend(),
             ),
+            // Connect-mode banner.
+            if (_linkSource != null)
+              Positioned(
+                top: AppDimens.spacingSm,
+                left: 0,
+                right: 0,
+                child: Center(child: _ConnectBanner(
+                  sourceTitle: (byId[_linkSource]?.title ?? ''),
+                  onCancel: () => setState(() => _linkSource = null),
+                )),
+              ),
+            // Add-node button.
+            Positioned(
+              right: AppDimens.spacingMd,
+              bottom: AppDimens.spacingMd,
+              child: FloatingActionButton.small(
+                onPressed: _addNodeDialog,
+                tooltip: 'Add task',
+                child: const Icon(Icons.add),
+              ),
+            ),
           ],
         );
       },
+    );
+  }
+}
+
+// Top banner shown while in connect mode.
+class _ConnectBanner extends StatelessWidget {
+  const _ConnectBanner({required this.sourceTitle, required this.onCancel});
+  final String sourceTitle;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Material(
+      color: scheme.inverseSurface,
+      borderRadius: BorderRadius.circular(AppDimens.radiusLg),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppDimens.spacingMd,
+          AppDimens.spacingXs,
+          AppDimens.spacingSm,
+          AppDimens.spacingXs,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                'Tap the task that depends on "$sourceTitle"',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: scheme.onInverseSurface),
+              ),
+            ),
+            const SizedBox(width: AppDimens.spacingSm),
+            TextButton(onPressed: onCancel, child: const Text('Cancel')),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -217,10 +408,17 @@ class _StatusLegend extends StatelessWidget {
 }
 
 class _TaskNode extends StatelessWidget {
-  const _TaskNode({required this.task, required this.vm});
+  const _TaskNode({
+    required this.task,
+    required this.onTap,
+    required this.onLongPressStart,
+    this.isLinkSource = false,
+  });
 
   final Task task;
-  final TasksBoardViewModel vm;
+  final VoidCallback onTap;
+  final void Function(LongPressStartDetails) onLongPressStart;
+  final bool isLinkSource;
 
   @override
   Widget build(BuildContext context) {
@@ -228,10 +426,9 @@ class _TaskNode extends StatelessWidget {
     final scheme = theme.colorScheme;
     final (bg, fg, accent) = _statusColors(scheme, task.status);
 
-    return InkWell(
-      onTap: () => Provider.of<NavigationService>(context, listen: false)
-          .goTaskDetails(vm.repoId, task.id),
-      borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+    return GestureDetector(
+      onTap: onTap,
+      onLongPressStart: onLongPressStart,
       // Uniform node footprint so every layer lines up cleanly regardless of
       // 1- vs 2-line titles.
       child: Container(
@@ -244,7 +441,12 @@ class _TaskNode extends StatelessWidget {
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-          border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.6)),
+          border: Border.all(
+            color: isLinkSource
+                ? scheme.primary
+                : scheme.outlineVariant.withValues(alpha: 0.6),
+            width: isLinkSource ? 2 : 1,
+          ),
           boxShadow: [
             BoxShadow(
               color: scheme.shadow.withValues(alpha: 0.10),
