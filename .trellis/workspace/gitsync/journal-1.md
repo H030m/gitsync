@@ -685,3 +685,36 @@ Implemented task 06-06 in 4 slices on feature/rich-task-cards-ai-handoff. (1) Ri
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: Clickable GitHub issue/PR links in task detail
+
+**Date**: 2026-06-06
+**Task**: Clickable GitHub issue/PR links in task detail
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+Made the issue/PR chips on TaskDetailsPage open the real GitHub page: added url_launcher and a shell-scoped RepoViewModel (streams repo doc → repo.url); built issues/N + pull/N URLs, graceful non-tappable when URL unknown. flutter analyze clean, 71 flutter tests green. Follow-up to 06-06-rich-task-cards-ai-handoff.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
