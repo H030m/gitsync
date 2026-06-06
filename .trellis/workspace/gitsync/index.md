@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 26
+- **Total Sessions**: 27
 - **Last Active**: 2026-06-07
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~885 | Active |
+| `journal-1.md` | ~918 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 27 | 2026-06-07 | Card-based dependency editing + delete; scrollable board | HEAD | `feature/rich-task-cards-ai-handoff` |
 | 26 | 2026-06-07 | Manual single-task creation in add-task flow | HEAD | `feature/rich-task-cards-ai-handoff` |
 | 25 | 2026-06-06 | Interactive dependency-graph editing | HEAD | `feature/rich-task-cards-ai-handoff` |
 | 24 | 2026-06-06 | Polish task dependency graph layout | HEAD | `feature/rich-task-cards-ai-handoff` |

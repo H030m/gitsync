@@ -883,3 +883,36 @@ AddTodoPage now has a Manual/AI mode toggle (Manual default): title+description 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 27: Card-based dependency editing + delete; scrollable board
+
+**Date**: 2026-06-07
+**Task**: Card-based dependency editing + delete; scrollable board
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+Task detail card: add/remove prerequisites (scrollable cycle-filtered picker) + AppBar delete (bridging); fixes manual nodes not appearing in graph (parent them) and undiscoverable delete. Kanban columns bounded-height + Expanded ListView → scroll, no overflow. Legend moved top-right. VM removeDependency added. analyze clean, 79 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
