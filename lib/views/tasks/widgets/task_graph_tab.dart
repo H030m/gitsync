@@ -177,6 +177,9 @@ class _TaskGraphTabState extends State<TaskGraphTab> {
     final scale = math
         .min(viewport.width / size.width, viewport.height / size.height)
         .clamp(0.2, 1.0);
+    // Center the (possibly down-scaled) graph. dx/dy may be negative when the
+    // scaled graph is larger than the viewport — that's correct centering; don't
+    // clamp it (clamping mis-aligns large graphs).
     final dx = (viewport.width - size.width * scale) / 2;
     final dy = (viewport.height - size.height * scale) / 2;
     // viewport = scale * child + translate. Scale on the diagonal, translation
@@ -185,8 +188,8 @@ class _TaskGraphTabState extends State<TaskGraphTab> {
       ..setEntry(0, 0, scale)
       ..setEntry(1, 1, scale)
       ..setEntry(2, 2, scale)
-      ..setEntry(0, 3, dx < 0 ? 0.0 : dx)
-      ..setEntry(1, 3, dy < 0 ? 0.0 : dy);
+      ..setEntry(0, 3, dx)
+      ..setEntry(1, 3, dy);
     _fitted = true;
   }
 
@@ -253,7 +256,10 @@ class _TaskGraphTabState extends State<TaskGraphTab> {
               child: InteractiveViewer(
                 transformationController: _transform,
                 constrained: false,
-                boundaryMargin: const EdgeInsets.all(200),
+                // Infinite boundary = free panning in every direction. A finite
+                // margin clamps the pan after the initial fit (you couldn't drag
+                // past it).
+                boundaryMargin: const EdgeInsets.all(double.infinity),
                 minScale: 0.1,
                 maxScale: 4,
                 child: GraphView(
