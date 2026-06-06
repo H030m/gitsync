@@ -122,6 +122,13 @@ layout (`lib/views/tasks/widgets/task_graph_tab.dart`). Conventions learned:
 
 ## Scrolling & scrollbars
 
+- **Columns/lists that grow must scroll, and need a bounded height to do so.** A
+  kanban column whose card list is a plain `Column` overflows once tasks exceed the
+  viewport. Give the column a bounded height — `Row(crossAxisAlignment: stretch)` in
+  fill mode; wrap the `Row` in a `SizedBox(height: constraints.maxHeight - padding)`
+  inside a horizontal `SingleChildScrollView` for the phone layout — then make the card
+  area `Expanded(child: ListView(...))` so it scrolls within the column
+  (`tasks_board_page.dart` `_BoardColumn`).
 - **Pin panel scrollbars flush to the right edge.** A panel's scrolling `ListView` carries no
   right padding; wrap it in `Scrollbar(controller, thumbVisibility: true)` and push the horizontal
   inset INTO each child instead, so the scrollbar gutter sits at the outermost right
