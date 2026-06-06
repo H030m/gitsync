@@ -33,6 +33,12 @@ abstract class FunctionsService {
   Future<String> addRepo({required String githubUrl});
   Future<void> removeRepo({required String repoId});
 
+  /// Imports the repo's GitHub collaborators as members (those who already have
+  /// a GitSync account). Returns counts + the logins that haven't signed in yet
+  /// (`pending`, can't be added as members).
+  Future<({int added, int alreadyMembers, List<String> pending})>
+      importCollaborators({required String repoId});
+
   // ---- AI flows ----------------------------------------------------------
 
   Future<List<SubTask>> breakdownTask({
@@ -189,6 +195,18 @@ class _LiveFunctionsService implements FunctionsService {
   @override
   Future<void> removeRepo({required String repoId}) async {
     await _callable('removeRepo').call({'repoId': repoId});
+  }
+
+  @override
+  Future<({int added, int alreadyMembers, List<String> pending})>
+      importCollaborators({required String repoId}) async {
+    final res = await _callable('importCollaborators').call({'repoId': repoId});
+    final data = Map<String, dynamic>.from(res.data as Map);
+    return (
+      added: (data['added'] as num?)?.toInt() ?? 0,
+      alreadyMembers: (data['alreadyMembers'] as num?)?.toInt() ?? 0,
+      pending: List<String>.from(data['pending'] as List? ?? const []),
+    );
   }
 
   @override

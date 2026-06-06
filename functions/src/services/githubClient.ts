@@ -341,6 +341,30 @@ export async function setIssueAssignees(
   });
 }
 
+export interface Collaborator {
+  login: string;
+  avatarUrl: string | null;
+}
+
+/**
+ * Lists a repo's GitHub collaborators (GET /repos/{owner}/{repo}/collaborators).
+ * Used to import teammates as GitSync repo members. Requires the token holder to
+ * have at least pull access; Octokit throws (status 403/404) otherwise. All
+ * GitHub API access stays in this file (ARCHITECTURE.md §6.4).
+ */
+export async function listCollaborators(
+  owner: string,
+  repo: string,
+  accessToken: string,
+): Promise<Collaborator[]> {
+  const octokit = getOctokit(accessToken);
+  const res = await octokit.repos.listCollaborators({ owner, repo, per_page: 100 });
+  return res.data.map((c) => ({
+    login: c.login,
+    avatarUrl: c.avatar_url ?? null,
+  }));
+}
+
 export interface RepoAccess {
   githubRepoId: number;
   defaultBranch: string;

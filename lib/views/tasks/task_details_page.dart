@@ -13,9 +13,10 @@ import '../../view_models/repo_vm.dart';
 import '../../view_models/tasks_board_vm.dart';
 import '../../widgets/markdown_view.dart';
 
-// Sentinel returned by the assignee picker to mean "clear the assignee" (vs.
-// `null`, which means the sheet was dismissed without a choice).
+// Sentinels returned by the assignee picker: clear the assignee, or trigger a
+// GitHub-collaborator import (vs. `null` = dismissed, or a uid = pick that user).
 const String _kUnassign = '__unassign__';
+const String _kImport = '__import__';
 
 // Full task-detail view: status, assignee (with inline picker), description,
 // implementation details (acceptance criteria), subtasks, dependencies, linked
@@ -65,6 +66,41 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
     }
   }
 
+  Future<void> _importCollaborators() async {
+    final functions = context.read<FunctionsService>();
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..clearSnackBars()
+      ..showSnackBar(
+        const SnackBar(content: Text('Importing GitHub collaborators…')),
+      );
+    try {
+      final r = await functions.importCollaborators(repoId: widget.repoId);
+      if (!mounted) return;
+      final pending = r.pending.isEmpty
+          ? ''
+          : ' · ${r.pending.length} not signed in yet';
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              'Added ${r.added} member(s)'
+              '${r.alreadyMembers > 0 ? ' · ${r.alreadyMembers} already in' : ''}'
+              '$pending. Reopen the picker to assign them.',
+            ),
+          ),
+        );
+    } catch (_) {
+      if (!mounted) return;
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(content: Text('Could not import collaborators.')),
+        );
+    }
+  }
+
   Future<void> _openUrl(String url) async {
     final messenger = ScaffoldMessenger.of(context);
     final ok = await launchUrl(
@@ -93,6 +129,10 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
       ),
     );
     if (result == null) return; // dismissed
+    if (result == _kImport) {
+      await _importCollaborators();
+      return;
+    }
     final newAssignee = result == _kUnassign ? null : result;
     if (newAssignee == task.assigneeId) return;
 
@@ -423,6 +463,12 @@ class _AssigneePicker extends StatelessWidget {
             title: const Text('Unassign'),
             enabled: currentAssigneeId != null,
             onTap: () => Navigator.of(context).pop(_kUnassign),
+          ),
+          ListTile(
+            leading: const Icon(Icons.group_add_outlined),
+            title: const Text('Import collaborators from GitHub'),
+            subtitle: const Text('Adds teammates who already use GitSync'),
+            onTap: () => Navigator.of(context).pop(_kImport),
           ),
         ],
       ),

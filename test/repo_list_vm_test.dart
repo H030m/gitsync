@@ -43,6 +43,11 @@ class _FakeFunctionsService implements FunctionsService {
       throw UnimplementedError();
 
   @override
+  Future<({int added, int alreadyMembers, List<String> pending})>
+      importCollaborators({required String repoId}) =>
+          throw UnimplementedError();
+
+  @override
   Future<List<SubTask>> breakdownTask({
     required String repoId,
     required String goal,
