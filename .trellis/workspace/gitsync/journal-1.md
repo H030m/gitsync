@@ -850,3 +850,36 @@ Add/connect/delete nodes in the 關聯圖: FAB add-node, long-press menu (open/l
 ### Next Steps
 
 - None - task complete
+
+
+## Session 26: Manual single-task creation in add-task flow
+
+**Date**: 2026-06-07
+**Task**: Manual single-task creation in add-task flow
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+AddTodoPage now has a Manual/AI mode toggle (Manual default): title+description form → TasksBoardViewModel.addTask. Closes the 'tasks can only be AI-generated' gap in the main flow (board + → AddTodoPage). AI breakdown unchanged. analyze clean, 79 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
