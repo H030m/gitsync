@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 29
+- **Total Sessions**: 30
 - **Last Active**: 2026-06-07
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~984 | Active |
+| `journal-1.md` | ~1017 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 30 | 2026-06-07 | i18n: zh-Hant/English switch with Settings toggle | HEAD | `feature/rich-task-cards-ai-handoff` |
 | 29 | 2026-06-07 | Fix dependency-graph panning | HEAD | `feature/rich-task-cards-ai-handoff` |
 | 28 | 2026-06-07 | Close linked GitHub issue on task delete | HEAD | `feature/rich-task-cards-ai-handoff` |
 | 27 | 2026-06-07 | Card-based dependency editing + delete; scrollable board | HEAD | `feature/rich-task-cards-ai-handoff` |

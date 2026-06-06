@@ -982,3 +982,36 @@ Fit-to-view regression: finite boundaryMargin(200) clamped panning after the ini
 ### Next Steps
 
 - None - task complete
+
+
+## Session 30: i18n: zh-Hant/English switch with Settings toggle
+
+**Date**: 2026-06-07
+**Task**: i18n: zh-Hant/English switch with Settings toggle
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+Lightweight i18n: AppLocale + persisted LocaleNotifier + AppStrings via context.l10n (safe fallback for tests); MaterialApp locale + delegates; Settings 中文/English switcher. Localized core screens (settings/signin/repos/notify/board/add-task/task-details/graph) via 3 parallel sub-agents. Daily+Stats deferred. analyze clean, 79 flutter tests green (empty-board copy test updated).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
