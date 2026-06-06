@@ -1048,3 +1048,36 @@ Degree-0 tasks were hidden at graphview's (0,0). Split connected vs isolated; DA
 ### Next Steps
 
 - None - task complete
+
+
+## Session 32: Localize Daily + Stats; all UI strings in one file
+
+**Date**: 2026-06-07
+**Task**: Localize Daily + Stats; all UI strings in one file
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+Localized daily_view_page + stats_view_page into the single app_strings.dart table (Daily + Stats sections, both langs) via sub-agents. Now every localized UI string lives in one file. Also: pushed branch + deployed all 4 functions (generateHandoff/onTaskUpdated/importCollaborators/onTaskDeleted) to live. analyze clean, 79 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
