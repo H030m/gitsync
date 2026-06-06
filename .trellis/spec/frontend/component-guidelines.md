@@ -171,6 +171,22 @@ land — mirrors `StatsViewModel`'s name-resolution cache. Reuse it; don't re-re
 
 ---
 
+## Localization (i18n)
+
+UI strings are localized (中文(繁體) / English), not hardcoded. Access them via
+`context.l10n.<key>` (extension in `lib/l10n/app_strings.dart`); add a getter to
+`AppStrings` with both languages (`_(en, zh)`) rather than putting literals in
+widgets. The active language comes from `LocaleNotifier` (a root-level
+`ChangeNotifier`, persisted via `shared_preferences`, like `ThemeModeNotifier`);
+the Settings page switches it. `context.l10n` **falls back to the default locale
+when no `LocaleNotifier` is in the tree** (try/catch) so widget tests pumping a
+page in isolation still build. In async callbacks, capture `final s = context.l10n;`
+*before* the first `await` (don't touch context after await). `MaterialApp` wires
+`locale` + `supportedLocales` + the Global*Localizations delegates so built-in
+widgets localize too. Proper nouns / IDs (e.g. "GitHub", "Issue #N") stay as-is.
+
+---
+
 ## Scope discipline (`AI_AGENT_RULES.md §3.2`)
 
 Implement only what was asked. Don't add confirmation dialogs, undo snackbars, analytics, extra
