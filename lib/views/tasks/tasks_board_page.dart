@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/task.dart';
 import '../../services/navigation.dart';
 import '../../theme/app_dimens.dart';
+import '../../view_models/members_vm.dart';
 import '../../view_models/tasks_board_vm.dart';
 import 'widgets/task_graph_tab.dart';
 
@@ -545,17 +546,22 @@ class _AssigneeCircle extends StatelessWidget {
         ),
       );
     }
-    final initial = id.substring(0, 1).toUpperCase();
-    return Container(
-      width: 20,
-      height: 20,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.2),
-        shape: BoxShape.circle,
-      ),
+    // Resolve the assignee's GitHub profile (cached in MembersViewModel) to show
+    // their avatar; fall back to the githubLogin/name initial (then uid).
+    final profile = context.watch<MembersViewModel>().profileFor(id);
+    final url = profile?.avatarUrl;
+    final seed = (profile?.githubLogin.isNotEmpty ?? false)
+        ? profile!.githubLogin
+        : (profile?.name.isNotEmpty ?? false)
+            ? profile!.name
+            : id;
+    return CircleAvatar(
+      radius: 10,
+      backgroundColor: accent.withValues(alpha: 0.2),
+      foregroundImage:
+          (url != null && url.isNotEmpty) ? NetworkImage(url) : null,
       child: Text(
-        initial,
+        seed.characters.first.toUpperCase(),
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
           color: accent,
           fontWeight: FontWeight.w700,
