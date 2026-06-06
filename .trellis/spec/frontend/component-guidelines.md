@@ -107,6 +107,16 @@ layout (`lib/views/tasks/widgets/task_graph_tab.dart`). Conventions learned:
   `_fitted` flag re-armed when the node-id set changes, so it frames on open without
   fighting the user's pan/zoom. A pinned (non-panning) status legend goes in the `Stack`
   next to the `Positioned.fill` viewer.
+- **Editing the DAG** (06-06): graphview has no edge-drawing/node-drag, so editing is
+  gesture + menu driven — `GestureDetector` on the node (`onTap` = open / pick-target in
+  connect mode; `onLongPressStart` gives the global position for `showMenu`). Add-node is a
+  `Positioned` `FloatingActionButton.small` in the `Stack`. Graph mutations go through the
+  ViewModel; the **graph-theory lives in pure, unit-tested helpers**
+  (`view_models/graph_edit_ops.dart`): `wouldCreateCycle` (DFS reachability — reject an edge
+  whose reverse path already exists) before adding a `dependsOn`, and `bridgeOnDelete`
+  (DAG contraction: reconnect a deleted node's prerequisites to its dependents, dedup, never
+  self-depend) on delete. Re-layout + fit-to-view are automatic on the next stream rebuild.
+  Editing `dependsOn` needs `TaskRepository.updateDependsOn` (don't forget the Fake).
 
 ---
 
