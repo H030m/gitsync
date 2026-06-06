@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../config/app_config.dart';
 import '../../services/navigation.dart';
+import '../../services/push_messaging.dart';
 import '../../theme/app_dimens.dart';
 import '../../view_models/auth_vm.dart';
 
@@ -62,9 +64,21 @@ class SignInPage extends StatelessWidget {
                                 final ok = await vm.signInWithGitHub();
                                 if (!ctx.mounted) return;
                                 if (ok) {
-                                  Provider.of<NavigationService>(ctx,
-                                          listen: false)
-                                      .goRepos();
+                                  final nav = Provider.of<NavigationService>(
+                                      ctx,
+                                      listen: false);
+                                  // Register for push: pull the FCM token and
+                                  // wire tap-routing. Live mode only — fake
+                                  // mode has no Firebase app. Fire-and-forget so
+                                  // the permission prompt doesn't block nav.
+                                  final uid = vm.currentUid;
+                                  if (!AppConfig.useFakeBackend && uid != null) {
+                                    Provider.of<PushMessagingService>(ctx,
+                                            listen: false)
+                                        .initialize(
+                                            userId: uid, navigation: nav);
+                                  }
+                                  nav.goRepos();
                                 }
                               },
                         icon: vm.isSigningIn
