@@ -9,6 +9,7 @@ import '../../models/daily_brief.dart';
 import '../../models/daily_report.dart';
 import '../../models/discord_chat.dart';
 import '../../models/discord_digest.dart';
+import '../../l10n/app_strings.dart';
 import '../../theme/app_dimens.dart';
 import '../../view_models/commits_vm.dart';
 import '../../view_models/daily_brief_vm.dart';
@@ -87,17 +88,18 @@ class _DailyViewPageState extends State<DailyViewPage> {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     return DefaultTabController(
       length: 3,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Daily'),
+          title: Text(s.dailyTitle),
           actions: const [_SharedRefreshAction(), _SharedRangeAction()],
-          bottom: const TabBar(
+          bottom: TabBar(
             tabs: [
-              Tab(text: 'Summary'),
-              Tab(text: 'Commits'),
-              Tab(text: 'Discord'),
+              Tab(text: s.dailyTabSummary),
+              Tab(text: s.dailyTabCommits),
+              Tab(text: s.dailyTabDiscord),
             ],
           ),
         ),
@@ -121,11 +123,12 @@ class _SharedRefreshAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     return Consumer2<CommitsViewModel, DiscordMessagesViewModel>(
       builder: (ctx, commits, discord, _) {
         final busy = commits.graphLoading || discord.refreshing;
         return IconButton(
-          tooltip: '重新整理目前範圍',
+          tooltip: s.refreshCurrentRange,
           icon: busy
               ? const SizedBox(
                   width: 18,
@@ -153,6 +156,7 @@ class _SharedRangeAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     return Consumer<IntelRangeViewModel>(
       builder: (ctx, vm, _) {
         final range = vm.range;
@@ -177,13 +181,13 @@ class _SharedRangeAction extends StatelessWidget {
               icon: const Icon(Icons.date_range_outlined, size: 18),
               label: Text(
                 range == null
-                    ? 'Today'
+                    ? s.today
                     : '${_monthDay(range.start)} ~ ${_monthDay(range.end)}',
               ),
             ),
             if (range != null)
               IconButton(
-                tooltip: 'Reset range',
+                tooltip: s.resetRange,
                 icon: const Icon(Icons.restore, size: 20),
                 onPressed: vm.clear,
               ),
@@ -342,6 +346,7 @@ class _ReportsPanelState extends State<_ReportsPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Column(
@@ -361,7 +366,7 @@ class _ReportsPanelState extends State<_ReportsPanel> {
                 Icon(Icons.summarize_outlined, size: 20, color: scheme.primary),
                 const SizedBox(width: AppDimens.spacingSm),
                 Text(
-                  '日報',
+                  s.dailyReport,
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -441,19 +446,20 @@ class _DayReportCardState extends State<_DayReportCard> {
 
   String get _dayKeyStr => DailyReportViewModel.dayKeyOf(widget.day);
 
-  String get _headerLabel {
+  String _headerLabel(String today) {
     final todayKey = DailyReportViewModel.dayKeyOf(DateTime.now());
-    return _dayKeyStr == todayKey ? 'Today · $_dayKeyStr' : _dayKeyStr;
+    return _dayKeyStr == todayKey ? '$today · $_dayKeyStr' : _dayKeyStr;
   }
 
-  String _summaryLine(DailyReport? report) {
-    if (report == null || report.isEmpty) return '尚未產生日報';
+  String _summaryLine(DailyReport? report, String noReportYet) {
+    if (report == null || report.isEmpty) return noReportYet;
     final first = report.summary.split('\n').first.trim();
-    return first.isEmpty ? '尚未產生日報' : first;
+    return first.isEmpty ? noReportYet : first;
   }
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final vm = widget.vm;
@@ -496,14 +502,14 @@ class _DayReportCardState extends State<_DayReportCard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _headerLabel,
+                          _headerLabel(s.today),
                           style: theme.textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                         if (!_expanded)
                           Text(
-                            _summaryLine(report),
+                            _summaryLine(report, s.noReportYet),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.bodySmall?.copyWith(
@@ -572,6 +578,7 @@ class _DayReportBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final theme = Theme.of(context);
     final generating = vm.isGeneratingDay(DailyReportViewModel.dayKeyOf(day));
     return Column(
@@ -590,7 +597,7 @@ class _DayReportBody extends StatelessWidget {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.refresh),
-            label: Text(generating ? 'Generating…' : 'Regenerate'),
+            label: Text(generating ? s.generating : s.regenerateReport),
           ),
         ),
         _HighlightsCard(report: report),
@@ -609,13 +616,13 @@ class _DayReportEmpty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '這天還沒有日報。點「產生日報」讓 AI 整理當天的 commits、'
-          '任務與聊天。',
+          s.dayNoReportHint,
           style: theme.textTheme.bodyMedium,
         ),
         const SizedBox(height: AppDimens.spacingMd),
@@ -630,7 +637,7 @@ class _DayReportEmpty extends StatelessWidget {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.auto_awesome_outlined),
-            label: Text(generating ? 'Generating…' : '產生日報'),
+            label: Text(generating ? s.generating : s.generateReport),
           ),
         ),
       ],
@@ -690,6 +697,7 @@ class _CommitRollupCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (report.commitThemes.isEmpty) return const SizedBox.shrink();
+    final s = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Padding(
@@ -710,7 +718,7 @@ class _CommitRollupCard extends StatelessWidget {
                   ),
                   const SizedBox(width: AppDimens.spacingSm),
                   Text(
-                    'Commit rollup',
+                    s.commitRollup,
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
@@ -774,6 +782,7 @@ class _ContributionsCard extends StatelessWidget {
         .where((e) => e.value.tasksDone > 0 || e.value.commits > 0)
         .toList();
     if (entries.isEmpty) return const SizedBox.shrink();
+    final s = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Padding(
@@ -794,7 +803,7 @@ class _ContributionsCard extends StatelessWidget {
                   ),
                   const SizedBox(width: AppDimens.spacingSm),
                   Text(
-                    'Contributions',
+                    s.contributions,
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
@@ -923,13 +932,14 @@ class _BriefHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final theme = Theme.of(context);
     return Row(
       children: [
         Icon(Icons.forum_outlined, size: 20, color: theme.colorScheme.primary),
         const SizedBox(width: AppDimens.spacingSm),
         Text(
-          'Ask AI about today',
+          s.askAiAboutToday,
           style: theme.textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.w600,
           ),
@@ -944,6 +954,7 @@ class _BriefHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.all(AppDimens.spacingMd),
@@ -952,8 +963,7 @@ class _BriefHint extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
-        'e.g. 「今天有哪些 commit 跟 OAuth 有關？」、「有沒有人提到 blocker？」、'
-        '「breakdownTask 最近誰改的？」',
+        s.briefHint,
         style: theme.textTheme.bodySmall?.copyWith(
           color: theme.colorScheme.onSurfaceVariant,
         ),
@@ -1040,6 +1050,7 @@ class _BriefSourcesPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Container(
@@ -1065,7 +1076,7 @@ class _BriefSourcesPanel extends StatelessWidget {
                 Icon(Icons.commit_outlined, size: 16, color: scheme.tertiary),
                 const SizedBox(width: AppDimens.spacingXs),
                 Text(
-                  'Source commits (${sources.length})',
+                  s.sourceCommits(sources.length),
                   style: theme.textTheme.labelMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -1139,6 +1150,7 @@ class _BriefInputBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final scheme = Theme.of(context).colorScheme;
     return Material(
       elevation: 2,
@@ -1155,7 +1167,7 @@ class _BriefInputBar extends StatelessWidget {
           children: [
             // Start a new chat session — clears the transcript (D3).
             IconButton(
-              tooltip: '開啟新 session',
+              tooltip: s.newSession,
               onPressed: sending ? null : onNewSession,
               icon: const Icon(Icons.restart_alt),
             ),
@@ -1167,9 +1179,9 @@ class _BriefInputBar extends StatelessWidget {
                 textInputAction: TextInputAction.send,
                 enabled: !sending,
                 onSubmitted: (_) => onSend(),
-                decoration: const InputDecoration(
-                  hintText: 'Ask AI about today…',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  hintText: s.askAiAboutTodayHint,
+                  border: const OutlineInputBorder(),
                   isDense: true,
                 ),
               ),
@@ -1201,6 +1213,7 @@ class _CommitsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     return Consumer<CommitsViewModel>(
       builder: (ctx, vm, _) {
         if (vm.loading) {
@@ -1216,7 +1229,7 @@ class _CommitsTab extends StatelessWidget {
                   const Icon(Icons.error_outline, size: 40),
                   const SizedBox(height: AppDimens.spacingSm),
                   Text(
-                    'Could not load commits',
+                    s.couldNotLoadCommits,
                     style: Theme.of(ctx).textTheme.titleMedium,
                   ),
                   const SizedBox(height: AppDimens.spacingXs),
@@ -1231,7 +1244,7 @@ class _CommitsTab extends StatelessWidget {
                   FilledButton.icon(
                     onPressed: vm.retry,
                     icon: const Icon(Icons.refresh, size: 18),
-                    label: const Text('Retry'),
+                    label: Text(s.retry),
                   ),
                 ],
               ),
@@ -1250,7 +1263,7 @@ class _CommitsTab extends StatelessWidget {
               child: Row(
                 children: [
                   Text(
-                    'Commit map',
+                    s.commitMap,
                     style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
@@ -1260,16 +1273,16 @@ class _CommitsTab extends StatelessWidget {
                   // branch graph reloads from there.
                   // Branch topology vs the flat, filterable commit list (D4).
                   SegmentedButton<CommitsViewMode>(
-                    segments: const [
+                    segments: [
                       ButtonSegment(
                         value: CommitsViewMode.branch,
-                        icon: Icon(Icons.account_tree_outlined, size: 18),
-                        tooltip: 'Branch graph',
+                        icon: const Icon(Icons.account_tree_outlined, size: 18),
+                        tooltip: s.branchGraph,
                       ),
                       ButtonSegment(
                         value: CommitsViewMode.author,
-                        icon: Icon(Icons.view_list_outlined, size: 18),
-                        tooltip: 'List',
+                        icon: const Icon(Icons.view_list_outlined, size: 18),
+                        tooltip: s.listView,
                       ),
                     ],
                     selected: {vm.viewMode},
@@ -1305,7 +1318,7 @@ class _CommitsTab extends StatelessWidget {
                   Text(
                     vm.hasRange
                         ? '${_monthDay(vm.rangeStart!)} ~ ${_monthDay(vm.rangeEnd!)}'
-                        : 'Recent 50',
+                        : s.recent50,
                     style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
                           color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                         ),
@@ -1314,7 +1327,7 @@ class _CommitsTab extends StatelessWidget {
                     const SizedBox(width: AppDimens.spacingSm),
                     ActionChip(
                       avatar: const Icon(Icons.restore, size: 16),
-                      label: const Text('Recent 50'),
+                      label: Text(s.recent50),
                       onPressed: () =>
                           ctx.read<IntelRangeViewModel>().clear(),
                       visualDensity: VisualDensity.compact,
@@ -1399,6 +1412,7 @@ class _CommitListViewState extends State<_CommitListView> {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final vm = widget.vm;
     final filtered = vm.filteredCommits;
     return Column(
@@ -1408,13 +1422,12 @@ class _CommitListViewState extends State<_CommitListView> {
           child: vm.commits.isEmpty
               ? EmptyState(
                   icon: Icons.commit_outlined,
-                  title: 'No commits',
-                  message: 'No commits in this period. Pick another range '
-                      'or go back to the recent commits.',
+                  title: s.noCommits,
+                  message: s.noCommitsInPeriod,
                   action: vm.hasRange
                       ? ActionChip(
                           avatar: const Icon(Icons.restore, size: 16),
-                          label: const Text('Recent 50'),
+                          label: Text(s.recent50),
                           onPressed: () =>
                               context.read<IntelRangeViewModel>().clear(),
                         )
@@ -1423,11 +1436,11 @@ class _CommitListViewState extends State<_CommitListView> {
               : filtered.isEmpty
                   ? EmptyState(
                       icon: Icons.filter_list_off_outlined,
-                      title: 'No matching commits',
-                      message: 'No commits match the current filters.',
+                      title: s.noMatchingCommits,
+                      message: s.noCommitsMatchFilters,
                       action: ActionChip(
                         avatar: const Icon(Icons.clear, size: 16),
-                        label: const Text('Clear filters'),
+                        label: Text(s.clearFilters),
                         onPressed: vm.clearFilters,
                       ),
                     )
@@ -1465,6 +1478,7 @@ class _CommitFilterBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Padding(
@@ -1482,13 +1496,13 @@ class _CommitFilterBar extends StatelessWidget {
               avatar: const Icon(Icons.person_outline, size: 16),
               label: Text(
                 vm.authorFilter.isEmpty
-                    ? 'Author'
-                    : 'Author (${vm.authorFilter.length})',
+                    ? s.author
+                    : s.authorCount(vm.authorFilter.length),
               ),
               selected: vm.authorFilter.isNotEmpty,
               onSelected: (_) => _pickMulti(
                 context,
-                title: 'Author',
+                title: s.author,
                 options: vm.availableAuthors,
                 selected: vm.authorFilter,
                 onToggle: vm.toggleAuthorFilter,
@@ -1499,13 +1513,13 @@ class _CommitFilterBar extends StatelessWidget {
               avatar: const Icon(Icons.account_tree_outlined, size: 16),
               label: Text(
                 vm.branchFilter.isEmpty
-                    ? 'Branch'
-                    : 'Branch (${vm.branchFilter.length})',
+                    ? s.branch
+                    : s.branchCount(vm.branchFilter.length),
               ),
               selected: vm.branchFilter.isNotEmpty,
               onSelected: (_) => _pickMulti(
                 context,
-                title: 'Branch',
+                title: s.branch,
                 options: vm.availableBranches,
                 selected: vm.branchFilter,
                 onToggle: vm.toggleBranchFilter,
@@ -1519,7 +1533,7 @@ class _CommitFilterBar extends StatelessWidget {
                 onChanged: vm.setKeyword,
                 textInputAction: TextInputAction.search,
                 decoration: InputDecoration(
-                  hintText: 'Search message…',
+                  hintText: s.searchMessageHint,
                   prefixIcon: const Icon(Icons.search, size: 18),
                   suffixIcon: vm.keyword.isEmpty
                       ? null
@@ -1543,7 +1557,7 @@ class _CommitFilterBar extends StatelessWidget {
               const SizedBox(width: AppDimens.spacingSm),
               ActionChip(
                 avatar: Icon(Icons.clear, size: 16, color: scheme.error),
-                label: const Text('Clear'),
+                label: Text(s.clear),
                 onPressed: () {
                   keywordController.clear();
                   vm.clearFilters();
@@ -1564,6 +1578,7 @@ class _CommitFilterBar extends StatelessWidget {
     required Set<String> selected,
     required void Function(String) onToggle,
   }) {
+    final s = context.l10n;
     return showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -1590,9 +1605,9 @@ class _CommitFilterBar extends StatelessWidget {
                   ),
                 ),
                 if (options.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(AppDimens.spacingMd),
-                    child: Text('Nothing to filter by yet.'),
+                  Padding(
+                    padding: const EdgeInsets.all(AppDimens.spacingMd),
+                    child: Text(s.nothingToFilterBy),
                   )
                 else
                   Flexible(
@@ -1756,6 +1771,7 @@ class _BranchGraphView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final theme = Theme.of(context);
     if (vm.graphLoading && vm.graph == null) {
       return const Center(child: CircularProgressIndicator());
@@ -1770,7 +1786,7 @@ class _BranchGraphView extends StatelessWidget {
               const Icon(Icons.error_outline, size: 40),
               const SizedBox(height: AppDimens.spacingSm),
               Text(
-                'Could not load the branch graph',
+                s.couldNotLoadBranchGraph,
                 style: theme.textTheme.titleMedium,
               ),
               const SizedBox(height: AppDimens.spacingXs),
@@ -1785,7 +1801,7 @@ class _BranchGraphView extends StatelessWidget {
               FilledButton.icon(
                 onPressed: vm.loadGraph,
                 icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('Retry'),
+                label: Text(s.retry),
               ),
             ],
           ),
@@ -1796,13 +1812,12 @@ class _BranchGraphView extends StatelessWidget {
     if (graph == null || graph.commits.isEmpty) {
       return EmptyState(
         icon: Icons.account_tree_outlined,
-        title: 'No commits',
-        message: 'No commits in this period. Pick another range or go back '
-            'to the recent commits.',
+        title: s.noCommits,
+        message: s.noCommitsInPeriod,
         action: vm.hasRange
             ? ActionChip(
                 avatar: const Icon(Icons.restore, size: 16),
-                label: const Text('Recent 50'),
+                label: Text(s.recent50),
                 onPressed: () => context.read<IntelRangeViewModel>().clear(),
               )
             : null,
@@ -1849,7 +1864,7 @@ class _BranchGraphView extends StatelessWidget {
                 const SizedBox(width: AppDimens.spacingXs),
                 Expanded(
                   child: Text(
-                    'Large history — showing the most recent branches/commits.',
+                    s.largeHistoryNotice,
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -2206,6 +2221,7 @@ class _GraphLanePainter extends CustomPainter {
 // a color dot + branch name per lane, the tapped commit's own branch first,
 // deduplicated. A big tap target (the whole rail strip), no per-pixel hit test.
 void _showLaneBranchSheet(BuildContext context, GraphRowGeometry row) {
+  final s = context.l10n;
   final own = row.commit.primaryBranch;
   // Gather distinct branch names across the row's lanes, own branch first.
   final ordered = <String>[];
@@ -2239,7 +2255,7 @@ void _showLaneBranchSheet(BuildContext context, GraphRowGeometry row) {
               Padding(
                 padding: const EdgeInsets.only(bottom: AppDimens.spacingSm),
                 child: Text(
-                  '這一列的分支',
+                  s.branchesInRow,
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -2247,7 +2263,7 @@ void _showLaneBranchSheet(BuildContext context, GraphRowGeometry row) {
               ),
               if (ordered.isEmpty)
                 Text(
-                  '沒有分支資訊',
+                  s.noBranchInfo,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -2314,6 +2330,7 @@ class _CommitDetailSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final c = commit;
@@ -2396,7 +2413,7 @@ class _CommitDetailSheet extends StatelessWidget {
                   ),
                   const SizedBox(width: AppDimens.spacingSm),
                   Text(
-                    'AI work summary',
+                    s.aiWorkSummary,
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
@@ -2404,7 +2421,7 @@ class _CommitDetailSheet extends StatelessWidget {
                   const Spacer(),
                   if (explanation != null && !explaining)
                     IconButton(
-                      tooltip: 'Regenerate',
+                      tooltip: s.regenerate,
                       onPressed: () => vm.explain(c.sha, force: true),
                       icon: const Icon(Icons.refresh, size: 18),
                     ),
@@ -2420,7 +2437,7 @@ class _CommitDetailSheet extends StatelessWidget {
                 MarkdownView(data: explanation)
               else if (vm.explainError != null)
                 Text(
-                  'Could not generate the summary. Please try again.',
+                  s.couldNotGenerateSummary,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: scheme.error,
                   ),
@@ -2446,14 +2463,14 @@ String _monthDay(DateTime d) =>
     '${d.month.toString().padLeft(2, '0')}/${d.day.toString().padLeft(2, '0')}';
 
 // Date-range button label: shows the saved range, the busy state, or a prompt.
-String _rangeLabel(DiscordMessagesViewModel vm) {
-  if (vm.settingRange) return 'Saving…';
+String _rangeLabel(DiscordMessagesViewModel vm, AppStrings s) {
+  if (vm.settingRange) return s.saving;
   final start = vm.rangeStart;
   final end = vm.rangeEnd;
   if (start != null && end != null) {
     return '${_monthDay(start)} ~ ${_monthDay(end)}';
   }
-  return 'Date range';
+  return s.dateRangeLabel;
 }
 
 // Discord tab — a collapsible, fixed-height digest panel (mirrors the Summary
@@ -2475,6 +2492,7 @@ class _DiscordTabState extends State<_DiscordTab> {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     return Consumer<DiscordMessagesViewModel>(
       builder: (ctx, vm, _) {
         if (vm.loading) {
@@ -2487,7 +2505,7 @@ class _DiscordTabState extends State<_DiscordTab> {
             vm.acknowledgeUpdated();
             ScaffoldMessenger.of(
               ctx,
-            ).showSnackBar(const SnackBar(content: Text('Updated ✓')));
+            ).showSnackBar(SnackBar(content: Text(s.updated)));
           });
         }
         // Cap the digest panel at ~45% of the viewport so many days never push
@@ -2543,6 +2561,7 @@ class _DigestPanelState extends State<_DigestPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final vm = widget.vm;
@@ -2563,7 +2582,7 @@ class _DigestPanelState extends State<_DigestPanel> {
                 Icon(Icons.forum_outlined, size: 20, color: scheme.primary),
                 const SizedBox(width: AppDimens.spacingSm),
                 Text(
-                  'Discord digest',
+                  s.discordDigest,
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -2585,7 +2604,7 @@ class _DigestPanelState extends State<_DigestPanel> {
                 else
                   Flexible(
                     child: Text(
-                      _rangeLabel(vm),
+                      _rangeLabel(vm, s),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.labelMedium?.copyWith(
@@ -2615,7 +2634,7 @@ class _DigestPanelState extends State<_DigestPanel> {
                       AppDimens.spacingMd,
                     ),
                     child: Text(
-                      '這個範圍還沒有摘要。用上方的「重新整理目前範圍」拉取訊息。',
+                      s.noDigestInRange,
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
@@ -2704,6 +2723,7 @@ class _DigestCardState extends State<_DigestCard> {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final digest = widget.digest;
@@ -2746,7 +2766,7 @@ class _DigestCardState extends State<_DigestCard> {
                   ),
                   const SizedBox(width: AppDimens.spacingSm),
                   Text(
-                    'Discord digest · ${digest.date}',
+                    s.discordDigestForDate(digest.date),
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
@@ -2758,7 +2778,7 @@ class _DigestCardState extends State<_DigestCard> {
                   const Spacer(),
                   // Animated lock toggle.
                   IconButton(
-                    tooltip: locked ? 'Unlock digest' : 'Lock digest',
+                    tooltip: locked ? s.unlockDigest : s.lockDigest,
                     onPressed: toggling ? null : () => vm.toggleLock(digest),
                     icon: toggling
                         ? const SizedBox(
@@ -2837,7 +2857,7 @@ class _DigestCardState extends State<_DigestCard> {
                               const SizedBox(width: AppDimens.spacingXs),
                               Expanded(
                                 child: Text(
-                                  'Locked — unlock to let AI adjust this summary.',
+                                  s.digestLockedHint,
                                   style: theme.textTheme.bodySmall?.copyWith(
                                     color: scheme.outline,
                                   ),
@@ -2857,16 +2877,16 @@ class _DigestCardState extends State<_DigestCard> {
                                   enabled: !editing,
                                   textInputAction: TextInputAction.send,
                                   onSubmitted: (_) => _submitAdjust(),
-                                  decoration: const InputDecoration(
-                                    hintText: 'Ask AI to adjust this summary…',
-                                    border: OutlineInputBorder(),
+                                  decoration: InputDecoration(
+                                    hintText: s.adjustSummaryHint,
+                                    border: const OutlineInputBorder(),
                                     isDense: true,
                                   ),
                                 ),
                               ),
                               const SizedBox(width: AppDimens.spacingSm),
                               IconButton.filledTonal(
-                                tooltip: 'Adjust with AI',
+                                tooltip: s.adjustWithAi,
                                 onPressed: editing ? null : _submitAdjust,
                                 icon: editing
                                     ? const SizedBox(
@@ -2883,7 +2903,7 @@ class _DigestCardState extends State<_DigestCard> {
                         if (vm.digestError != null) ...[
                           const SizedBox(height: AppDimens.spacingXs),
                           Text(
-                            'Could not update the digest. Please try again.',
+                            s.couldNotUpdateDigest,
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: scheme.error,
                             ),
@@ -2939,6 +2959,7 @@ class _DiscordChatState extends State<_DiscordChat> {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     return Consumer<DiscordChatViewModel>(
       builder: (ctx, vm, _) {
         final turns = vm.turns;
@@ -2957,12 +2978,11 @@ class _DiscordChatState extends State<_DiscordChat> {
                           constraints: BoxConstraints(
                             minHeight: constraints.maxHeight,
                           ),
-                          child: const Center(
+                          child: Center(
                             child: EmptyState(
                               icon: Icons.auto_awesome_outlined,
-                              title: 'Ask AI about the chat',
-                              message:
-                                  'e.g. "OAuth 的進度討論到哪了？" — AI 會找出相關的 Discord 訊息。',
+                              title: s.askAiAboutChat,
+                              message: s.askAiAboutChatHint,
                             ),
                           ),
                         ),
@@ -3104,6 +3124,7 @@ class _SourcesPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Container(
@@ -3129,7 +3150,7 @@ class _SourcesPanel extends StatelessWidget {
                 Icon(Icons.forum_outlined, size: 16, color: scheme.secondary),
                 const SizedBox(width: AppDimens.spacingXs),
                 Text(
-                  'Related conversations (${snippets.length})',
+                  s.relatedConversations(snippets.length),
                   style: theme.textTheme.labelMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -3189,6 +3210,7 @@ class _SnippetMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final s = source;
@@ -3212,7 +3234,7 @@ class _SnippetMessage extends StatelessWidget {
             ],
             Flexible(
               child: Text(
-                s.authorName.isEmpty ? 'Unknown' : s.authorName,
+                s.authorName.isEmpty ? l.unknownAuthor : s.authorName,
                 style: theme.textTheme.labelSmall?.copyWith(
                   fontWeight: s.isMatch ? FontWeight.w700 : FontWeight.w600,
                   color: authorColor,
@@ -3266,7 +3288,8 @@ class _ThinkingBubble extends StatelessWidget {
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
           const SizedBox(width: AppDimens.spacingSm),
-          Text('Thinking…', style: Theme.of(context).textTheme.bodySmall),
+          Text(context.l10n.thinking,
+              style: Theme.of(context).textTheme.bodySmall),
         ],
       ),
     );
@@ -3291,6 +3314,7 @@ class _ChatInputBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final scheme = Theme.of(context).colorScheme;
     return Material(
       elevation: 2,
@@ -3307,7 +3331,7 @@ class _ChatInputBar extends StatelessWidget {
           children: [
             // Start a new chat session — clears the transcript (D5).
             IconButton(
-              tooltip: '開啟新 session',
+              tooltip: s.newSession,
               onPressed: sending ? null : onNewSession,
               icon: const Icon(Icons.restart_alt),
             ),
@@ -3319,9 +3343,9 @@ class _ChatInputBar extends StatelessWidget {
                 textInputAction: TextInputAction.send,
                 enabled: !sending,
                 onSubmitted: (_) => onSend(),
-                decoration: const InputDecoration(
-                  hintText: 'Ask AI about the Discord chat…',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  hintText: s.askAiDiscordHint,
+                  border: const OutlineInputBorder(),
                   isDense: true,
                 ),
               ),

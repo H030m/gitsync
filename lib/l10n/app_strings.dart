@@ -174,4 +174,120 @@ class AppStrings {
   String get backendLiveBody => _(
       'Hitting real Firebase project. Be careful with destructive actions.',
       '連到正式 Firebase 專案,執行破壞性操作請小心。');
+
+  // ---- Daily ----
+  String get dailyTitle => _('Daily', 'Daily');
+  String get dailyTabSummary => _('Summary', 'Summary');
+  String get dailyTabCommits => _('Commits', 'Commits');
+  String get dailyTabDiscord => _('Discord', 'Discord');
+  String get refreshCurrentRange => _('Refresh current range', '重新整理目前範圍');
+  String get today => _('Today', 'Today');
+  String get resetRange => _('Reset range', 'Reset range');
+  String get dailyReport => _('Daily report', '日報');
+  String get noReportYet => _('No report yet', '尚未產生日報');
+  String get generating => _('Generating…', 'Generating…');
+  String get regenerateReport => _('Regenerate', 'Regenerate');
+  String get generateReport => _('Generate report', '產生日報');
+  String get dayNoReportHint => _(
+      'No report for this day yet. Tap "Generate report" to let the AI summarize the day\'s commits, tasks and chat.',
+      '這天還沒有日報。點「產生日報」讓 AI 整理當天的 commits、任務與聊天。');
+  String get commitRollup => _('Commit rollup', 'Commit rollup');
+  String get contributions => _('Contributions', 'Contributions');
+  String get askAiAboutToday => _('Ask AI about today', 'Ask AI about today');
+  String get askAiAboutTodayHint => _('Ask AI about today…', 'Ask AI about today…');
+  String get briefHint => _(
+      'e.g. "Which commits today are about OAuth?", "Did anyone mention a blocker?", "Who changed breakdownTask recently?"',
+      'e.g. 「今天有哪些 commit 跟 OAuth 有關？」、「有沒有人提到 blocker？」、'
+      '「breakdownTask 最近誰改的？」');
+  String sourceCommits(int n) =>
+      _('Source commits ($n)', 'Source commits ($n)');
+  String get newSession => _('New session', '開啟新 session');
+  String get couldNotLoadCommits =>
+      _('Could not load commits', 'Could not load commits');
+  String get retry => _('Retry', 'Retry');
+  String get commitMap => _('Commit map', 'Commit map');
+  String get branchGraph => _('Branch graph', 'Branch graph');
+  String get listView => _('List', 'List');
+  String get recent50 => _('Recent 50', 'Recent 50');
+  String get dateRangeLabel => _('Date range', 'Date range');
+  String get saving => _('Saving…', 'Saving…');
+  String get noCommits => _('No commits', 'No commits');
+  String get noCommitsInPeriod => _(
+      'No commits in this period. Pick another range or go back to the recent commits.',
+      'No commits in this period. Pick another range or go back to the recent commits.');
+  String get noMatchingCommits =>
+      _('No matching commits', 'No matching commits');
+  String get noCommitsMatchFilters =>
+      _('No commits match the current filters.', 'No commits match the current filters.');
+  String get clearFilters => _('Clear filters', 'Clear filters');
+  String get author => _('Author', 'Author');
+  String authorCount(int n) => _('Author ($n)', 'Author ($n)');
+  String get branch => _('Branch', 'Branch');
+  String branchCount(int n) => _('Branch ($n)', 'Branch ($n)');
+  String get searchMessageHint => _('Search message…', 'Search message…');
+  String get clear => _('Clear', 'Clear');
+  String get nothingToFilterBy =>
+      _('Nothing to filter by yet.', 'Nothing to filter by yet.');
+  String get couldNotLoadBranchGraph =>
+      _('Could not load the branch graph', 'Could not load the branch graph');
+  String get largeHistoryNotice => _(
+      'Large history — showing the most recent branches/commits.',
+      'Large history — showing the most recent branches/commits.');
+  String get branchesInRow => _('Branches in this row', '這一列的分支');
+  String get noBranchInfo => _('No branch info', '沒有分支資訊');
+  String get aiWorkSummary => _('AI work summary', 'AI work summary');
+  String get couldNotGenerateSummary => _(
+      'Could not generate the summary. Please try again.',
+      'Could not generate the summary. Please try again.');
+  String get updated => _('Updated ✓', 'Updated ✓');
+  String get discordDigest => _('Discord digest', 'Discord digest');
+  String discordDigestForDate(String date) =>
+      _('Discord digest · $date', 'Discord digest · $date');
+  String get noDigestInRange => _(
+      'No digest in this range. Use "Refresh current range" above to pull messages.',
+      '這個範圍還沒有摘要。用上方的「重新整理目前範圍」拉取訊息。');
+  String get lockDigest => _('Lock digest', 'Lock digest');
+  String get unlockDigest => _('Unlock digest', 'Unlock digest');
+  String get digestLockedHint => _(
+      'Locked — unlock to let AI adjust this summary.',
+      'Locked — unlock to let AI adjust this summary.');
+  String get adjustSummaryHint => _(
+      'Ask AI to adjust this summary…', 'Ask AI to adjust this summary…');
+  String get adjustWithAi => _('Adjust with AI', 'Adjust with AI');
+  String get couldNotUpdateDigest => _(
+      'Could not update the digest. Please try again.',
+      'Could not update the digest. Please try again.');
+  String get askAiAboutChat => _('Ask AI about the chat', 'Ask AI about the chat');
+  String get askAiAboutChatHint => _(
+      'e.g. "Where did the OAuth progress discussion get to?" — the AI finds the relevant Discord messages.',
+      'e.g. "OAuth 的進度討論到哪了？" — AI 會找出相關的 Discord 訊息。');
+  String get askAiDiscordHint =>
+      _('Ask AI about the Discord chat…', 'Ask AI about the Discord chat…');
+  String get unknownAuthor => _('Unknown', 'Unknown');
+  String relatedConversations(int n) =>
+      _('Related conversations ($n)', 'Related conversations ($n)');
+  String get thinking => _('Thinking…', 'Thinking…');
+
+  // ---- Stats ----
+  String get statsTitle => _('Stats', '統計');
+  String get contributionTab => _('Contribution', '貢獻度');
+  String get progressTab => _('Progress', '進度表');
+  String get commitContributionCaption =>
+      _('Contribution across all commits', '全部 commit 累計的貢獻度');
+  String get taskContributionCaption =>
+      _('Contribution across completed tasks', '已完成的任務累計的貢獻度');
+  String get contributionBasisCommit => _('commit', 'commit');
+  String get contributionBasisTask => _('Task', '任務');
+  String get noCommitRecords => _('No commit records yet', '尚無 commit 紀錄');
+  String get noDoneTasks => _('No completed tasks yet', '尚無已完成的任務');
+  String get pieChart => _('Pie chart', '圓餅圖');
+  String get statsDetails => _('Details', '詳細情形');
+  String get aiSummaryGenerating =>
+      _('Generating AI work summary…', 'AI 工作總結產生中…');
+  String get summaryFailedRetry =>
+      _('Generation failed, tap to retry', '產生失敗，點此重試');
+  String get aiWorkSummaryTitle => _('AI work summary', 'AI 工作總結');
+  String get authorContributionCaption => _(
+      "Each author's commit share and AI work summary",
+      '每位作者的 commit 佔比與 AI 工作統整');
 }
