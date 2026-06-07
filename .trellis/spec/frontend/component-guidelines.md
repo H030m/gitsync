@@ -94,11 +94,41 @@ layout (`lib/views/tasks/widgets/task_graph_tab.dart`). Conventions learned:
   `node.key!.value`. Map id → model object for the node widget.
 - Node colors come from `Theme.of(ctx).colorScheme` keyed on the status enum with an
   exhaustive `switch` (no `default`, so a new status is a compile error), per Styling above.
+- **Readable Sugiyama layout** (06-06 polish): keep `ORIENTATION_TOP_BOTTOM` but use a
+  small `nodeSeparation` (~24) + larger `levelSeparation` (~90) so siblings line up and
+  diagonal sweeps shorten; short `CurvedBendPointShape(curveLength: 8)` + thin, low-alpha
+  edge paint so nodes (not lines) carry the eye; **uniform node footprint** (fixed
+  width+height, title `maxLines: 2` ellipsis) so every layer aligns.
+- **Fit-to-view**: graphview lays out at intrinsic size, so wrap the `GraphView` in a
+  `LayoutBuilder` + `GlobalKey`, and in a one-shot post-frame callback measure
+  `key.currentContext.size`, compute `scale = min(viewportW/w, viewportH/h).clamp(.2,1)`,
+  and set the `TransformationController` (scale on the matrix diagonal, translate in
+  column 3 via `setEntry` — `Matrix4.translate/scale` are deprecated). Guard with a
+  `_fitted` flag re-armed when the node-id set changes, so it frames on open without
+  fighting the user's pan/zoom. A pinned (non-panning) status legend goes in the `Stack`
+  next to the `Positioned.fill` viewer.
+- **Editing the DAG** (06-06): graphview has no edge-drawing/node-drag, so editing is
+  gesture + menu driven — `GestureDetector` on the node (`onTap` = open / pick-target in
+  connect mode; `onLongPressStart` gives the global position for `showMenu`). Add-node is a
+  `Positioned` `FloatingActionButton.small` in the `Stack`. Graph mutations go through the
+  ViewModel; the **graph-theory lives in pure, unit-tested helpers**
+  (`view_models/graph_edit_ops.dart`): `wouldCreateCycle` (DFS reachability — reject an edge
+  whose reverse path already exists) before adding a `dependsOn`, and `bridgeOnDelete`
+  (DAG contraction: reconnect a deleted node's prerequisites to its dependents, dedup, never
+  self-depend) on delete. Re-layout + fit-to-view are automatic on the next stream rebuild.
+  Editing `dependsOn` needs `TaskRepository.updateDependsOn` (don't forget the Fake).
 
 ---
 
 ## Scrolling & scrollbars
 
+- **Columns/lists that grow must scroll, and need a bounded height to do so.** A
+  kanban column whose card list is a plain `Column` overflows once tasks exceed the
+  viewport. Give the column a bounded height — `Row(crossAxisAlignment: stretch)` in
+  fill mode; wrap the `Row` in a `SizedBox(height: constraints.maxHeight - padding)`
+  inside a horizontal `SingleChildScrollView` for the phone layout — then make the card
+  area `Expanded(child: ListView(...))` so it scrolls within the column
+  (`tasks_board_page.dart` `_BoardColumn`).
 - **Pin panel scrollbars flush to the right edge.** A panel's scrolling `ListView` carries no
   right padding; wrap it in `Scrollbar(controller, thumbVisibility: true)` and push the horizontal
   inset INTO each child instead, so the scrollbar gutter sits at the outermost right
@@ -138,6 +168,26 @@ land — mirrors `StatsViewModel`'s name-resolution cache. Reuse it; don't re-re
   aren't announced as new — only later transitions fire the banner. `RepoShell` does this and shows
   a SnackBar with a "View" action. Show it from a post-frame callback (the listener can fire
   mid-build).
+
+---
+
+## Localization (i18n)
+
+UI strings are localized (中文(繁體) / English), not hardcoded. Access them via
+`context.l10n.<key>` (extension in `lib/l10n/app_strings.dart`); add a getter to
+`AppStrings` with both languages (`_(en, zh)`) rather than putting literals in
+widgets. The active language comes from `LocaleNotifier` (a root-level
+`ChangeNotifier`, persisted via `shared_preferences`, like `ThemeModeNotifier`);
+the Settings page switches it. `context.l10n` **falls back to the default locale
+when no `LocaleNotifier` is in the tree** (try/catch) so widget tests pumping a
+page in isolation still build. In async callbacks, capture `final s = context.l10n;`
+*before* the first `await` (don't touch context after await). `MaterialApp` wires
+`locale` + `supportedLocales` + the Global*Localizations delegates so built-in
+widgets localize too. Proper nouns / IDs (e.g. "GitHub", "Issue #N") stay as-is.
+`LocaleNotifier` also **mirrors the choice to the backend** (`users/{uid}.locale`
+via `UserRepository.updateLocale`) once a user is attached (`attachUser` on
+sign-in, `detachUser` on sign-out) so server-sent FCM push copy is localized per
+recipient — see `database-guidelines.md` "Localizing outbound push".
 
 ---
 

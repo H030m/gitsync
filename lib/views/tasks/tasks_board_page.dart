@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../models/task.dart';
 import '../../services/navigation.dart';
 import '../../theme/app_dimens.dart';
+import '../../view_models/members_vm.dart';
 import '../../view_models/tasks_board_vm.dart';
 import 'widgets/task_graph_tab.dart';
 
@@ -26,15 +28,16 @@ class TasksBoardPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     return DefaultTabController(
       length: 2,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('任務'),
-          bottom: const TabBar(
+          title: Text(s.tasksTitle),
+          bottom: TabBar(
             tabs: [
-              Tab(text: '看板'),
-              Tab(text: '關聯圖'),
+              Tab(text: s.boardTab),
+              Tab(text: s.graphTab),
             ],
           ),
         ),
@@ -77,20 +80,20 @@ class _ColumnTheme {
   final Color tonal;
   final Color accent;
 
-  static _ColumnTheme of(ColorScheme scheme, TaskStatus status) {
+  static _ColumnTheme of(ColorScheme scheme, AppStrings s, TaskStatus status) {
     return switch (status) {
       TaskStatus.todo => _ColumnTheme(
-        label: '待辦',
+        label: s.statusTodo,
         tonal: scheme.surfaceContainerHighest,
         accent: scheme.primary.withValues(alpha: 0.55),
       ),
       TaskStatus.inProgress => _ColumnTheme(
-        label: '進行中',
+        label: s.statusInProgress,
         tonal: scheme.primaryContainer,
         accent: scheme.primary,
       ),
       TaskStatus.done => _ColumnTheme(
-        label: '完成',
+        label: s.statusDone,
         tonal: scheme.secondaryContainer,
         accent: scheme.secondary,
       ),
@@ -124,7 +127,7 @@ class _BoardTab extends StatelessWidget {
               vertical: AppDimens.spacingSm,
             ),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 for (var i = 0; i < columns.length; i++) ...[
                   if (i > 0) const SizedBox(width: _kColumnGap),
@@ -148,21 +151,26 @@ class _BoardTab extends StatelessWidget {
             horizontal: _kBoardHPad,
             vertical: AppDimens.spacingSm,
           ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (var i = 0; i < columns.length; i++) ...[
-                if (i > 0) const SizedBox(width: _kColumnGap),
-                SizedBox(
-                  width: _kMinColumnWidth,
-                  child: _BoardColumn(
-                    vm: vm,
-                    status: columns[i],
-                    tasks: _tasksFor(vm, columns[i]),
+          // Bound the columns to the viewport height so each one scrolls
+          // internally (otherwise many cards overflow vertically).
+          child: SizedBox(
+            height: constraints.maxHeight - AppDimens.spacingSm * 2,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < columns.length; i++) ...[
+                  if (i > 0) const SizedBox(width: _kColumnGap),
+                  SizedBox(
+                    width: _kMinColumnWidth,
+                    child: _BoardColumn(
+                      vm: vm,
+                      status: columns[i],
+                      tasks: _tasksFor(vm, columns[i]),
+                    ),
                   ),
-                ),
+                ],
               ],
-            ],
+            ),
           ),
         );
       },
@@ -185,6 +193,7 @@ class _EmptyBoard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final s = context.l10n;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(AppDimens.spacingLg),
@@ -209,7 +218,7 @@ class _EmptyBoard extends StatelessWidget {
                 ),
                 const SizedBox(height: AppDimens.spacingMd),
                 Text(
-                  '您還未輸入專案架構',
+                  s.emptyBoardTitle,
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyLarge?.copyWith(
                     color: scheme.onSurface,
@@ -217,7 +226,7 @@ class _EmptyBoard extends StatelessWidget {
                 ),
                 const SizedBox(height: AppDimens.spacingXs),
                 Text(
-                  '請點擊右下角 + 號來新增 TODOs',
+                  s.emptyBoardMsg,
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: scheme.onSurfaceVariant,
@@ -256,7 +265,8 @@ class _BoardColumnState extends State<_BoardColumn> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final colTheme = _ColumnTheme.of(scheme, widget.status);
+    final s = context.l10n;
+    final colTheme = _ColumnTheme.of(scheme, s, widget.status);
 
     return DragTarget<Task>(
       onWillAcceptWithDetails: (details) =>
@@ -276,7 +286,6 @@ class _BoardColumnState extends State<_BoardColumn> {
           clipBehavior: Clip.antiAlias,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
             children: [
               // Tonal header: accent label + count chip.
               Container(
@@ -305,41 +314,38 @@ class _BoardColumnState extends State<_BoardColumn> {
                   ],
                 ),
               ),
-              // Card list (secondary background), tinted while hovering.
-              Container(
-                color: hovering
-                    ? colTheme.accent.withValues(alpha: 0.08)
-                    : Colors.transparent,
-                padding: const EdgeInsets.all(AppDimens.spacingSm),
-                constraints: const BoxConstraints(minHeight: 120),
-                child: widget.tasks.isEmpty
-                    ? SizedBox(
-                        height: 80,
-                        child: Center(
+              // Card list (secondary background), tinted while hovering. Expands
+              // to fill the column height and scrolls when there are many tasks.
+              Expanded(
+                child: Container(
+                  color: hovering
+                      ? colTheme.accent.withValues(alpha: 0.08)
+                      : Colors.transparent,
+                  padding: const EdgeInsets.all(AppDimens.spacingSm),
+                  child: widget.tasks.isEmpty
+                      ? Center(
                           child: Text(
                             '—',
                             style: theme.textTheme.bodyLarge?.copyWith(
                               color: scheme.onSurfaceVariant,
                             ),
                           ),
-                        ),
-                      )
-                    : Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          for (final t in widget.tasks)
-                            Padding(
-                              padding: const EdgeInsets.only(
-                                bottom: AppDimens.spacingSm,
-                              ),
-                              child: _TaskCard(
-                                vm: widget.vm,
-                                task: t,
-                                accent: colTheme.accent,
-                              ),
+                        )
+                      : ListView.builder(
+                          padding: EdgeInsets.zero,
+                          itemCount: widget.tasks.length,
+                          itemBuilder: (_, i) => Padding(
+                            padding: const EdgeInsets.only(
+                              bottom: AppDimens.spacingSm,
                             ),
-                        ],
-                      ),
+                            child: _TaskCard(
+                              vm: widget.vm,
+                              task: widget.tasks[i],
+                              accent: colTheme.accent,
+                            ),
+                          ),
+                        ),
+                ),
               ),
             ],
           ),
@@ -349,13 +355,14 @@ class _BoardColumnState extends State<_BoardColumn> {
   }
 
   Future<void> _accept(Task task) async {
+    final s = context.l10n;
     try {
       await widget.vm.updateStatus(task.id, widget.status);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..clearSnackBars()
-        ..showSnackBar(SnackBar(content: Text('更新狀態失敗：$e')));
+        ..showSnackBar(SnackBar(content: Text(s.updateStatusFailed(e))));
     }
   }
 }
@@ -545,17 +552,22 @@ class _AssigneeCircle extends StatelessWidget {
         ),
       );
     }
-    final initial = id.substring(0, 1).toUpperCase();
-    return Container(
-      width: 20,
-      height: 20,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.2),
-        shape: BoxShape.circle,
-      ),
+    // Resolve the assignee's GitHub profile (cached in MembersViewModel) to show
+    // their avatar; fall back to the githubLogin/name initial (then uid).
+    final profile = context.watch<MembersViewModel>().profileFor(id);
+    final url = profile?.avatarUrl;
+    final seed = (profile?.githubLogin.isNotEmpty ?? false)
+        ? profile!.githubLogin
+        : (profile?.name.isNotEmpty ?? false)
+            ? profile!.name
+            : id;
+    return CircleAvatar(
+      radius: 10,
+      backgroundColor: accent.withValues(alpha: 0.2),
+      foregroundImage:
+          (url != null && url.isNotEmpty) ? NetworkImage(url) : null,
       child: Text(
-        initial,
+        seed.characters.first.toUpperCase(),
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
           color: accent,
           fontWeight: FontWeight.w700,

@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:gitsync/models/task.dart';
 import 'package:gitsync/repositories/task_repo.dart';
 import 'package:gitsync/services/navigation.dart';
+import 'package:gitsync/view_models/members_vm.dart';
 import 'package:gitsync/view_models/tasks_board_vm.dart';
 import 'package:gitsync/views/tasks/tasks_board_page.dart';
 
@@ -64,6 +65,9 @@ Widget _harness(_StubTaskRepo repo) {
         ChangeNotifierProvider<TasksBoardViewModel>(
           create: (_) =>
               TasksBoardViewModel(repoId: 'r1', taskRepository: repo),
+        ),
+        ChangeNotifierProvider<MembersViewModel>(
+          create: (_) => MembersViewModel(repoId: 'r1'),
         ),
       ],
       child: const TasksBoardPage(repoId: 'r1'),
@@ -163,7 +167,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('您還未輸入專案架構'), findsOneWidget);
-    expect(find.text('請點擊右下角 + 號來新增 TODOs'), findsOneWidget);
+    expect(find.text('請點擊右下角 + 號來新增任務'), findsOneWidget);
     // No column headers render in the empty state.
     expect(find.text('待辦'), findsNothing);
   });

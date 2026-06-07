@@ -365,6 +365,27 @@ export async function listCollaborators(
   }));
 }
 
+/**
+ * Closes a GitHub issue (PATCH /repos/{owner}/{repo}/issues/{number} with
+ * `state: 'closed'`). GitHub's REST API can't *delete* issues, so deleting a
+ * GitSync task closes its mirrored issue instead. Best-effort caller. All GitHub
+ * API access stays in this file (ARCHITECTURE.md §6.4).
+ */
+export async function closeIssue(
+  owner: string,
+  repo: string,
+  accessToken: string,
+  issueNumber: number,
+): Promise<void> {
+  const octokit = getOctokit(accessToken);
+  await octokit.issues.update({
+    owner,
+    repo,
+    issue_number: issueNumber,
+    state: 'closed',
+  });
+}
+
 export interface RepoAccess {
   githubRepoId: number;
   defaultBranch: string;

@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 22
-- **Last Active**: 2026-06-06
+- **Total Sessions**: 32
+- **Last Active**: 2026-06-07
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~753 | Active |
+| `journal-1.md` | ~1083 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,16 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 32 | 2026-06-07 | Localize Daily + Stats; all UI strings in one file | HEAD | `feature/rich-task-cards-ai-handoff` |
+| 31 | 2026-06-07 | Unlinked tasks shown as standalone graph nodes | HEAD | `feature/rich-task-cards-ai-handoff` |
+| 30 | 2026-06-07 | i18n: zh-Hant/English switch with Settings toggle | HEAD | `feature/rich-task-cards-ai-handoff` |
+| 29 | 2026-06-07 | Fix dependency-graph panning | HEAD | `feature/rich-task-cards-ai-handoff` |
+| 28 | 2026-06-07 | Close linked GitHub issue on task delete | HEAD | `feature/rich-task-cards-ai-handoff` |
+| 27 | 2026-06-07 | Card-based dependency editing + delete; scrollable board | HEAD | `feature/rich-task-cards-ai-handoff` |
+| 26 | 2026-06-07 | Manual single-task creation in add-task flow | HEAD | `feature/rich-task-cards-ai-handoff` |
+| 25 | 2026-06-06 | Interactive dependency-graph editing | HEAD | `feature/rich-task-cards-ai-handoff` |
+| 24 | 2026-06-06 | Polish task dependency graph layout | HEAD | `feature/rich-task-cards-ai-handoff` |
+| 23 | 2026-06-06 | GitHub avatar on kanban assignee circle | HEAD | `feature/rich-task-cards-ai-handoff` |
 | 22 | 2026-06-06 | Import GitHub collaborators as repo members | HEAD | `feature/rich-task-cards-ai-handoff` |
 | 21 | 2026-06-06 | Clickable GitHub issue/PR links in task detail | HEAD | `feature/rich-task-cards-ai-handoff` |
 | 20 | 2026-06-06 | Rich task cards: GitHub issue sync + AI handoff + push to next assignee | `b693ab8`..`8f6b21b` | `feature/rich-task-cards-ai-handoff` |

@@ -751,3 +751,333 @@ Added importCollaborators callable (githubClient.listCollaborators + map githubL
 ### Next Steps
 
 - None - task complete
+
+
+## Session 23: GitHub avatar on kanban assignee circle
+
+**Date**: 2026-06-06
+**Task**: GitHub avatar on kanban assignee circle
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+_AssigneeCircle uses MembersViewModel.profileFor(uid).avatarUrl as a CircleAvatar image with letter fallback; added MembersViewModel to the board test harness. analyze clean, board tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 24: Polish task dependency graph layout
+
+**Date**: 2026-06-06
+**Task**: Polish task dependency graph layout
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+Refined the 關聯圖: top-down Sugiyama with nodeSeparation 24 / levelSeparation 90, uniform 176x76 nodes, thin low-alpha edges + short bends, pinned status legend, one-shot fit-to-view via LayoutBuilder+GlobalKey+TransformationController(setEntry). User picked top-down (vs LR pipeline). analyze clean, 71 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 25: Interactive dependency-graph editing
+
+**Date**: 2026-06-06
+**Task**: Interactive dependency-graph editing
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+Add/connect/delete nodes in the 關聯圖: FAB add-node, long-press menu (open/link/delete), tap-to-connect prereq→dependent with cycle rejection, delete auto-bridges prereqs→dependents. Pure graph_edit_ops (wouldCreateCycle DFS + bridgeOnDelete DAG contraction) with 8 unit tests; new TaskRepository.updateDependsOn (+Fake); VM addDependency/deleteTaskBridging. analyze clean, 79 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 26: Manual single-task creation in add-task flow
+
+**Date**: 2026-06-07
+**Task**: Manual single-task creation in add-task flow
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+AddTodoPage now has a Manual/AI mode toggle (Manual default): title+description form → TasksBoardViewModel.addTask. Closes the 'tasks can only be AI-generated' gap in the main flow (board + → AddTodoPage). AI breakdown unchanged. analyze clean, 79 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 27: Card-based dependency editing + delete; scrollable board
+
+**Date**: 2026-06-07
+**Task**: Card-based dependency editing + delete; scrollable board
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+Task detail card: add/remove prerequisites (scrollable cycle-filtered picker) + AppBar delete (bridging); fixes manual nodes not appearing in graph (parent them) and undiscoverable delete. Kanban columns bounded-height + Expanded ListView → scroll, no overflow. Legend moved top-right. VM removeDependency added. analyze clean, 79 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 28: Close linked GitHub issue on task delete
+
+**Date**: 2026-06-07
+**Task**: Close linked GitHub issue on task delete
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+onTaskDeleted trigger + githubClient.closeIssue: deleting a task closes its mirrored GitHub issue (REST can't delete issues). Best-effort/idempotent, creator token + owner/repo. 5 unit tests, tsc clean. Needs deploy.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 29: Fix dependency-graph panning
+
+**Date**: 2026-06-07
+**Task**: Fix dependency-graph panning
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+Fit-to-view regression: finite boundaryMargin(200) clamped panning after the initial fit. Switched to boundaryMargin all(infinity) + removed the dx/dy>=0 clamp so the graph centers on open and pans freely. analyze clean, board tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 30: i18n: zh-Hant/English switch with Settings toggle
+
+**Date**: 2026-06-07
+**Task**: i18n: zh-Hant/English switch with Settings toggle
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+Lightweight i18n: AppLocale + persisted LocaleNotifier + AppStrings via context.l10n (safe fallback for tests); MaterialApp locale + delegates; Settings 中文/English switcher. Localized core screens (settings/signin/repos/notify/board/add-task/task-details/graph) via 3 parallel sub-agents. Daily+Stats deferred. analyze clean, 79 flutter tests green (empty-board copy test updated).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 31: Unlinked tasks shown as standalone graph nodes
+
+**Date**: 2026-06-07
+**Task**: Unlinked tasks shown as standalone graph nodes
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+Degree-0 tasks were hidden at graphview's (0,0). Split connected vs isolated; DAG built from connected, isolated rendered in an 'Unlinked' row above it (same canvas + tap/link/delete). Manually-added tasks now appear and can be linked in. analyze clean, 79 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 32: Localize Daily + Stats; all UI strings in one file
+
+**Date**: 2026-06-07
+**Task**: Localize Daily + Stats; all UI strings in one file
+**Branch**: `feature/rich-task-cards-ai-handoff`
+
+### Summary
+
+Localized daily_view_page + stats_view_page into the single app_strings.dart table (Daily + Stats sections, both langs) via sub-agents. Now every localized UI string lives in one file. Also: pushed branch + deployed all 4 functions (generateHandoff/onTaskUpdated/importCollaborators/onTaskDeleted) to live. analyze clean, 79 flutter tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `HEAD` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

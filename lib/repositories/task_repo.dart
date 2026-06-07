@@ -15,6 +15,8 @@ abstract class TaskRepository {
   Future<String> addTask(String repoId, Task task);
   Future<void> updateStatus(String repoId, String taskId, TaskStatus status);
   Future<void> assignTo(String repoId, String taskId, String? assigneeId);
+  Future<void> updateDependsOn(
+      String repoId, String taskId, List<String> dependsOn);
   Future<void> deleteTask(String repoId, String taskId);
   Future<List<Task>> getDependentsOf(String repoId, String taskId);
 }
@@ -78,6 +80,18 @@ class _LiveTaskRepository implements TaskRepository {
   ) async {
     await _db.doc('${FirestorePaths.tasks(repoId)}/$taskId').update({
       'assigneeId': assigneeId,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }).timeout(_timeout);
+  }
+
+  @override
+  Future<void> updateDependsOn(
+    String repoId,
+    String taskId,
+    List<String> dependsOn,
+  ) async {
+    await _db.doc('${FirestorePaths.tasks(repoId)}/$taskId').update({
+      'dependsOn': dependsOn,
       'updatedAt': FieldValue.serverTimestamp(),
     }).timeout(_timeout);
   }

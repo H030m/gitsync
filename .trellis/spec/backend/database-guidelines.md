@@ -211,3 +211,25 @@ const committedAt = parsed && !Number.isNaN(parsed.getTime())
 parsed from the payload ISO string AND the server-time fallback when absent
 (`__tests__/githubWebhook.test.ts`); reader models tolerate the legacy shape defensively
 (`Commit._parseTimestamp`) so a stray doc degrades instead of hanging a stream.
+
+---
+
+## Localizing outbound push (FCM) per recipient
+
+Push **titles** are localized to the *recipient's* language, not the actor's or a fixed
+default. The language is read from the recipient's user doc — `users/{uid}.locale`
+(`'en' | 'zhHant'`, written by the client in `services/locale_notifier.dart` on sign-in and on
+every Settings language change via `UserRepository.updateLocale`, a `set(merge)` so it never
+races the sign-in upsert). `notifyAssignee` already fetches the user doc for `fcmToken`, so it
+reads `locale` from the **same snapshot** (no extra read) and defaults to `zhHant` for
+missing/unknown values (`notifyLocaleFromPref`).
+
+- **Only titles are localized.** The body is real data (the task title) and stays verbatim.
+  Localized copy lives in `tools/i18n.ts` (`notifyMessages.*`, both languages side by side —
+  the backend mirror of the client `app_strings.dart`).
+- **Pass a builder, not a fixed string**, so resolution happens after the locale is known:
+  `notifyAssignee(uid, (locale) => ({ title: notifyMessages.taskReadyTitle(locale), body }), data)`.
+  `notifyAssignee` accepts either `{title,body}` or `(locale) => {title,body}`.
+- **Tests required**: assert the sent `notification.title` switches with the seeded user
+  `locale` — default (no `locale` field → zh) AND `locale:'en'` → English
+  (`__tests__/onTaskUpdated.test.ts`).

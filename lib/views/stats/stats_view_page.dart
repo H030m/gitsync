@@ -2,6 +2,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../theme/app_dimens.dart';
 import '../../view_models/members_vm.dart';
 import '../../view_models/stats_vm.dart';
@@ -18,6 +19,7 @@ class StatsViewPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     return ChangeNotifierProxyProvider2<TasksBoardViewModel, MembersViewModel,
         StatsViewModel>(
       create: (_) => StatsViewModel(repoId: repoId),
@@ -28,11 +30,11 @@ class StatsViewPage extends StatelessWidget {
         length: 2,
         child: Scaffold(
           appBar: AppBar(
-            title: const Text('統計'),
-            bottom: const TabBar(
+            title: Text(s.statsTitle),
+            bottom: TabBar(
               tabs: [
-                Tab(text: '貢獻度'),
-                Tab(text: '進度表'),
+                Tab(text: s.contributionTab),
+                Tab(text: s.progressTab),
               ],
             ),
           ),
@@ -72,6 +74,7 @@ class _ContributionTabState extends State<_ContributionTab> {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final scheme = Theme.of(context).colorScheme;
     final vm = widget.vm;
 
@@ -79,22 +82,22 @@ class _ContributionTabState extends State<_ContributionTab> {
     final contributions =
         isCommit ? vm.commitContributions : vm.contributions;
     final caption = isCommit
-        ? '全部 commit 累計的貢獻度'
-        : '已完成的任務累計的貢獻度';
+        ? s.commitContributionCaption
+        : s.taskContributionCaption;
 
     final toggle = Padding(
       padding: const EdgeInsets.only(bottom: AppDimens.spacingMd),
       child: Center(
         child: SegmentedButton<_ContributionBasis>(
           showSelectedIcon: false,
-          segments: const [
+          segments: [
             ButtonSegment(
               value: _ContributionBasis.commit,
-              label: Text('commit'),
+              label: Text(s.contributionBasisCommit),
             ),
             ButtonSegment(
               value: _ContributionBasis.task,
-              label: Text('任務'),
+              label: Text(s.contributionBasisTask),
             ),
           ],
           selected: {_basis},
@@ -122,7 +125,7 @@ class _ContributionTabState extends State<_ContributionTab> {
         padding: const EdgeInsets.all(AppDimens.spacingMd),
         children: [
           toggle,
-          _EmptyHint(isCommit ? '尚無 commit 紀錄' : '尚無已完成的任務'),
+          _EmptyHint(isCommit ? s.noCommitRecords : s.noDoneTasks),
         ],
       );
     }
@@ -170,7 +173,7 @@ class _ContributionTabState extends State<_ContributionTab> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            '貢獻度',
+                            s.contributionTab,
                             style: Theme.of(context)
                                 .textTheme
                                 .labelMedium
@@ -180,7 +183,7 @@ class _ContributionTabState extends State<_ContributionTab> {
                                 ),
                           ),
                           Text(
-                            '圓餅圖',
+                            s.pieChart,
                             style: Theme.of(context)
                                 .textTheme
                                 .labelSmall
@@ -223,6 +226,7 @@ class _ProgressTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final scheme = Theme.of(context).colorScheme;
 
     if (vm.commitsLoading) {
@@ -236,7 +240,7 @@ class _ProgressTab extends StatelessWidget {
 
     final authors = vm.authorGroups;
     if (authors.isEmpty) {
-      return const _EmptyHint('尚無 commit 紀錄');
+      return _EmptyHint(s.noCommitRecords);
     }
 
     final palette = _categoricalPalette(scheme);
@@ -263,7 +267,7 @@ class _ProgressTab extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppDimens.spacingMd),
-        const _CaptionCard('每位作者的 commit 佔比與 AI 工作統整'),
+        _CaptionCard(s.authorContributionCaption),
       ],
     );
   }
@@ -296,6 +300,7 @@ class _AuthorSummaryRowState extends State<_AuthorSummaryRow> {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final g = widget.author;
@@ -350,7 +355,7 @@ class _AuthorSummaryRowState extends State<_AuthorSummaryRow> {
                 ),
                 const SizedBox(width: AppDimens.spacingXs),
                 Text(
-                  '詳細情形',
+                  s.statsDetails,
                   style: theme.textTheme.bodySmall
                       ?.copyWith(color: scheme.onSurfaceVariant),
                 ),
@@ -383,21 +388,22 @@ class _AuthorSummaryBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
     if (vm.isSummarizing(summaryKey)) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
         child: Row(
           children: [
-            SizedBox(
+            const SizedBox(
               width: 16,
               height: 16,
               child: CircularProgressIndicator(strokeWidth: 2),
             ),
-            SizedBox(width: AppDimens.spacingSm),
-            Text('AI 工作總結產生中…'),
+            const SizedBox(width: AppDimens.spacingSm),
+            Text(s.aiSummaryGenerating),
           ],
         ),
       );
@@ -410,7 +416,7 @@ class _AuthorSummaryBody extends StatelessWidget {
         child: InkWell(
           onTap: () => vm.loadAuthorSummary(author, force: true),
           child: Text(
-            '產生失敗，點此重試',
+            s.summaryFailedRetry,
             style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
           ),
         ),
@@ -430,13 +436,13 @@ class _AuthorSummaryBody extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                'AI 工作總結',
+                s.aiWorkSummaryTitle,
                 style: theme.textTheme.labelSmall
                     ?.copyWith(color: scheme.onSurfaceVariant),
               ),
             ),
             IconButton(
-              tooltip: '重新產生',
+              tooltip: s.regenerate,
               visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.refresh, size: 16),
               onPressed: () => vm.loadAuthorSummary(author, force: true),

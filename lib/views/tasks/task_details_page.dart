@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../models/app_user.dart';
 import '../../models/member.dart';
 import '../../models/task.dart';
 import '../../services/functions_service.dart';
 import '../../services/navigation.dart';
 import '../../theme/app_dimens.dart';
+import '../../view_models/graph_edit_ops.dart';
 import '../../view_models/members_vm.dart';
 import '../../view_models/repo_vm.dart';
 import '../../view_models/tasks_board_vm.dart';
@@ -44,6 +46,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
 
   Future<void> _regenerateHandoff(Task task) async {
     if (_generatingHandoff) return;
+    final s = context.l10n;
     final functions = context.read<FunctionsService>();
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _generatingHandoff = true);
@@ -59,7 +62,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
       messenger
         ..clearSnackBars()
         ..showSnackBar(
-          const SnackBar(content: Text('Could not generate the handoff doc.')),
+          SnackBar(content: Text(s.couldNotGenerateHandoff)),
         );
     } finally {
       if (mounted) setState(() => _generatingHandoff = false);
@@ -67,27 +70,23 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
   }
 
   Future<void> _importCollaborators() async {
+    final s = context.l10n;
     final functions = context.read<FunctionsService>();
     final messenger = ScaffoldMessenger.of(context);
     messenger
       ..clearSnackBars()
       ..showSnackBar(
-        const SnackBar(content: Text('Importing GitHub collaborators…')),
+        SnackBar(content: Text(s.importingCollaborators)),
       );
     try {
       final r = await functions.importCollaborators(repoId: widget.repoId);
       if (!mounted) return;
-      final pending = r.pending.isEmpty
-          ? ''
-          : ' · ${r.pending.length} not signed in yet';
       messenger
         ..clearSnackBars()
         ..showSnackBar(
           SnackBar(
             content: Text(
-              'Added ${r.added} member(s)'
-              '${r.alreadyMembers > 0 ? ' · ${r.alreadyMembers} already in' : ''}'
-              '$pending. Reopen the picker to assign them.',
+              s.importedSummary(r.added, r.alreadyMembers, r.pending.length),
             ),
           ),
         );
@@ -96,12 +95,13 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
       messenger
         ..clearSnackBars()
         ..showSnackBar(
-          const SnackBar(content: Text('Could not import collaborators.')),
+          SnackBar(content: Text(s.couldNotImport)),
         );
     }
   }
 
   Future<void> _openUrl(String url) async {
+    final s = context.l10n;
     final messenger = ScaffoldMessenger.of(context);
     final ok = await launchUrl(
       Uri.parse(url),
@@ -110,11 +110,12 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
     if (!ok && mounted) {
       messenger
         ..clearSnackBars()
-        ..showSnackBar(const SnackBar(content: Text('Could not open the link.')));
+        ..showSnackBar(SnackBar(content: Text(s.couldNotOpenLink)));
     }
   }
 
   Future<void> _pickAssignee(Task task) async {
+    final s = context.l10n;
     final tasksVm = context.read<TasksBoardViewModel>();
     final membersVm = context.read<MembersViewModel>();
     final messenger = ScaffoldMessenger.of(context);
@@ -143,15 +144,105 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
       messenger
         ..clearSnackBars()
         ..showSnackBar(
-          const SnackBar(content: Text('Could not update the assignee.')),
+          SnackBar(content: Text(s.couldNotUpdateAssignee)),
         );
     }
   }
 
+  // Open a scrollable picker of tasks eligible to become a prerequisite of
+  // [task] (excludes itself, current prerequisites, and any choice that would
+  // create a cycle), then link the picked one.
+  Future<void> _addPrerequisite(Task task) async {
+    final s = context.l10n;
+    final vm = context.read<TasksBoardViewModel>();
+    final messenger = ScaffoldMessenger.of(context);
+    final deps = {for (final t in vm.tasks) t.id: t.dependsOn};
+    final candidates = vm.tasks
+        .where((t) =>
+            t.id != task.id &&
+            !task.dependsOn.contains(t.id) &&
+            !wouldCreateCycle(deps, task.id, t.id))
+        .toList();
+    if (candidates.isEmpty) {
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(content: Text(s.noEligibleTasks)),
+        );
+      return;
+    }
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => _PrereqPicker(candidates: candidates),
+    );
+    if (picked == null || !mounted) return;
+    final ok = await vm.addDependency(task.id, picked);
+    if (!mounted || ok) return;
+    messenger
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(content: Text(s.couldNotAddPrereq)),
+      );
+  }
+
+  Future<void> _removePrerequisite(Task task, String prereqId) async {
+    await context.read<TasksBoardViewModel>().removeDependency(task.id, prereqId);
+  }
+
+  Future<void> _deleteCurrentTask() async {
+    final s = context.l10n;
+    final vm = context.read<TasksBoardViewModel>();
+    final nav = context.read<NavigationService>();
+    Task? task;
+    for (final t in vm.tasks) {
+      if (t.id == widget.taskId) {
+        task = t;
+        break;
+      }
+    }
+    if (task == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(s.deleteTaskQuestion),
+        content: Text(s.deleteTaskBody(task!.title)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(s.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              s.delete,
+              style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await vm.deleteTaskBridging(widget.taskId);
+    if (!mounted) return;
+    nav.goTasks(widget.repoId);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     return Scaffold(
-      appBar: AppBar(title: const Text('Task details')),
+      appBar: AppBar(
+        title: Text(s.taskDetailsTitle),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: s.deleteTaskTooltip,
+            onPressed: _deleteCurrentTask,
+          ),
+        ],
+      ),
       body: Consumer2<TasksBoardViewModel, MembersViewModel>(
         builder: (ctx, tasksVm, membersVm, _) {
           final task = tasksVm.tasks.firstWhere(
@@ -192,7 +283,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
 
               // ---- Assignee ----
               const SizedBox(height: AppDimens.spacingLg),
-              _SectionTitle('Assignee'),
+              _SectionTitle(s.assignee),
               const SizedBox(height: AppDimens.spacingSm),
               _AssigneeRow(
                 assigneeId: task.assigneeId,
@@ -203,7 +294,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
               // ---- Description ----
               if (task.description.isNotEmpty) ...[
                 const SizedBox(height: AppDimens.spacingLg),
-                _SectionTitle('Description'),
+                _SectionTitle(s.descriptionSection),
                 const SizedBox(height: AppDimens.spacingSm),
                 Text(task.description, style: theme.textTheme.bodyMedium),
               ],
@@ -211,7 +302,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
               // ---- Implementation details (acceptance criteria) ----
               if (task.acceptanceCriteria.isNotEmpty) ...[
                 const SizedBox(height: AppDimens.spacingLg),
-                _SectionTitle('Implementation details'),
+                _SectionTitle(s.implementationDetails),
                 const SizedBox(height: AppDimens.spacingSm),
                 for (final c in task.acceptanceCriteria)
                   Padding(
@@ -237,20 +328,38 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
               // ---- Subtasks ----
               if (subtasks.isNotEmpty) ...[
                 const SizedBox(height: AppDimens.spacingLg),
-                _SectionTitle('Subtasks'),
+                _SectionTitle(s.subtasks),
                 const SizedBox(height: AppDimens.spacingSm),
                 for (final t in subtasks)
                   _TaskRefTile(repoId: widget.repoId, task: t),
               ],
 
-              // ---- Dependencies ----
-              if (deps.isNotEmpty) ...[
-                const SizedBox(height: AppDimens.spacingLg),
-                _SectionTitle('Depends on'),
-                const SizedBox(height: AppDimens.spacingSm),
+              // ---- Dependencies (parents) ----
+              const SizedBox(height: AppDimens.spacingLg),
+              Row(
+                children: [
+                  Expanded(child: _SectionTitle(s.dependsOn)),
+                  TextButton.icon(
+                    onPressed: () => _addPrerequisite(task),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: Text(s.add),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppDimens.spacingSm),
+              if (deps.isEmpty)
+                Text(
+                  s.noPrerequisites,
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                )
+              else
                 for (final t in deps)
-                  _TaskRefTile(repoId: widget.repoId, task: t),
-              ],
+                  _TaskRefTile(
+                    repoId: widget.repoId,
+                    task: t,
+                    onRemove: () => _removePrerequisite(task, t.id),
+                  ),
 
               // ---- GitHub links ----
               if (task.githubIssueNumber != null ||
@@ -286,7 +395,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
               const SizedBox(height: AppDimens.spacingLg),
               Row(
                 children: [
-                  Expanded(child: _SectionTitle('Handoff')),
+                  Expanded(child: _SectionTitle(s.handoff)),
                   TextButton.icon(
                     onPressed:
                         _generatingHandoff ? null : () => _regenerateHandoff(task),
@@ -298,7 +407,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
                           )
                         : const Icon(Icons.auto_awesome, size: 18),
                     label: Text(
-                      handoff == null ? 'Generate' : 'Regenerate',
+                      handoff == null ? s.generate : s.regenerate,
                     ),
                   ),
                 ],
@@ -310,9 +419,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
                   padding: const EdgeInsets.all(AppDimens.spacingMd),
                   child: handoff == null
                       ? Text(
-                          'No handoff doc yet. It is generated automatically '
-                          'when this task\'s prerequisites are completed, or '
-                          'tap Generate.',
+                          s.noHandoffYet,
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
@@ -381,11 +488,12 @@ class _AssigneeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final id = assigneeId;
     final profile = id == null ? null : membersVm.profileFor(id);
-    final label = id == null ? 'Unassigned' : membersVm.labelFor(id);
+    final label = id == null ? s.unassigned : membersVm.labelFor(id);
 
     return Row(
       children: [
@@ -403,7 +511,7 @@ class _AssigneeRow extends StatelessWidget {
         TextButton.icon(
           onPressed: onEdit,
           icon: const Icon(Icons.person_outline, size: 18),
-          label: Text(id == null ? 'Assign' : 'Change'),
+          label: Text(id == null ? s.assign : s.change),
         ),
       ],
     );
@@ -425,6 +533,7 @@ class _AssigneePicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final theme = Theme.of(context);
     return SafeArea(
       child: ListView(
@@ -439,7 +548,7 @@ class _AssigneePicker extends StatelessWidget {
               AppDimens.spacingSm,
             ),
             child: Text(
-              'Assign to',
+              s.assignToTitle,
               style: theme.textTheme.titleMedium
                   ?.copyWith(fontWeight: FontWeight.w700),
             ),
@@ -460,14 +569,14 @@ class _AssigneePicker extends StatelessWidget {
           const Divider(height: 1),
           ListTile(
             leading: const Icon(Icons.person_off_outlined),
-            title: const Text('Unassign'),
+            title: Text(s.unassign),
             enabled: currentAssigneeId != null,
             onTap: () => Navigator.of(context).pop(_kUnassign),
           ),
           ListTile(
             leading: const Icon(Icons.group_add_outlined),
-            title: const Text('Import collaborators from GitHub'),
-            subtitle: const Text('Adds teammates who already use GitSync'),
+            title: Text(s.importCollaborators),
+            subtitle: Text(s.importCollaboratorsSub),
             onTap: () => Navigator.of(context).pop(_kImport),
           ),
         ],
@@ -511,19 +620,87 @@ class _Avatar extends StatelessWidget {
 // A tappable row for a related task (subtask / dependency): title + status,
 // navigates to that task's detail page.
 class _TaskRefTile extends StatelessWidget {
-  const _TaskRefTile({required this.repoId, required this.task});
+  const _TaskRefTile({
+    required this.repoId,
+    required this.task,
+    this.onRemove,
+  });
   final String repoId;
   final Task task;
+  // When set, shows a ✕ to unlink this prerequisite.
+  final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     return Card(
       margin: const EdgeInsets.only(bottom: AppDimens.spacingSm),
       child: ListTile(
         title: Text(task.title, maxLines: 2, overflow: TextOverflow.ellipsis),
-        trailing: _StatusChip(status: task.status),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _StatusChip(status: task.status),
+            if (onRemove != null)
+              IconButton(
+                icon: const Icon(Icons.close, size: 18),
+                tooltip: s.removePrerequisite,
+                onPressed: onRemove,
+              ),
+          ],
+        ),
         onTap: () => Provider.of<NavigationService>(context, listen: false)
             .goTaskDetails(repoId, task.id),
+      ),
+    );
+  }
+}
+
+// Scrollable bottom-sheet picker of tasks that can become a prerequisite.
+class _PrereqPicker extends StatelessWidget {
+  const _PrereqPicker({required this.candidates});
+  final List<Task> candidates;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.l10n;
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppDimens.spacingMd,
+              0,
+              AppDimens.spacingMd,
+              AppDimens.spacingSm,
+            ),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                s.addPrerequisite,
+                style: theme.textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+          Flexible(
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: candidates.length,
+              itemBuilder: (ctx, i) {
+                final t = candidates[i];
+                return ListTile(
+                  leading: _StatusChip(status: t.status),
+                  title:
+                      Text(t.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+                  onTap: () => Navigator.of(ctx).pop(t.id),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

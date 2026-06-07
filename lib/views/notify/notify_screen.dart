@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../services/navigation.dart';
 
 // NotifyScreen — landing page when the user taps an FCM notification.
@@ -10,21 +11,22 @@ class NotifyScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     return Scaffold(
-      appBar: AppBar(title: const Text('Notification')),
+      appBar: AppBar(title: Text(s.notificationTitle)),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Icon(Icons.notifications, size: 64),
             const SizedBox(height: 16),
-            const Text('Opened from a push notification.'),
+            Text(s.openedFromPush),
             const SizedBox(height: 16),
             FilledButton(
               onPressed: () =>
                   Provider.of<NavigationService>(context, listen: false)
                       .goRepos(),
-              child: const Text('Back to repos'),
+              child: Text(s.backToRepos),
             ),
           ],
         ),
