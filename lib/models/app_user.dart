@@ -22,6 +22,13 @@ class AppUser {
   final String? discordUserId;
 
   final String? fcmToken;
+
+  // UI language preference (`AppLocale.prefValue`: 'en' | 'zhHant'). Written by
+  // the client so the backend can localize push notifications per recipient
+  // (see functions `tools/i18n.ts`). The client itself reads its language from
+  // LocaleNotifier / SharedPreferences, not from here.
+  final String? locale;
+
   final List<String> expertiseTags;
   Timestamp? _createdAt;
   Timestamp get createdAt => _createdAt ?? Timestamp.now();
@@ -35,6 +42,7 @@ class AppUser {
     this.githubAccessToken,
     this.discordUserId,
     this.fcmToken,
+    this.locale,
     this.expertiseTags = const [],
   });
 
@@ -47,6 +55,7 @@ class AppUser {
     this.githubAccessToken,
     this.discordUserId,
     this.fcmToken,
+    this.locale,
     required this.expertiseTags,
     required Timestamp? createdAt,
   }) : _createdAt = createdAt;
@@ -61,6 +70,7 @@ class AppUser {
       githubAccessToken: map['githubAccessToken'] as String?,
       discordUserId: map['discordUserId'] as String?,
       fcmToken: map['fcmToken'] as String?,
+      locale: map['locale'] as String?,
       expertiseTags: List<String>.from(map['expertiseTags'] as List? ?? []),
       createdAt: map['createdAt'] as Timestamp?,
     );
@@ -74,6 +84,7 @@ class AppUser {
         if (githubAccessToken != null) 'githubAccessToken': githubAccessToken,
         if (discordUserId != null) 'discordUserId': discordUserId,
         if (fcmToken != null) 'fcmToken': fcmToken,
+        if (locale != null) 'locale': locale,
         'expertiseTags': expertiseTags,
         'createdAt': _createdAt,
       };

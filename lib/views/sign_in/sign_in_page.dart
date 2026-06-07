@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../config/app_config.dart';
 import '../../l10n/app_strings.dart';
+import '../../services/locale_notifier.dart';
 import '../../services/navigation.dart';
 import '../../services/push_messaging.dart';
 import '../../theme/app_dimens.dart';
@@ -74,6 +75,13 @@ class SignInPage extends StatelessWidget {
                                   // mode has no Firebase app. Fire-and-forget so
                                   // the permission prompt doesn't block nav.
                                   final uid = vm.currentUid;
+                                  if (uid != null) {
+                                    // Mirror the chosen UI language to the user
+                                    // doc so backend push copy is localized.
+                                    Provider.of<LocaleNotifier>(ctx,
+                                            listen: false)
+                                        .attachUser(uid);
+                                  }
                                   if (!AppConfig.useFakeBackend && uid != null) {
                                     Provider.of<PushMessagingService>(ctx,
                                             listen: false)

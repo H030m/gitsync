@@ -39,6 +39,7 @@ class SettingsPage extends StatelessWidget {
             iconColor: Theme.of(context).colorScheme.error,
             onTap: () async {
               final nav = Provider.of<NavigationService>(context, listen: false);
+              Provider.of<LocaleNotifier>(context, listen: false).detachUser();
               await Provider.of<AuthenticationService>(context, listen: false)
                   .logOut();
               nav.goSignIn();

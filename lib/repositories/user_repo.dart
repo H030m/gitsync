@@ -27,6 +27,10 @@ abstract class UserRepository {
   });
   Future<void> updateFcmToken(String userId, String token);
   Future<void> updateDiscordUserId(String userId, String discordUserId);
+
+  /// Persist the user's UI language (`AppLocale.prefValue`) so the backend can
+  /// localize push notifications for them (see functions `tools/i18n.ts`).
+  Future<void> updateLocale(String userId, String locale);
 }
 
 class _LiveUserRepository implements UserRepository {
@@ -91,5 +95,14 @@ class _LiveUserRepository implements UserRepository {
     await _db.doc(FirestorePaths.user(userId)).update({
       'discordUserId': discordUserId,
     }).timeout(_timeout);
+  }
+
+  @override
+  Future<void> updateLocale(String userId, String locale) async {
+    // set+merge (not update) so it never throws if the user doc write is racing
+    // sign-in's upsert — the locale field is created either way.
+    await _db
+        .doc(FirestorePaths.user(userId))
+        .set({'locale': locale}, SetOptions(merge: true)).timeout(_timeout);
   }
 }

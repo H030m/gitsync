@@ -17,6 +17,7 @@ import { generateHandoffFlow } from '../flows/generateHandoff';
 import { setIssueAssignees } from '../services/githubClient';
 import { markIdempotent } from '../tools/idempotency';
 import { notifyAssignee } from '../tools/notify';
+import { notifyMessages } from '../tools/i18n';
 
 export const onTaskUpdated = onDocumentUpdated(
   {
@@ -119,10 +120,10 @@ export const onTaskUpdated = onDocumentUpdated(
         if (assigneeId) {
           await notifyAssignee(
             assigneeId,
-            {
-              title: '有新任務可以開始了',
+            (locale) => ({
+              title: notifyMessages.taskReadyTitle(locale),
               body: String(b.title ?? doc.id),
-            },
+            }),
             { type: 'task_ready', repoId, taskId: doc.id },
           );
         }

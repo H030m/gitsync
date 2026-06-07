@@ -184,6 +184,10 @@ page in isolation still build. In async callbacks, capture `final s = context.l1
 *before* the first `await` (don't touch context after await). `MaterialApp` wires
 `locale` + `supportedLocales` + the Global*Localizations delegates so built-in
 widgets localize too. Proper nouns / IDs (e.g. "GitHub", "Issue #N") stay as-is.
+`LocaleNotifier` also **mirrors the choice to the backend** (`users/{uid}.locale`
+via `UserRepository.updateLocale`) once a user is attached (`attachUser` on
+sign-in, `detachUser` on sign-out) so server-sent FCM push copy is localized per
+recipient — see `database-guidelines.md` "Localizing outbound push".
 
 ---
 

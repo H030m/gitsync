@@ -147,6 +147,22 @@ describe('onTaskUpdated', () => {
     );
   });
 
+  it('FCM title is localized to the recipient locale (en)', async () => {
+    seedTask('A', { status: 'done', title: 'A' });
+    seedTask('B', { status: 'todo', title: 'Build UI', dependsOn: ['A'] });
+    mockAssignTaskFlow.mockResolvedValue({ assigneeId: 'u1', reasoning: 'x' });
+    seedUser('u1', { fcmToken: 'tok-1', locale: 'en' });
+
+    await handler(makeEvent('in_progress', 'done', 'A'));
+
+    expect(mockSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        token: 'tok-1',
+        notification: { title: 'A new task is ready to start', body: 'Build UI' },
+      }),
+    );
+  });
+
   it('already-assigned ready downstream → no assignTaskFlow, but FCM still sent', async () => {
     seedTask('A', { status: 'done', title: 'A' });
     seedTask('B', { status: 'todo', title: 'B', dependsOn: ['A'], assigneeId: 'u2' });
