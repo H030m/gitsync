@@ -59,7 +59,13 @@ class _LiveAuthenticationService implements AuthenticationService {
     final user = cred.user;
     if (user == null) return null;
 
-    final accessToken = (cred.credential as OAuthCredential?)?.accessToken;
+    // On Android `signInWithProvider` hands back a base `AuthCredential`
+    // (not an `OAuthCredential`), so a hard `as OAuthCredential?` cast throws
+    // "type 'AuthCredential' is not a subtype of OAuthCredential?". Guard with
+    // `is` so the token is read when present and degrades to null otherwise.
+    final credential = cred.credential;
+    final accessToken =
+        credential is OAuthCredential ? credential.accessToken : null;
 
     await _userRepository.upsertUserFromAuth(
       userId: user.uid,

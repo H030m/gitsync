@@ -37,9 +37,31 @@ flutter run        # 預設就是 fake backend,自動以 demo 帳號登入
    firebase login
    dart pub global activate flutterfire_cli
    flutterfire configure   # 產生真的 lib/firebase_options.dart(覆蓋 placeholder)
-   flutter run --dart-define=BACKEND=live
    ```
-3. App 內用 **GitHub 帳號登入**——加 repo、分支圖、AI 解釋 commit 都是用你
+3. **(Android 必做)登記你這台機器的 debug 簽章指紋** — 否則 App 內點
+   「使用 GitHub 登入」會報 `[firebase_auth/invalid-cert-hash]`。原因:每台機器
+   的 `~/.android/debug.keystore` 都是各自亂數產生、SHA 指紋都不同,Firebase
+   要靠它驗證 app 身分,沒登記就擋下來。**每個新隊友、每台新機器都要做一次**:
+
+   1. 撈出你的 SHA-1 / SHA-256(`keytool` 在你的 JDK `bin` 下;路徑依安裝而異):
+      ```powershell
+      # storepass / keypass 都是固定值 "android"(debug keystore 的預設密碼)
+      keytool -list -v -keystore "$env:USERPROFILE\.android\debug.keystore" `
+        -alias androiddebugkey -storepass android -keypass android
+      ```
+      > 找不到 `keytool`?它在 JDK 裡,例如
+      > `& "C:\Program Files\Microsoft\jdk-17.x.x-hotspot\bin\keytool.exe" ...`,
+      > 或先 `flutter doctor -v` 看 Java SDK 路徑。
+   2. 到 Firebase Console 把 **SHA-1 和 SHA-256 兩組都加進去**:
+      <https://console.firebase.google.com/project/gitsync-645b3/settings/general>
+      → Android app(package `com.example.gitsync`)→ **Add fingerprint**(加兩次)
+   3. 重新拉含指紋的設定檔,然後重新編譯(改了 `google-services.json` 必須重編,
+      熱重載無效):
+      ```powershell
+      flutterfire configure   # 重新下載 android/app/google-services.json
+      flutter run --dart-define=BACKEND=live
+      ```
+4. App 內用 **GitHub 帳號登入**——加 repo、分支圖、AI 解釋 commit 都是用你
    自己的 GitHub token 打 API,所以要用對目標 repo 有權限的帳號。
 
 後端(Cloud Functions / OpenAI / Discord bot)已部署在雲端,clone 的人
