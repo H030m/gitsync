@@ -16,6 +16,10 @@
 
 ---
 
+## 2026-06-10
+
+- **嘉駿 — Android 上機 live + GitHub 登入修復 + 前景通知（demo）**：app 首次在 Android 模擬器連雲端 Firebase 跑起來。**fix(auth)**：`signInWithProvider` 在 Android 回傳基底 `AuthCredential`，原 `as OAuthCredential?` 硬轉閃退 → 改 `is` 守衛（已 commit `30f929e`；後續 `accessToken` 多為 null，需 GitHub token 的功能待另案）。**fix(ui)**：Daily Contributions chip 在 label 是 raw UID 時 overflow → 名字限寬 + ellipsis（根因 report 缺 `githubLogin`/`displayName`，名字解析待另案）。**feat(notifications)**：前景 FCM 改用 `flutter_local_notifications` 彈可見系統通知（原只 `debugPrint`）+ Settings「傳送測試通知」demo 鈕 + Android core library desugaring；延續 `06-03-wire-fcm-notifications`。**docs(readme)**：Live 模式加 debug SHA 指紋登記步驟（每台機器各自登記，否則 GitHub 登入撞 `invalid-cert-hash`）。gate：analyze 改動檔 0 error、flutter test **79/79**、build apk 成功。分支 `feature/foreground-notifications`。
+
 ## 2026-06-04
 
 - **Bugfix：Commits tab 無限轉圈（webhook commit schema 跨層不一致）**：live 模式 Commits tab 永遠在 loading。根因是 `githubWebhook` 寫進 Firestore 的型別跟下游全部對不上 —— `committedAt` 寫 **ISO 字串**（Flutter `as Timestamp?` cast 丟例外 → stream error → VM 沒接 `onError` → spinner 卡死；且字串永遠 match 不到後端 `listRangeCommits`/Flutter `streamRange` 的 Timestamp 範圍查詢，**範圍日報會漏掉這些 commits**）、`filesChanged` 寫**數字**（Flutter 期待路徑陣列、`explainCommit` 也吃陣列）。修三層：(1) webhook 改寫 `committedAt: Timestamp`（ISO 解析失敗 fallback serverTimestamp）、`filesChanged: [...added,...removed,...modified]`；(2) Flutter `Commit.fromMap` 防禦性解析（容忍舊字串/數字形狀，救回既有壞 doc 的顯示）；(3) `CommitsViewModel` 補 `onError` + `streamError`/`retry()`，UI 加錯誤狀態與 Retry 鈕。**既有 prod 壞 doc** 需人工跑一次 [`functions/scripts/normalize-commits.mjs`](../../functions/scripts/normalize-commits.mjs)（支援 `--dry-run`；需 ADC 憑證），否則範圍查詢仍看不到舊 commits。webhook 修正本身也**尚未 deploy**。gate 全綠（functions jest 138/138、flutter test 20/20 含新回歸測試、analyze 0 error）。

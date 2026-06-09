@@ -46,3 +46,22 @@
 
 * 後端只認 `users/{uid}.fcmToken`；只要前端把 token 寫進去，現有發送就會生效。
 * 課程限制：FCM 屬 Firebase、可用；web 設定較繁，手機最單純（見團隊記憶 final-demo 限制）。
+
+## 2026-06-10 進度更新（嘉駿，分支 `feature/foreground-notifications`）
+
+部分完成 —— **前景顯示 + demo 觸發** 那一塊：
+
+* `initialize(userId)` 的接線 **早已補上**（`sign_in_page.dart` 登入成功後就 call），所以 token
+  寫入這條已通，非本次工作。
+* 本次補的是 PRD「待釐清/Requirements」裡的 **foreground 行為**：`onMessage` 不再只是
+  `debugPrint`，改用新的 `LocalNotificationsService`（`flutter_local_notifications`）在 app 前景
+  也彈出可見的系統通知（Android 前景不會自動顯示 FCM notification message）。
+* 加 **Settings →「傳送測試通知」** 作為 demo 觸發點，不必等後端真的發 FCM。
+* Android build 需 core library desugaring（`flutter_local_notifications` 用 `java.time`）。
+
+**仍未做（維持 out of scope）**：
+
+* Web push（`web/firebase-messaging-sw.js` + `getToken(vapidKey:)`）—— demo 走手機，不做 web。
+* 通知點擊深連結目前只導到 `/notify`（FCM 背景點擊的 `repoId+taskId` 深連結邏輯沿用既有）。
+
+→ 平台已收斂為「手機」，原 PRD 的 web 分支可在 demo 後再評估是否需要。
