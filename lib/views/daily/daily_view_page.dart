@@ -840,9 +840,22 @@ class _ContributionsCard extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: AppDimens.spacingXs),
+                          // Cap the name width + ellipsize so a long fallback
+                          // label (the raw Firebase UID, used when the report
+                          // carries no githubLogin/displayName) can't overflow
+                          // the chip. Counts stay outside, always visible.
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 120),
+                            child: Text(
+                              _memberLabel(e),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelMedium,
+                            ),
+                          ),
+                          const SizedBox(width: AppDimens.spacingXs),
                           Text(
-                            '${_memberLabel(e)}  ·  ${e.value.tasksDone}✓ '
-                            '${e.value.commits}⎇',
+                            '·  ${e.value.tasksDone}✓ ${e.value.commits}⎇',
                             style: theme.textTheme.labelMedium,
                           ),
                         ],
