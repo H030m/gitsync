@@ -35,10 +35,21 @@ class SettingsPage extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.notifications_active_outlined),
             title: Text(s.sendTestNotification),
-            onTap: () => LocalNotificationsService.instance.show(
-              title: s.testNotificationTitle,
-              body: s.testNotificationBody,
-            ),
+            onTap: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              try {
+                await LocalNotificationsService.instance.show(
+                  title: s.testNotificationTitle,
+                  body: s.testNotificationBody,
+                );
+              } catch (e) {
+                // Most likely the app was hot-restarted without a full rebuild,
+                // so the native plugin isn't in the running APK.
+                messenger.showSnackBar(
+                  SnackBar(content: Text('${s.notificationFailed}: $e')),
+                );
+              }
+            },
           ),
           const SizedBox(height: AppDimens.spacingSm),
           _SectionLabel(s.account),

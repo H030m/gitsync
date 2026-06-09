@@ -170,6 +170,10 @@ class AppStrings {
         'This is a test notification 🎉',
         '這是一則測試通知 🎉',
       );
+  String get notificationFailed => _(
+        "Notification failed (try a full rebuild, not just hot restart)",
+        '通知未送出(請完整重新編譯，非只 hot restart)',
+      );
   String get themeSystem => _('System', '系統');
   String get themeLight => _('Light', '淺色');
   String get themeDark => _('Dark', '深色');
