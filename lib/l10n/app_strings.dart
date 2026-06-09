@@ -161,6 +161,15 @@ class AppStrings {
   String get language => _('Language', '語言');
   String get account => _('Account', '帳號');
   String get signOut => _('Sign out', '登出');
+  String get notifications => _('Notifications', '通知');
+  String get sendTestNotification =>
+      _('Send test notification', '傳送測試通知');
+  String get testNotificationTitle =>
+      _('GitSync', 'GitSync');
+  String get testNotificationBody => _(
+        'This is a test notification 🎉',
+        '這是一則測試通知 🎉',
+      );
   String get themeSystem => _('System', '系統');
   String get themeLight => _('Light', '淺色');
   String get themeDark => _('Dark', '深色');

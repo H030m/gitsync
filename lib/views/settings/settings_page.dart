@@ -5,6 +5,7 @@ import '../../config/app_config.dart';
 import '../../l10n/app_locale.dart';
 import '../../l10n/app_strings.dart';
 import '../../services/authentication.dart';
+import '../../services/local_notifications.dart';
 import '../../services/locale_notifier.dart';
 import '../../services/navigation.dart';
 import '../../services/theme_mode_notifier.dart';
@@ -29,6 +30,16 @@ class SettingsPage extends StatelessWidget {
           const SizedBox(height: AppDimens.spacingSm),
           _SectionLabel(s.appearance),
           const _ThemeSelector(),
+          const SizedBox(height: AppDimens.spacingSm),
+          _SectionLabel(s.notifications),
+          ListTile(
+            leading: const Icon(Icons.notifications_active_outlined),
+            title: Text(s.sendTestNotification),
+            onTap: () => LocalNotificationsService.instance.show(
+              title: s.testNotificationTitle,
+              body: s.testNotificationBody,
+            ),
+          ),
           const SizedBox(height: AppDimens.spacingSm),
           _SectionLabel(s.account),
           ListTile(
