@@ -11,6 +11,7 @@
 | 隊員 | 在做什麼 | 預計動的檔案 |
 |---|---|---|
 | 嘉駿 | Discord 整合（模組 B）| `discord-bot/`、`functions/src/handlers/discordMessageIngest.ts` |
+| 廷煥 | FCM 通知收尾（接手 06-03，分支 `feature/foreground-notifications`）| `lib/services/local_notifications.dart`、`lib/services/push_messaging.dart`、`lib/views/settings/settings_page.dart` |
 
 > 嘉駿剛把骨架鋪完（Sprint 1）。**接下來各模組隊員就 [`ARCHITECTURE.md §9`](../ARCHITECTURE.md#9-模組職責--隊員分工建議) 開工**，避免動到別人的層；如要跨層改動先在這列出。
 
@@ -18,6 +19,7 @@
 
 ## 2026-06-10
 
+- **廷煥 — 接手 FCM 通知 task、修權限被拒的靜默失敗**：經嘉駿同意接手 `06-03-wire-fcm-notifications`（assignee → smartalan91，分支沿用 `feature/foreground-notifications`）。乾淨環境重現「測試通知按了沒彈」→ 重現不出來（code 是好的）；實測證實根因候選之一：**通知權限被拒後按按鈕完全靜默**。修補：`ensurePermission()`（被拒先 re-prompt 一次）+ SnackBar 提示（l10n en/zh）；FCM `onMessage` 被動重畫刻意維持靜默。模擬器雙路徑實測通過、analyze 0 warn、test 79/79。lesson 沉澱至 spec（通知權限回饋慣例、`google-services.json` 佔位檔解法 → SETUP §5.10）。**待辦**：live FCM 端到端（環境未備）、併回 develop（settings_page 預期衝突）。詳見 [113062340_tinghuan.md](./113062340_tinghuan.md)。
 - **嘉駿 — Android 上機 live + GitHub 登入修復 + 前景通知（demo）**：app 首次在 Android 模擬器連雲端 Firebase 跑起來。**fix(auth)**：`signInWithProvider` 在 Android 回傳基底 `AuthCredential`，原 `as OAuthCredential?` 硬轉閃退 → 改 `is` 守衛（已 commit `30f929e`；後續 `accessToken` 多為 null，需 GitHub token 的功能待另案）。**fix(ui)**：Daily Contributions chip 在 label 是 raw UID 時 overflow → 名字限寬 + ellipsis（根因 report 缺 `githubLogin`/`displayName`，名字解析待另案）。**feat(notifications)**：前景 FCM 改用 `flutter_local_notifications` 彈可見系統通知（原只 `debugPrint`）+ Settings「傳送測試通知」demo 鈕 + Android core library desugaring；延續 `06-03-wire-fcm-notifications`。**docs(readme)**：Live 模式加 debug SHA 指紋登記步驟（每台機器各自登記，否則 GitHub 登入撞 `invalid-cert-hash`）。gate：analyze 改動檔 0 error、flutter test **79/79**、build apk 成功。分支 `feature/foreground-notifications`。
 
 ## 2026-06-04

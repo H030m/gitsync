@@ -65,3 +65,41 @@
 * 通知點擊深連結目前只導到 `/notify`（FCM 背景點擊的 `repoId+taskId` 深連結邏輯沿用既有）。
 
 → 平台已收斂為「手機」，原 PRD 的 web 分支可在 demo 後再評估是否需要。
+
+## 2026-06-10 接手（廷煥 / smartalan91）
+
+嘉駿同意把此 task 交給廷煥接續。接手時的狀態：
+
+* 分支 `feature/foreground-notifications`（4 commits，尚未併回 develop）。
+* 嘉駿口頭回報「跑起來是錯的」—— 具體症狀**待釐清**（journal 只寫到「尚未在裝置端實測」）。
+* develop 已前進（7 個 UI redesign commits 移入，含 `settings_page.dart` 大改），
+  本分支的 Settings 測試按鈕改動**預期會與 develop 衝突**，併回前需處理。
+
+## 症狀（已確認，2026-06-10）
+
+* **(a) Settings「傳送測試通知」按了沒彈**（嘉駿口頭回報）。
+* **重現結果（廷煥，2026-06-10）：在乾淨環境重現不出來——測試通知正常彈出。**
+  環境：AVD Medium_Phone_API_36.1（Android 16）、fake mode、cold install（非 hot reload）。
+* 推論：code 本身可運作。嘉駿端的「沒彈」較可能是環境因素：
+  (1) hot reload 進已在跑的 app → 新 plugin 未註冊（journal 寫他「尚未在裝置端
+  hot-restart 實測」，與此吻合）；(2) 該裝置先前拒絕過通知權限 → `show()` 靜默失敗。
+* **既有 UX 缺陷**：權限被拒時按按鈕完全沒有回饋（靜默失敗）——這正是「按了沒彈」
+  難以自我診斷的原因，列入本 task 修補範圍（見 Requirements）。
+* **缺陷已實測證實（廷煥，2026-06-10）**：在模擬器上拒絕通知權限後重進 app，
+  按「傳送測試通知」確實完全無反應。修法：按下時檢查權限 → 未授權先 re-prompt →
+  仍被拒則 SnackBar 提示去系統設定開啟（不引入新套件）。
+
+## Open Questions（接手後待釐清）
+
+* [環境] 廷煥本機尚無 Android emulator —— 重現前要先建一台 AVD。
+* [環境] live 端到端實測（後端真發 FCM）前需：加入 Firebase 專案、`flutterfire configure`、
+  登記 debug SHA（Console 操作由本人親跑）。
+
+## 接手後的 Acceptance Criteria
+
+* [x] Settings「傳送測試通知」在 Android 裝置/模擬器上確實彈出系統通知（2026-06-10 廷煥實測）
+* [x] 權限被拒時按測試通知有明確回饋（SnackBar 提示開啟通知；2026-06-10 廷煥實測）
+* [ ] 後端 `notifyAssignee` 真發的 FCM：app 前景會重畫為可見通知、背景會收到系統推播
+* [ ] 點擊通知導向正確頁面（現行為 `/notify`，沿用既有 deep link 邏輯）
+* [ ] `flutter analyze` 0 error/0 warning、`flutter test` 全綠
+* [ ] 與最新 develop 合併乾淨（Settings 頁衝突解掉）後可開 PR
