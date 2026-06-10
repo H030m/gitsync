@@ -109,7 +109,8 @@ apps/gitsync/
 │   ├── webhookId: number                       # GitHub webhook ID (供刪除用)
 │   ├── webhookSecret: string                   # HMAC 驗證
 │   ├── discordWebhookUrl: string?              # 用戶設定的 Discord channel webhook (outbound 通知)
-│   ├── discordChannelIds: string[]             # 監聽的 Discord channel IDs (給 forwarder bot 對照用)
+│   ├── discordChannelIds: string[]             # 監聽的 Discord channel IDs (由 /gitsync-listen → setRepoChannel arrayUnion)
+│   ├── discordGuildId: string?                 # 綁定的 Discord guild (多 guild 時用；setRepoChannel 寫入)
 │   ├── memberIds: string[]                     # 鏡像 subcollection 方便 array-contains query
 │   ├── isBreakingDown: boolean                 # 分散式鎖：AI 拆解任務進行中
 │   ├── breakdownStartedAt: Timestamp?          # 配 isBreakingDown 用；> 5min 視為卡住可強制解鎖
@@ -174,6 +175,23 @@ apps/gitsync/
 │   │   ├── linkedTaskIds: string[]             # AI 推斷
 │   │   ├── timestamp: Timestamp
 │   │   └── embedding: Vector?                  # FieldValue.vector(), 1536 dim — RAG 用
+│   │
+│   ├── fetchRequests/{requestId}               # on-demand Discord 回補請求佇列 (§7.2)
+│   │   ├── repoId: string
+│   │   ├── date: string                        # YYYY-MM-DD (要回補哪一天)
+│   │   ├── status: "pending" | "claimed" | "ingested" | "done" | "digest_failed"
+│   │   ├── requestedBy: userId
+│   │   ├── createdAt: Timestamp
+│   │   ├── claimedAt: Timestamp?
+│   │   ├── ingestedCount: number?
+│   │   ├── ingestedAt: Timestamp?
+│   │   └── completedAt: Timestamp?
+│   │
+│   ├── discordDigests/{YYYY-MM-DD}             # AI 整理的每日 Discord digest (§7.4)
+│   │   ├── date: string
+│   │   ├── markdown: string                    # AI 生成 (gpt-4o-mini)
+│   │   ├── messageCount: number
+│   │   └── generatedAt: Timestamp
 │   │
 │   └── dailyReports/{YYYY-MM-DD}
 │       ├── repoId: string
@@ -682,92 +700,114 @@ read:user       # 讀 user info
 
 ---
 
-## 7. Discord 整合（簡化版）
+## 7. Discord 整合（on-demand 回補版）
 
-> **設計取捨**：原本規劃 slash command + interactions endpoint + Cloud Tasks worker 的完整 bot 架構（3 秒回應限制 + Deferred Response + Cloud Tasks 解耦）整套都不做。改用更簡單的「**訊息直接寫 Firestore，App 端負責整理**」模型。
+> **演進歷程（2026-06-02 再次調整）**：
+> 1. 最初規劃 slash command interactions endpoint + Cloud Tasks worker 的完整 bot——**砍掉**（3 秒回應限制太麻煩）。
+> 2. 第二版改成「常駐 forwarder bot 即時把每則訊息 POST 進 Firestore」的**單向即時串流**。
+> 3. **本版（現行）**：再砍掉「即時轉發」，改成 **on-demand 批次回補**——平常不抓訊息，使用者在 App「Daily → Discord」按 refresh 時，bot 才用 Discord REST API 回補當天訊息，並由 AI 整理成一份**每日 digest**。頻道對照也從 bot 的靜態 `.env` 改成 **Firestore 動態設定**（用 `/gitsync-listen` slash command 綁定）。
 >
-> 換言之：Discord 不是「指令介面」，而是**單向資料源**——成員在 Discord 自然聊天，所有訊息存進 Firestore，APP 端在需要時（如生成交接文件、組日報）才去 RAG 搜尋這些訊息。
+> 核心理由見 [`MEMORY.md` 2026-06-02 「Discord 改 on-demand 回補 + 頻道對照移進 Firestore」](./MEMORY.md)。Discord 仍是**單向資料源**（成員自然聊天，App 端在需要時才拉），只是抓取時機從「即時」改成「按需」。
 
-### 7.1 兩條資料流
+### 7.1 三條資料流
 
 ```
-┌─────────────────────────────┐                ┌──────────────────────────────┐
-│  Discord (團隊聊天頻道)       │                │  Discord Channel (notify 用) │
-└──────────────┬──────────────┘                └──────────────▲───────────────┘
-               │                                              │
-   (Inbound: 訊息進來)                          (Outbound: 任務完成通知)
-               │                                              │
-               ▼                                              │
-  ┌──────────────────────────────┐         ┌─────────────────┴──────────────┐
-  │ discordMessageIngest         │         │ onTaskUpdated (Firestore Trigger)│
-  │ HTTPS Cloud Function         │         │                                  │
-  │ 由使用者另外設置的 forwarder │         │ 任務 status → "done" 時觸發       │
-  │ 把 message POST 過來         │         │ POST Discord channel webhook URL │
-  └──────────────┬──────────────┘         └──────────────────────────────────┘
-                 │
-                 ▼
-       apps/gitsync/repos/{repoId}/discordMessages/{messageId}
+┌──────────────────────────────────────────────────────────────────────────┐
+│ Inbound（on-demand 回補）                                                   │
+│                                                                            │
+│  App「Daily→Discord」refresh ─▶ requestDiscordFetch (onCall, auth)         │
+│                                  └▶ fetchRequests/{id} {repoId,date,        │
+│                                                          status:'pending'}  │
+│  常駐 bot ─ 輪詢 claimDiscordFetch (secret) ─ 認領一筆 → status:'claimed'   │
+│           ─▶ Discord REST GET /channels/{id}/messages（當天、Taipei 日界）  │
+│           ─ shouldKeepMessage 第一道過濾 ─▶ POST discordMessageIngest       │
+│           ─▶ completeDiscordFetch (secret) → status:'ingested'             │
+│                └▶ discordDailyDigestFlow → discordDigests/{date} (AI md)    │
+│                   → status:'done'                                          │
+│  App ─ 串 fetchRequests/{id}.status + discordDigests/{date} ─▶ UI 顯示      │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────┐    ┌──────────────────────────────────────┐
+│ 頻道設定（/gitsync-listen）   │    │ Outbound（任務完成通知，未變）         │
+│                              │    │                                        │
+│ 在頻道內輸入                  │    │ onTaskUpdated (Firestore Trigger)      │
+│ /gitsync-listen url:<repoUrl>│    │ 任務 status → "done" 時觸發            │
+│  ─▶ setRepoChannel (secret)  │    │ POST repos.discordWebhookUrl           │
+│     arrayUnion channelId →   │    │ （channel webhook，純單向 POST）       │
+│     repos.discordChannelIds  │    └──────────────────────────────────────┘
+└──────────────────────────────┘
 ```
 
-### 7.2 Inbound — 訊息怎麼進 Firestore
+**為什麼要走 Firestore queue 中轉**：bot 跑在本機 / VPS，**沒有對外 URL，也沒有 Firestore 憑證**——App 無法直接呼叫 bot，bot 也不能直接寫 Firestore。所以 App 的 refresh 只能「寫一筆 `fetchRequests` 請求」，由常駐 bot 主動輪詢認領；bot 的所有 Firestore 讀寫都透過 secret-auth Cloud Functions 中轉（沿用 `discordMessageIngest` 的 `x-ingest-secret` 模式，不必發 service-account key 給 bot）。
 
-**重點**：Cloud Functions 是 stateless 的，**不能維持常駐 Discord bot 連線**。所以「捕捉 Discord 所有訊息」這件事必須由 Cloud Functions **以外** 的東西做。三種選項（任選其一）：
+### 7.2 Inbound — on-demand 回補
 
-| 選項 | 怎麼做 | 適合場景 |
-|---|---|---|
-| **A. 本機 / VPS 跑 discord.js bot** | 寫一個小 bot，`messageCreate` event → POST 到 `discordMessageIngest` Cloud Function | 開發期 / Demo 期最簡單，使用者自己跑 |
-| **B. Discord Channel Outbound Webhook + 中繼** | 設定 channel 的 webhook，但 Discord 沒有原生「訊息送出時轉發到我的 URL」功能——須搭配 [Zapier / IFTTT / n8n] 或 Discord-MCP 之類中繼 | 不想自己跑 bot |
-| **C. Cloud Run 跑常駐 discord.js** | discord.js bot 部署到 Cloud Run（min-instance=1） | 正式上線；非 MVP |
+整條鏈路四個 Cloud Function + bot：
 
-**Demo 選 A**（使用者自己在本機 / 一台 VPS 跑 forwarder bot）。
+1. **`requestDiscordFetch`**（`onCall`，需登入）— App 的 refresh 按鈕呼叫。驗 `repoId` + `date`（`YYYY-MM-DD`），寫 `fetchRequests/{autoId}` `{repoId, date, status:'pending', requestedBy:uid, createdAt}`，回 `{requestId}`。
+2. **`claimDiscordFetch`**（`onRequest`，secret-auth）— 常駐 bot 每 ~5 秒輪詢。撈最舊一筆 `status=='pending'`（用 `collectionGroup('fetchRequests')` 或帶 repoId 過濾），在 transaction 內 re-read 確認仍 pending 才翻成 `claimed`（防兩個輪詢者搶同一筆）；回 `{requestId, repoId, date, channelIds}`（channelIds 來自 `repos/{repoId}.discordChannelIds`）或 `{none:true}`。
+3. **bot 回補**（`discord-bot/src/backfill.ts`）— 對該 repo 每個 channelId，用 `channel.messages.fetch`（`before` 游標往回翻頁）抓 **Asia/Taipei 當天 `[00:00, 24:00)`** 區間的訊息，過 `shouldKeepMessage` 第一道過濾，用 `sendWithRetry`（指數退避，見下）POST 到 `discordMessageIngest`。單一 channel 失敗只記 log、不中斷整批。
+4. **`completeDiscordFetch`**（`onRequest`，secret-auth）— bot 回補完後呼叫。先把請求標 `ingested`，再跑 `discordDailyDigestFlow`：成功標 `done`、digest 失敗標 `digest_failed`（訊息已寫入，digest 只是錦上添花，失敗不回 5xx）。
 
-**Cloud Function `discordMessageIngest`** 是 `onRequest` HTTP 端點，行為：
+**`discordMessageIngest`**（`onRequest`，secret-auth）行為不變（回補 POST 與舊版即時轉發共用此端點）：
 
-1. **驗共享密鑰** — header `x-ingest-secret` 比對 `DISCORD_INGEST_SECRET`（不是 Discord 自家簽章——這個 endpoint 不直接面向 Discord）。不符回 401。
+1. **驗共享密鑰** — header `x-ingest-secret` 比對 `DISCORD_INGEST_SECRET`，不符回 401。
 2. **驗 payload 結構** — body 期望含 `repoId`、`messageId`、`channelId`、`authorId`、`authorName`、`content`、`mentionedUserIds`、`timestamp`。任一缺漏回 400。
-3. **Idempotency** — `messageId` 是 Discord 端的全域唯一 ID，直接當文件 ID。先 `get` 看是否存在，存在直接回 200 `dup`。
-4. **寫入** — `repos/{repoId}/discordMessages/{messageId}`，欄位含 `repoId`（冗餘，供 vector 預過濾）、`channelId`、`authorId`、`authorName`、`content`、`mentionedUserIds`、`linkedTaskIds: []`（留空，等 `onDiscordMessageCreated` trigger 用 AI 推斷後補上）、`timestamp`（轉成 Firestore Timestamp）、`ingestedAt: serverTimestamp()`。
-5. **不算 embedding** — 那是 trigger 的事，這層不做（職責切分原則）。
+3. **Idempotency** — `messageId` 是 Discord 全域唯一 ID，直接當文件 ID，用 `ref.create()` 原子寫入兼去重（重送回 `{dup:true}`）。回補同一天多次也不會重複塞。
+4. **寫入** — `repos/{repoId}/discordMessages/{messageId}`，欄位含 `repoId`（冗餘，供 vector 預過濾）、`channelId`、`authorId`、`authorName`、`content`、`mentionedUserIds`、`linkedTaskIds: []`、`timestamp`、`ingestedAt`。
+5. **不算 embedding** — 那是 `onDiscordMessageCreated` trigger 的事（職責切分）。
 
-**Forwarder bot**（使用者另外跑，**不在 functions repo 內**）需具備以下能力：
+**bot 的能力與限制**（`discord-bot/`，獨立 package，**不在 functions repo 內**）：
 
-- **連線** — 用 `discord.js`，啟用 `Guilds` / `GuildMessages` / `MessageContent` 三個 intents
-- **頻道對照** — 維護一份 `channelId → repoId` 的對應表（手動設定）；收到訊息先查表，不在表內的頻道直接忽略
-- **過濾雜訊**（**重要**，在 forwarder 端就過，不要把噪聲送到 ingest endpoint，省 invocation + token）。`shouldKeepMessage(msg)` 規則：
-  - bot 發的訊息一律忽略
-  - 純附件 / 純貼圖（無文字內容）忽略
-  - 第一行 trim 後長度 < 5 字元忽略
-  - 命中以下任一 regex 忽略：純表情字（`haha`/`哈+`/`呵+`/`lol`/`gg` 等）、純應答詞（`ok`/`好`/`收到`/`了解`/`謝謝` 等）、純 `+1` / `-1`、純 emoji 字串、純連結
-- **指數退避重試**（`sendWithRetry`，**重要**，對抗冷啟動 + 429）：
-  - 上限 4 次重試，base delay 1 秒，指數退避（1s → 2s → 4s → 8s），加 0–500ms jitter 避免同時打
-  - 單次 timeout 8 秒（用 `AbortController` 包，覆蓋冷啟動的 1.5–3 秒）
-  - 4xx 非 429（如 401、400）直接放棄不重試；5xx 與 429 才重試
-  - 4 次全失敗 → log critical 後丟包（不無限重試卡死）
-- **不阻塞主執行緒** — `messageCreate` 事件 handler 內**不 await** `sendWithRetry`，讓它在背景跑，否則一個訊息卡住會擋住 discord.js 後續事件
+- **連線 intents** — `Guilds` / `GuildMessages` / `MessageContent` 三個。即使移除了即時轉發，**`MessageContent` 仍是必開的特權 intent**：REST 回補 `channel.messages.fetch` 只有在開了 Message Content Intent 時才回傳有內容的 `content`。
+- **不再有 `MessageCreate` 即時轉發** — 改成輪詢 queue + REST 回補。
+- **頻道對照來自 Firestore**（透過 claim 回傳的 `channelIds`），不再讀靜態 `CHANNEL_REPO_MAP`。
+- **第一道雜訊過濾** `shouldKeepMessage`（`discord-bot/src/filter.ts`）：bot 訊息忽略、純附件 / 純貼圖忽略、trim 後長度 < 5 忽略、命中 regex 黑名單忽略（純表情字 `haha`/`哈+`/`lol`/`gg`、純應答詞 `ok`/`好`/`收到`/`謝謝`、純 `+1`/`-1`、純 emoji、純連結）。
+- **指數退避重試** `sendWithRetry`（`discord-bot/src/ingest.ts`，對抗冷啟動 + 429）：上限 4 次重試、base 1s 指數退避（1s→2s→4s→8s）+ 0–500ms jitter、單次 timeout 8s、4xx 非 429 直接 drop、4 次全失敗 log critical 後丟包。
 
-**為什麼必須要 retry**：Cloud Functions 在閒置後啟動需 1.5–3 秒；Discord 一個 channel 突然多人發言時，瞬間多個並發請求會同時撞冷啟動（後續實例還在 spin up）+ 429。沒 retry → 對話直接 drop → RAG 缺資料。指數退避加 jitter 能把重試打散，等到 Functions 暖機完成。
+**第二層防護**：`discordMessageIngest` 端再過一次相同雜訊規則（`functions/src/tools/discordFilter.ts`，與 bot 端 `filter.ts` 同步維護）——防 bot 規則有漏或兩邊不一致。
 
-**第二層防護**：`discordMessageIngest` Cloud Function 端也再過一次相同的雜訊規則（防止 forwarder 規則有漏 / 多個 forwarder 不一致 / 或之後有人改 forwarder 沒改 server）。把規則邏輯抽到 `functions/src/tools/discordFilter.ts`，與 forwarder 規則同步維護。
+### 7.3 頻道設定 — `/gitsync-listen` slash command
 
-### 7.3 Outbound — 任務完成時通知 Discord
+頻道對照從靜態 `.env` 改成在 Discord 內動態綁定：
 
-用 Discord channel webhook URL（不需要 bot token，不需要 Cloud Tasks——這是純單向 POST，沒有 3 秒回應問題）。
+- **bot 註冊 guild slash command** `/gitsync-listen url:<repo-url>`（`discord-bot/src/commands.ts`）。用 **guild command**（非 global）所以即時生效。
+- **handler** 取當前 `guildId` + `channelId` + 使用者給的 repo URL，POST 到 `setRepoChannel`，以 **ephemeral** 訊息回覆結果（ephemeral interaction 回覆不吃 Send Messages 權限）。
+- **`setRepoChannel`**（`onRequest`，secret-auth）— 用 `parseGithubUrl` 把 URL 轉成 `repoId`（`${owner}_${repo}`，與 `addRepo` 同一套邏輯）；repo 不存在回 404（提示先在 App 加 repo）；存在則 `arrayUnion(channelId)` 進 `repos/{repoId}.discordChannelIds` 並設 `discordGuildId`。
+- **一頻道一次**：要監聽多個頻道就在每個頻道各跑一次 `/gitsync-listen`。
+- **MVP 授權缺口**：任何知道 repo URL 的 guild 成員都能綁定頻道，demo 可接受；未來硬化項：驗證下指令者是該 repo 成員。
 
-`repos/{repoId}` 已有 `discordWebhookUrl: string?` 欄位（使用者建立 channel webhook 後填入）。
+> ⚠️ **OAuth scope 影響**：加了 slash command 後，bot 邀請連結的 scope 要從 `bot` 改成 **`bot` + `applications.commands`**（重新邀請一次）。Bot Permissions 維持唯讀 `View Channels` + `Read Message History`（`permissions=66560`）不變——註冊指令與 ephemeral 回覆都不需要額外權限位元。
 
-實作放在 `functions/src/tools/discordNotify.ts`，提供 `notifyDiscord(webhookUrl, content)`：若 webhookUrl 為空就直接 return；否則 POST 一個 JSON `{ content }` 到 webhook URL，失敗用 `.catch()` 吞錯記 log 即可——通知不到不該影響主流程（Firestore 寫入應已完成）。
+### 7.4 AI 每日 digest
 
-`onTaskUpdated` trigger 內呼叫情境：當 `before.status !== 'done' && after.status === 'done'`，讀 repo 取 webhook URL，組訊息「✅ \`<task.title>\` 已完成。下一步：\`<nextTask.title>\`」推送即可。
+`discordDailyDigestFlow`（`functions/src/flows/discordDailyDigest.ts`）由 `completeDiscordFetch` 觸發：
 
-### 7.4 不做的部分（從原規劃移除）
+1. 讀該 repo 當天（Asia/Taipei `[00:00,24:00)`）的 `discordMessages`。
+2. 空的就 early-return（`markdown:null`，不呼叫 OpenAI）。
+3. 否則把 `authorName: content` 串成 transcript，用 `gpt-4o-mini` 整理成 markdown。
+4. 寫 `repos/{repoId}/discordDigests/{date}` `{date, markdown, messageCount, generatedAt}`。
 
-- ❌ `discordInteractions` Cloud Function（接 slash command）
-- ❌ Cloud Tasks queue (`discord-tasks`) + `discordAsyncWorker`
-- ❌ Discord Ed25519 簽章驗證（不需要，因為不接 Discord interactions）
-- ❌ Slash commands (`/gitsync-check`, `/gitsync-daily`, `/gitsync-assign`, `/gitsync-link`)
-- ❌ `DISCORD_PUBLIC_KEY` secret
+App 的「Daily → Discord」tab 串 `discordDigests/{今天}`，把 digest 卡片渲染在訊息列表上方（refresh 按鈕鏡像 Summary tab 的 Regenerate）。供日報 / 未來交接文件 RAG 取用。
 
-替代：所有「主動查詢 / 觸發」的動作都改在 **GitSync APP 內** 做（按鈕 + Firebase Callable）。Discord 端只負責「聊天就好」。
+### 7.5 Outbound — 任務完成時通知 Discord（未變）
+
+用 Discord channel webhook URL（不需要 bot token、不需要 Cloud Tasks——純單向 POST，沒有 3 秒回應問題）。
+
+`repos/{repoId}` 的 `discordWebhookUrl: string?` 欄位（使用者建立 channel webhook 後填入）。實作 `functions/src/tools/discordNotify.ts` 的 `notifyDiscord(webhookUrl, content)`：webhookUrl 為空直接 return；否則 POST `{ content }`，失敗 `.catch()` 吞錯記 log——通知失敗不該影響主流程。
+
+`onTaskUpdated` trigger：`before.status !== 'done' && after.status === 'done'` 時讀 repo webhook URL，推「✅ \`<task.title>\` 已完成。下一步：\`<nextTask.title>\`」。
+
+### 7.6 不做 / 已移除的部分
+
+- ❌ Discord Interactions HTTP endpoint + Ed25519 簽章驗證（slash command 走 bot 的 gateway 連線處理，不走 HTTP interactions）
+- ❌ Cloud Tasks queue + `discordAsyncWorker`、`DISCORD_PUBLIC_KEY` secret
+- ❌ **即時 `MessageCreate` 轉發**（本版移除，改 on-demand 回補）
+- ❌ **bot 端靜態 `CHANNEL_REPO_MAP`**（改 Firestore `discordChannelIds` + `/gitsync-listen`）
+- ❌ 排程 / 自動每日 ingest（只做 on-demand refresh）
+- ❌ 給 bot Firebase Admin service account（改用 poll-via-function）
+
+**注意**：bot 仍需 **24/7 常駐**——為了處理 slash command 與輪詢 fetch queue。正式上線可遷至 Cloud Run（min-instance=1）。
 
 ---
 

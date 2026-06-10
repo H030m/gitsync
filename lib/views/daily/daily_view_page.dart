@@ -193,79 +193,158 @@ class _DiscordTab extends StatelessWidget {
         if (vm.loading) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (vm.messages.isEmpty) {
-          return const EmptyState(
-            icon: Icons.forum_outlined,
-            title: '尚無 DC 訊息',
-            message: '已匯入的 Discord 訊息將會顯示於此。',
-          );
-        }
-        final scheme = Theme.of(ctx).colorScheme;
-        final isDark = Theme.of(ctx).brightness == Brightness.dark;
-        final cardBg = isDark ? const Color(0xFF222630) : scheme.surface;
-        return ListView.builder(
-          padding: const EdgeInsets.all(AppDimens.spacingMd),
-          itemCount: vm.messages.length,
-          itemBuilder: (_, i) {
-            final m = vm.messages[i];
-            final isEdge = i == 0 || i == vm.messages.length - 1;
-            return Padding(
-              padding: const EdgeInsets.only(bottom: AppDimens.spacingSm),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: cardBg,
-                  borderRadius: BorderRadius.circular(AppDimens.radiusLg),
-                  boxShadow: [
-                    BoxShadow(
-                      color: isDark
-                          ? Colors.black.withValues(alpha: isEdge ? 0.3 : 0.2)
-                          : Color(0xFF1565C0).withValues(alpha: isEdge ? 0.14 : 0.09),
-                      blurRadius: isEdge ? 8 : 3,
-                      offset: Offset(0, isEdge ? 2 : 1),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      m.authorName,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: scheme.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(AppDimens.radiusSm),
-                        border: Border.all(
-                          color: scheme.outlineVariant.withValues(alpha: 0.4),
-                        ),
-                      ),
-                      child: Text(
-                        m.content,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: scheme.onSurface,
-                          height: 1.5,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppDimens.spacingMd,
+                AppDimens.spacingMd,
+                AppDimens.spacingMd,
+                AppDimens.spacingSm,
               ),
-            );
-          },
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (vm.digest != null) ...[
+                    _DigestCard(markdown: vm.digest!.markdown),
+                    const SizedBox(height: AppDimens.spacingMd),
+                  ],
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton.icon(
+                      onPressed: vm.refreshing ? null : vm.refresh,
+                      icon: vm.refreshing
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.refresh),
+                      label: Text(vm.refreshing ? '擷取中…' : '重新整理'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(child: _MessageList(vm: vm)),
+          ],
         );
       },
     );
   }
 }
+
+class _DigestCard extends StatelessWidget {
+  const _DigestCard({required this.markdown});
+  final String markdown;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(AppDimens.spacingMd),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.auto_awesome_outlined,
+                    size: 20, color: theme.colorScheme.primary),
+                const SizedBox(width: AppDimens.spacingSm),
+                Text('Discord 摘要',
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w600)),
+              ],
+            ),
+            const SizedBox(height: AppDimens.spacingSm),
+            Text(markdown, style: theme.textTheme.bodyMedium),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MessageList extends StatelessWidget {
+  const _MessageList({required this.vm});
+  final DiscordMessagesViewModel vm;
+
+  @override
+  Widget build(BuildContext context) {
+    if (vm.messages.isEmpty) {
+      return const EmptyState(
+        icon: Icons.forum_outlined,
+        title: '尚無 DC 訊息',
+        message: '已匯入的 Discord 訊息將會顯示於此。',
+      );
+    }
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg = isDark ? const Color(0xFF222630) : scheme.surface;
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
+      itemCount: vm.messages.length,
+      itemBuilder: (_, i) {
+        final m = vm.messages[i];
+        final isEdge = i == 0 || i == vm.messages.length - 1;
+        return Padding(
+          padding: const EdgeInsets.only(bottom: AppDimens.spacingSm),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: cardBg,
+              borderRadius: BorderRadius.circular(AppDimens.radiusLg),
+              boxShadow: [
+                BoxShadow(
+                  color: isDark
+                      ? Colors.black.withValues(alpha: isEdge ? 0.3 : 0.2)
+                      : const Color(0xFF1565C0).withValues(alpha: isEdge ? 0.14 : 0.09),
+                  blurRadius: isEdge ? 8 : 3,
+                  offset: Offset(0, isEdge ? 2 : 1),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  m.authorName,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: scheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(AppDimens.radiusSm),
+                    border: Border.all(
+                      color: scheme.outlineVariant.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Text(
+                    m.content,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: scheme.onSurface,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 
 Widget _kvRow(String label, String value, ColorScheme scheme) {
   return Padding(

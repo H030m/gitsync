@@ -10,7 +10,7 @@
     },
     {
       "collectionGroup": "commits",
-      "queryScope": "COLLECTION_GROUP",
+      "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "repoId", "order": "ASCENDING" },
         {
@@ -21,7 +21,7 @@
     },
     {
       "collectionGroup": "commits",
-      "queryScope": "COLLECTION_GROUP",
+      "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "repoId", "order": "ASCENDING" },
         { "fieldPath": "author.login", "order": "ASCENDING" },
@@ -40,6 +40,14 @@
           "fieldPath": "embedding",
           "vectorConfig": { "dimension": 1536, "flat": {} }
         }
+      ]
+    },
+    {
+      "collectionGroup": "fetchRequests",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
       ]
     }
   ],

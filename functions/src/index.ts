@@ -12,11 +12,15 @@ export { generateHandoff } from './handlers/generateHandoff';
 export { summarizeDay } from './handlers/summarizeDay';
 export { setDiscordWebhook } from './handlers/setDiscordWebhook';
 export { subscribeToTopic } from './handlers/subscribeToTopic';
+export { requestDiscordFetch } from './handlers/requestDiscordFetch';
 
 // ---- HTTP (webhooks + Cloud Tasks workers) -------------------------------
 export { githubWebhook } from './handlers/githubWebhook';
 export { discordMessageIngest } from './handlers/discordMessageIngest';
 export { dailyReportWorker } from './handlers/dailyReportWorker';
+export { claimDiscordFetch } from './handlers/claimDiscordFetch';
+export { completeDiscordFetch } from './handlers/completeDiscordFetch';
+export { setRepoChannel } from './handlers/setRepoChannel';
 
 // ---- Firestore triggers --------------------------------------------------
 export { onTaskCreated } from './triggers/onTaskCreated';

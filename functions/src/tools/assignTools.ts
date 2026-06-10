@@ -5,6 +5,7 @@
 // where needed), normalize, return a plain JSON-serializable shape. The flow
 // (flows/assignTask.ts) owns the loop, the OpenAI calls, and the finalize
 // write — these helpers never call OpenAI and never mutate state.
+import { logger } from 'firebase-functions/v2';
 import { db } from '../admin';
 import { embed } from './embedding';
 
@@ -63,6 +64,13 @@ export interface MemberCommitHit {
  * `repoId == repoId AND author.login == githubLogin` (the repoId prefilter is
  * mandatory — see database-guidelines vector section). Tolerates a member with
  * no githubLogin or no commits by returning [].
+ *
+ * BEST-EFFORT (Rule D spirit): commit semantic search is only ONE of four
+ * assignment signals (workload / expertise / dependents are the others). The
+ * embedding + `findNearest` region is wrapped in try/catch so an embedding
+ * failure or a missing vector index (`9 FAILED_PRECONDITION`) degrades to `[]`
+ * + a `logger.warn` rather than throwing and killing the whole assignTaskFlow.
+ * This function NEVER throws — worst case it returns [].
  */
 export async function searchMemberCommits(
   repoId: string,
@@ -73,23 +81,35 @@ export async function searchMemberCommits(
   const githubLogin = userSnap.data()?.githubLogin as string | undefined;
   if (!githubLogin) return []; // can't map to commits → no signal
 
-  const queryVector = await embed(query);
-  const snap = await db
-    .collection(`apps/gitsync/repos/${repoId}/commits`)
-    .where('repoId', '==', repoId)
-    .where('author.login', '==', githubLogin)
-    .findNearest({
-      vectorField: 'messageEmbedding',
-      queryVector,
-      limit: 5,
-      distanceMeasure: 'COSINE',
-    })
-    .get();
+  try {
+    const queryVector = await embed(query);
+    const snap = await db
+      .collection(`apps/gitsync/repos/${repoId}/commits`)
+      .where('repoId', '==', repoId)
+      .where('author.login', '==', githubLogin)
+      .findNearest({
+        vectorField: 'messageEmbedding',
+        queryVector,
+        limit: 5,
+        distanceMeasure: 'COSINE',
+      })
+      .get();
 
-  return snap.docs.map((d) => ({
-    sha: d.id,
-    message: (d.data()?.message as string | undefined) ?? '',
-  }));
+    return snap.docs.map((d) => ({
+      sha: d.id,
+      message: (d.data()?.message as string | undefined) ?? '',
+    }));
+  } catch (err) {
+    // Optional/slow signal failed (embedding error, missing vector index, etc.).
+    // Degrade to no commit signal — the agent still has workload/expertise/dependents.
+    logger.warn('searchMemberCommits failed; returning [] (best-effort)', {
+      repoId,
+      memberId,
+      githubLogin,
+      err: String(err),
+    });
+    return [];
+  }
 }
 
 /** A downstream task blocked by the task being assigned. */
