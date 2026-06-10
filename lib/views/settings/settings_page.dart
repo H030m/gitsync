@@ -38,6 +38,16 @@ class SettingsPage extends StatelessWidget {
             onTap: () async {
               final messenger = ScaffoldMessenger.of(context);
               try {
+                final permitted =
+                    await LocalNotificationsService.instance.ensurePermission();
+                if (!permitted) {
+                  // Permission denied at the OS level: show() would silently
+                  // no-op, so tell the user where to turn notifications on.
+                  messenger.showSnackBar(
+                    SnackBar(content: Text(s.notificationsDisabledHint)),
+                  );
+                  return;
+                }
                 await LocalNotificationsService.instance.show(
                   title: s.testNotificationTitle,
                   body: s.testNotificationBody,

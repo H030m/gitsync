@@ -38,6 +38,30 @@ class LocalNotificationsService {
     _ready = true;
   }
 
+  /// Whether the OS will currently display our notifications. On non-Android
+  /// platforms (or when the platform impl is unavailable) assume true.
+  Future<bool> areNotificationsEnabled() async {
+    final androidImpl = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (androidImpl == null) return true;
+    return await androidImpl.areNotificationsEnabled() ?? true;
+  }
+
+  /// Re-requests the notification permission on demand. Returns whether
+  /// notifications can now be shown (false when the user keeps them denied,
+  /// in which case the caller should point at system settings).
+  Future<bool> ensurePermission() async {
+    if (!_ready) await init();
+    final androidImpl = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (androidImpl == null) return true;
+    // `?? false` here (vs `?? true` in [areNotificationsEnabled]): when the
+    // state is unknown, prefer re-prompting over silently skipping.
+    if (await androidImpl.areNotificationsEnabled() ?? false) return true;
+    await androidImpl.requestNotificationsPermission();
+    return areNotificationsEnabled();
+  }
+
   Future<void> show({
     required String title,
     required String body,

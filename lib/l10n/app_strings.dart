@@ -170,6 +170,11 @@ class AppStrings {
         'This is a test notification 🎉',
         '這是一則測試通知 🎉',
       );
+  String get notificationsDisabledHint => _(
+        'Notifications are disabled. Enable them for GitSync in system '
+        'settings to receive them.',
+        '通知已停用。請到系統設定為 GitSync 開啟通知。',
+      );
   String get notificationFailed => _(
         "Notification failed (try a full rebuild, not just hot restart)",
         '通知未送出(請完整重新編譯，非只 hot restart)',
