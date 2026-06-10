@@ -346,6 +346,7 @@ class _MessageList extends StatelessWidget {
 }
 
 
+
 Widget _kvRow(String label, String value, ColorScheme scheme) {
   return Padding(
     padding: const EdgeInsets.only(bottom: 4),
