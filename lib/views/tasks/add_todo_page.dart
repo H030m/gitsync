@@ -46,7 +46,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('新增任務'), centerTitle: true),
+      appBar: AppBar(title: const Text('Add todo')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: _step == 0 ? _inputStep() : _confirmStep(),
@@ -62,8 +62,10 @@ class _AddTodoPageState extends State<AddTodoPage> {
           constraints: const BoxConstraints(maxHeight: 360),
           child: TextField(
             decoration: const InputDecoration(
-              labelText: '專案架構',
-              hintText: '輸入專案架構…',
+              labelText: 'Project spec',
+              hintText:
+                  'Paste your SPEC.md (Markdown) here — the AI breaks it '
+                  'into a high-level TODO list.',
               border: OutlineInputBorder(),
               alignLabelWithHint: true,
             ),
@@ -77,7 +79,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
         FilledButton.icon(
           onPressed: _busy || _goal.trim().isEmpty ? null : _runBreakdown,
           icon: const Icon(Icons.auto_awesome),
-          label: Text(_busy ? '生成中…' : '生成 Todos'),
+          label: Text(_busy ? 'Breaking down…' : 'Break down with AI'),
         ),
         if (_error != null) ...[
           const SizedBox(height: 16),
@@ -93,7 +95,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('已生成 ${_subtasks.length} 個子任務',
+        Text('Generated ${_subtasks.length} subtasks',
             style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         Expanded(
@@ -115,7 +117,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
           onPressed: () =>
               Provider.of<NavigationService>(context, listen: false)
                   .goTasks(widget.repoId),
-          child: const Text('確認並增加 Todos'),
+          child: const Text('Done'),
         ),
       ],
     );

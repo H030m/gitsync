@@ -85,12 +85,6 @@
       "skillPath": "skills/firebase-security-rules-auditor/SKILL.md",
       "computedHash": "42e793406ca8980c47fcdbd309f02838316849bcbf8475001b4ecaa6a67606b8"
     },
-    "flutter-dart-code-review": {
-      "source": "affaan-m/ECC",
-      "sourceType": "github",
-      "skillPath": "skills/flutter-dart-code-review/SKILL.md",
-      "computedHash": "2b2cafafc1382ec7c79485f3609ec89baae4785a154585794575d21048b5d02c"
-    },
     "xcode-project-setup": {
       "source": "firebase/agent-skills",
       "sourceType": "github",

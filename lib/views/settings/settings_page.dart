@@ -7,7 +7,9 @@ import '../../services/navigation.dart';
 import '../../services/theme_mode_notifier.dart';
 import '../../theme/app_dimens.dart';
 
-/// SettingsPage — dark-mode toggle, Discord webhook link, sign-out.
+// SettingsPage — theme selector, backend-mode indicator, Discord webhook
+// config, sign-out.
+// TODO: implement Discord webhook form per prototype `Settings.tsx`.
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key, required this.repoId});
   final String repoId;
@@ -15,51 +17,36 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('設定'),
-        centerTitle: true,
-        automaticallyImplyLeading: false,
-      ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppDimens.spacingMd,
-          vertical: AppDimens.spacingMd,
+      appBar: AppBar(title: const Text('Settings')),
+      body: Consumer<ThemeModeNotifier>(
+        builder: (ctx, theme, _) => ListView(
+          padding: const EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
+          children: [
+            const _BackendBanner(),
+            const _SectionLabel('Appearance'),
+            const _ThemeSelector(),
+            const SizedBox(height: AppDimens.spacingSm),
+            const _SectionLabel('Account'),
+            ListTile(
+              title: const Text('Sign out'),
+              leading: Icon(Icons.logout, color: Theme.of(ctx).colorScheme.error),
+              textColor: Theme.of(ctx).colorScheme.error,
+              iconColor: Theme.of(ctx).colorScheme.error,
+              onTap: () async {
+                await Provider.of<AuthenticationService>(ctx, listen: false)
+                    .logOut();
+                if (!ctx.mounted) return;
+                Provider.of<NavigationService>(ctx, listen: false).goSignIn();
+              },
+            ),
+          ],
         ),
-        children: [
-          const _BackendBanner(),
-          const SizedBox(height: AppDimens.spacingMd),
-
-          // Section: 一般
-          const _SectionLabel('一般'),
-
-          // General settings card
-          _SettingsCard(
-            children: [
-              const _DarkModeRow(),
-              const _IndentedDivider(),
-              const _DiscordRow(),
-            ],
-          ),
-          const SizedBox(height: AppDimens.spacingSm),
-
-          // Section: 帳號
-          const _SectionLabel('帳號'),
-
-          // Sign-out card
-          const _SettingsCard(
-            children: [
-              _SignOutRow(),
-            ],
-          ),
-        ],
       ),
     );
   }
 }
 
-// ---------------------------------------------------------------------------
-// Section label — muted, small, with tracking
-// ---------------------------------------------------------------------------
+// Small uppercase section header used to group settings rows.
 class _SectionLabel extends StatelessWidget {
   const _SectionLabel(this.text);
   final String text;
@@ -69,15 +56,16 @@ class _SectionLabel extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(
+        AppDimens.spacingMd,
+        AppDimens.spacingMd,
+        AppDimens.spacingMd,
         AppDimens.spacingSm,
-        AppDimens.spacingSm,
-        AppDimens.spacingSm,
-        AppDimens.spacingXs,
       ),
       child: Text(
-        text,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
+        text.toUpperCase(),
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: scheme.primary,
+              fontWeight: FontWeight.w700,
               letterSpacing: 0.8,
             ),
       ),
@@ -85,208 +73,44 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Rounded card container for settings rows
-// ---------------------------------------------------------------------------
-class _SettingsCard extends StatelessWidget {
-  const _SettingsCard({required this.children});
-  final List<Widget> children;
+// Three-way System / Light / Dark selector. Showing "System" explicitly is what
+// fixes the old mismatch: a binary switch read `mode == dark`, which was false
+// under ThemeMode.system, so a dark-browser user saw a dark UI but an "off"
+// switch. The segmented control has no such ambiguity.
+class _ThemeSelector extends StatelessWidget {
+  const _ThemeSelector();
 
   @override
   Widget build(BuildContext context) {
-    final brightness = Theme.of(context).brightness;
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: brightness == Brightness.dark
-            ? const Color(0xFF222630)
-            : const Color(0xFFFFFFFF),
-        borderRadius: BorderRadius.circular(AppDimens.radiusLg),
-        boxShadow: [
-          BoxShadow(
-            color: brightness == Brightness.dark
-                ? Colors.black.withValues(alpha: 0.3)
-                : const Color(0xFF1565C0).withValues(alpha: 0.10),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Column(mainAxisSize: MainAxisSize.min, children: children),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Tonal icon avatar (40x40 circle)
-// ---------------------------------------------------------------------------
-class _TonalIcon extends StatelessWidget {
-  const _TonalIcon({
-    required this.icon,
-    required this.iconColor,
-    this.backgroundColor,
-  });
-
-  final IconData icon;
-  final Color iconColor;
-  final Color? backgroundColor;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        color: backgroundColor ?? scheme.surfaceContainerHighest,
-        shape: BoxShape.circle,
-      ),
-      child: Icon(icon, size: 18, color: iconColor),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Row: 暗色模式 with Switch.adaptive
-// ---------------------------------------------------------------------------
-class _DarkModeRow extends StatelessWidget {
-  const _DarkModeRow();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final theme = context.watch<ThemeModeNotifier>();
-    final isDark = theme.mode == ThemeMode.dark;
-
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      child: Row(
-        children: [
-          _TonalIcon(icon: Icons.palette, iconColor: scheme.primary),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              '暗色模式',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: scheme.onSurface,
-                  ),
-            ),
+      padding: const EdgeInsets.symmetric(horizontal: AppDimens.spacingMd),
+      child: SegmentedButton<ThemeMode>(
+        segments: const [
+          ButtonSegment(
+            value: ThemeMode.system,
+            icon: Icon(Icons.brightness_auto_outlined),
+            label: Text('System'),
           ),
-          Switch.adaptive(
-            value: isDark,
-            activeTrackColor: scheme.primary,
-            onChanged: (_) => theme.toggle(),
+          ButtonSegment(
+            value: ThemeMode.light,
+            icon: Icon(Icons.light_mode_outlined),
+            label: Text('Light'),
+          ),
+          ButtonSegment(
+            value: ThemeMode.dark,
+            icon: Icon(Icons.dark_mode_outlined),
+            label: Text('Dark'),
           ),
         ],
+        selected: {theme.mode},
+        showSelectedIcon: false,
+        onSelectionChanged: (sel) => theme.setMode(sel.first),
       ),
     );
   }
 }
 
-// ---------------------------------------------------------------------------
-// Indented divider
-// ---------------------------------------------------------------------------
-class _IndentedDivider extends StatelessWidget {
-  const _IndentedDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Divider(height: 1, thickness: 0.5, color: scheme.outlineVariant),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Row: 連結 DC 群組
-// ---------------------------------------------------------------------------
-class _DiscordRow extends StatelessWidget {
-  const _DiscordRow();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return InkWell(
-      onTap: () {
-        // TODO: implement DC webhook config
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            _TonalIcon(
-              icon: Icons.message_outlined,
-              iconColor: scheme.primary,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                '連結 DC 群組',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: scheme.onSurface,
-                    ),
-              ),
-            ),
-            Icon(
-              Icons.chevron_right,
-              size: 20,
-              color: scheme.onSurfaceVariant,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Row: 登出
-// ---------------------------------------------------------------------------
-class _SignOutRow extends StatelessWidget {
-  const _SignOutRow();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return InkWell(
-      onTap: () async {
-        await Provider.of<AuthenticationService>(context, listen: false)
-            .logOut();
-        if (!context.mounted) return;
-        Provider.of<NavigationService>(context, listen: false).goSignIn();
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            _TonalIcon(
-              icon: Icons.logout,
-              iconColor: scheme.error,
-              backgroundColor: scheme.errorContainer,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                '登出',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: scheme.error,
-                    ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Backend banner (dev tool — kept as-is)
-// ---------------------------------------------------------------------------
 class _BackendBanner extends StatelessWidget {
   const _BackendBanner();
 
@@ -296,6 +120,12 @@ class _BackendBanner extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(
+        AppDimens.spacingMd,
+        AppDimens.spacingSm,
+        AppDimens.spacingMd,
+        0,
+      ),
       padding: const EdgeInsets.all(AppDimens.spacingMd),
       decoration: BoxDecoration(
         color: isFake ? scheme.tertiaryContainer : scheme.primaryContainer,

@@ -1,4 +1,0 @@
-{"file": ".trellis/tasks/06-03-bottom-nav-focus-slide-animation/prd.md", "reason": "PRD with requirements, acceptance criteria, and technical approach"}
-{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Frontend component conventions for Flutter widgets"}
-{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "Where to place new/modified widget files"}
-{"file": "GitSync_Figma/src/app/components/BottomNav.tsx", "reason": "Prototype reference for sliding pill animation behavior"}

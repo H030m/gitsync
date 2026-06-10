@@ -20,12 +20,11 @@ class TasksBoardPage extends StatelessWidget {
       length: 2,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('任務'),
-          centerTitle: true,
+          title: const Text('Tasks'),
           bottom: const TabBar(
             tabs: [
-              Tab(text: '看板'),
-              Tab(text: '關聯圖'),
+              Tab(icon: Icon(Icons.view_kanban), text: 'Board'),
+              Tab(icon: Icon(Icons.account_tree), text: 'Graph'),
             ],
           ),
         ),
@@ -67,21 +66,21 @@ class _BoardTab extends StatelessWidget {
         children: [
           Expanded(
             child: _Column(
-              title: '待辦',
+              title: 'To do',
               tasks: vm.todo,
               accent: scheme.outline,
             ),
           ),
           Expanded(
             child: _Column(
-              title: '進行中',
+              title: 'In progress',
               tasks: vm.inProgress,
               accent: scheme.primary,
             ),
           ),
           Expanded(
             child: _Column(
-              title: '完成',
+              title: 'Done',
               tasks: vm.done,
               accent: scheme.secondary,
             ),
