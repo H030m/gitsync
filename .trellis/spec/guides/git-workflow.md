@@ -104,3 +104,6 @@ git push
   [`backend/testing-guidelines.md`](../backend/testing-guidelines.md)。
 - **2026-06-02** — 課程約束：Final Demo 僅能用 Flutter + Firebase，禁止自架外部伺服器。
   Firebase **Cloud Functions 允許**（上課教過）；不可在 Firebase 之外另起自管 server。
+
+- **2026-06-05** — Windows PowerShell 5 的 `Set-Content`/`Out-File` 預設**不是 UTF-8**(legacy code page),對含 CJK/符號的原始碼檔做行級編輯會整檔亂碼。改檔一律用 Edit/Write 工具;真要用 PowerShell 寫檔必須帶 `-Encoding utf8`。(06-05 task:`daily_view_page.dart` 被 mangle 後整檔重寫。)
+- **2026-06-05** — 「webhook 只收 default branch」的決策已撤銷:改收所有分支(`branch` 欄位、per-commit `create()` first-seen-wins 防止 merge re-push 蓋掉 enrichment)。診斷入口:Functions log 出現 `Skipping push to non-default branch` 即舊版仍在線上。

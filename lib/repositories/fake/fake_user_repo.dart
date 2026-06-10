@@ -47,6 +47,7 @@ class FakeUserRepository implements UserRepository {
       githubAccessToken: githubAccessToken,
       discordUserId: existing?.discordUserId,
       fcmToken: existing?.fcmToken,
+      locale: existing?.locale,
       expertiseTags: existing?.expertiseTags ?? const [],
     );
     _state(userId).update(next);
@@ -66,6 +67,7 @@ class FakeUserRepository implements UserRepository {
       githubAccessToken: existing.githubAccessToken,
       discordUserId: existing.discordUserId,
       fcmToken: token,
+      locale: existing.locale,
       expertiseTags: existing.expertiseTags,
     );
     _state(userId).update(next);
@@ -86,6 +88,27 @@ class FakeUserRepository implements UserRepository {
       githubAccessToken: existing.githubAccessToken,
       discordUserId: discordUserId,
       fcmToken: existing.fcmToken,
+      locale: existing.locale,
+      expertiseTags: existing.expertiseTags,
+    );
+    _state(userId).update(next);
+  }
+
+  @override
+  Future<void> updateLocale(String userId, String locale) async {
+    await Future.delayed(AppConfig.simulatedLatency);
+    final existing = _users[userId]?.value;
+    if (existing == null) return;
+    final next = AppUser(
+      id: existing.id,
+      name: existing.name,
+      email: existing.email,
+      avatarUrl: existing.avatarUrl,
+      githubLogin: existing.githubLogin,
+      githubAccessToken: existing.githubAccessToken,
+      discordUserId: existing.discordUserId,
+      fcmToken: existing.fcmToken,
+      locale: locale,
       expertiseTags: existing.expertiseTags,
     );
     _state(userId).update(next);

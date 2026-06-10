@@ -6,6 +6,19 @@
 
 ---
 
+## 2026-06-03 — Discord 增量回補（per-channel watermark + 起始日期）+ AI Markdown 渲染
+
+承 [2026-06-02 on-demand 回補] 再強化：
+
+- **增量、不重抓**：每個綁定頻道存 watermark（`repos/{repoId}/discordChannels/{channelId}.lastMessageId`）。bot 用 Discord REST `messages.fetch({ after })` 只抓 watermark 之後的新訊息，抓完把 watermark 前進（`completeDiscordFetch` 收 bot 回報的最新 messageId 更新各頻道）。已進 Firestore 的訊息靠既有 messageId 去重，不再重抓整批。
+- **起始日期**：App「Daily→Discord」date picker 呼叫 `setDiscordStartDate({repoId, startDate})`（callable, auth），對該 repo 所有頻道寫 `startDate` 並 reset watermark → 下次從新起點補抓（缺口補上、不重複）。首抓 cursor = `lastMessageId ?? snowflake(startDate)`；snowflake 由日期換算 `((unixMs-1420070400000)<<22)`，bot/functions 各一份（`discordSnowflake.ts` ↔ `snowflake.ts`）須同步。
+- **新 schema**：`repos/{repoId}/discordChannels/{channelId}` subcollection（`startDate`/`lastMessageId`/`guildId`）。保留 `discordChannelIds` 陣列當快速清單；`claimDiscordFetch` 改回傳 per-channel `[{channelId,startDate,lastMessageId}]`（仍相容舊 `channelIds`）。
+- **AI Markdown 渲染**：新增可重用 `lib/widgets/markdown_view.dart`（`flutter_markdown` 的 `MarkdownBody` + 主題）。先套在 Discord digest 卡片；daily summary / handoff 之後可直接換上同一 widget。`flutter_markdown` 已 discontinued（官方轉 `flutter_markdown_plus`）但現版本對期末 demo 足夠。
+
+理由：使用者要可設起始日期、之後只抓新訊息、AI 產出排版好看。digest 仍維持 per-day（本次只改 ingestion 的範圍/增量）。
+
+詳見 [`ARCHITECTURE.md §7`](./ARCHITECTURE.md) + task `06-03-discord-incremental-backfill-md`。
+
 ## 2026-06-02 — Discord 改 on-demand 回補 + 頻道對照移進 Firestore（移除即時轉發）
 
 Discord ingest 從「常駐 forwarder 即時轉發每則訊息」改成 **on-demand 批次回補**：

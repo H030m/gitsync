@@ -151,6 +151,7 @@ apps/gitsync/
 │   │   ├── deletions: number
 │   │   ├── linkedTaskIds: string[]             # 從 commit message 解析 (e.g. "fix #12")
 │   │   ├── aiSummary: string?                  # AI 生成的人話摘要
+│   │   ├── branch: string?                     # 06-05 D1: 首次出現的 push ref（refs/heads/ 去掉）；legacy doc 無此欄
 │   │   └── committedAt: Timestamp
 │   │
 │   ├── pullRequests/{prNumber}
@@ -193,11 +194,20 @@ apps/gitsync/
 │   │   ├── messageCount: number
 │   │   └── generatedAt: Timestamp
 │   │
+│   ├── discordChannels/{channelId}             # per-channel 增量回補設定 (§7.2)
+│   │   ├── guildId: string
+│   │   ├── startDate: string?                  # YYYY-MM-DD，app date picker 設
+│   │   ├── lastMessageId: string?              # 增量 watermark（最後抓到的 snowflake）
+│   │   ├── startDateSetAt: Timestamp?
+│   │   └── lastFetchedAt: Timestamp?
+│   │
 │   └── dailyReports/{YYYY-MM-DD}
 │       ├── repoId: string
 │       ├── summary: string                     # AI 生成
 │       ├── completedTasks: string[]
-│       ├── memberContributions: { [userId]: { tasksDone, commits } }
+│       ├── memberContributions: { [userId]: { tasksDone, commits, githubLogin, displayName } }
+│       │                                       # 名字由後端產生報告時從 roster 解析寫入；
+│       │                                       # 舊報告缺名字欄位 → 前端 fallback 顯示 key
 │       └── generatedAt: Timestamp
 │
 └── idempotencyKeys/{eventId}                   # Functions trigger 防重
@@ -329,7 +339,10 @@ service cloud.firestore {
 | `forceUnlockBreakdown` | `{ repoId }` | `{}` | 強制解 `isBreakingDown` 鎖（卡 > 5min 時前端顯示「重置」按鈕呼叫）|
 | `assignTask` | `{ repoId, taskId }` | `{ assigneeId, reason }` | AI Flow — 動態分派 |
 | `generateHandoff` | `{ repoId, taskId }` | `{ handoffMarkdown }` | AI Flow — 交接文件 |
-| `summarizeDay` | `{ repoId, date: string }` | `{ summary }` | AI Flow — 日報生成 |
+| `summarizeDay` | `{ repoId, date }` 或 `{ repoId, startDate, endDate }` | `{ summary, highlights, blockers, commitThemes, memberContributions, ... }` | AI Flow — 時段報告生成（agentic，§5.4；上限 92 天）|
+| `dailyBrief` | `{ repoId, date, endDate?, question, history? }` | `{ answer, commits[] }` | AI Flow — Summary tab「問 AI 這段期間」agentic 聊天（§5.4）|
+| `explainCommit` | `{ repoId, sha, force? }` | `{ markdown, cached }` | AI Flow — commit tree 地圖點擊的工作總結（§5.4；cache 在 `commits/{sha}.workSummary`）。06-05 D2：doc 不存在時 fallback 到 GitHub API（`githubClient.getCommit`，用 caller 的 token）摘要 branch-graph commit，不寫 cache |
+| `getCommitGraph` | `{ repoId, startDate?, endDate? }` | `{ commits[], branches[], cached, truncated }` | Commits 分頁分支圖 — 即時向 GitHub GraphQL 拉 branch 拓撲（parents/avatar/PR 關聯;webhook payload 沒有 parents）,90s Firestore cache（`repos/{repoId}/graphCache/{key}`）,分支上限 20；非快取回應時 best-effort 把抓到的 commit 補寫成 commit docs（與 push webhook 同 shape + first-seen-wins `create()`，補上歷史缺口、觸發 `onCommitCreated`；失敗不影響回應）(06-05 D7) |
 | `setDiscordWebhook` | `{ repoId, webhookUrl, channelIds[] }` | `{}` | 設定 Discord outbound webhook + 監聽頻道 |
 | `subscribeToTopic` | `{ token, topic }` | `{}` | FCM web push（同課程） |
 
@@ -532,28 +545,49 @@ Phase 2 — Self Review (1 round):
 
 **自動觸發**：由 Firestore `onTaskUpdated` trigger 在 task 變 done 時自動呼叫此 flow，結果寫回 `tasks/{taskId}.handoffDoc`。
 
-### 5.4 Flow 4 — `summarizeDayFlow`（日報生成）
+### 5.4 Flow 4 — `summarizeDayFlow`（時段報告）+ Summary「情報總站」+ Commit Tree
 
-**Input**: `{ repoId: string, date: string }`
-**Output**: `{ summary: string, memberContributions: {...} }`
+Summary tab 是**開發者情報總站**：把**自選時段**（預設今天；range picker 可選任意區間，上限 92 天）內的 commits + completed tasks + Discord 討論彙整成「人話報告 + 重點 + 阻礙 + commit 訊息整理 + 成員貢獻」，並提供一個 agentic 聊天框讓開發者自然語言追問。Commits tab 則是**commit tree 地圖**（lane-per-author、日期分隔、可滑動），**點任一 commit 由 AI 總結該筆工作**。後端三支 flow：
 
-查當日 commits + completed tasks + discord 討論 → 寫成兩三句的人話日報。
+**(a) `summarizeDayFlow`（agentic — 升級自原本的「非 Agentic 單次」）**
+
+**Input**: `{ repoId, startDate, endDate }`（單日＝兩者相同；callable 相容舊版 `{date}`）
+**Output**: `{ summary, highlights[], blockers[], commitThemes[], memberContributions, completedTaskIds[], commitCount, startDate, endDate }`
+
+```
+Step 1 — 純 TS 先抓 context（精確計數，不交給 LLM 數）
+  ├─ listRangeCommits / listRangeCompletedTasks / readRoster（tools/dailyIntel.ts）
+  └─ computeContributions()：author.login → userId 對齊，算每人 tasksDone / commits
+
+Step 2 — agentic function-calling loop（MODELS.fast）
+  ├─ tools: listRangeDigests（讀時段內逐日 Discord digest 找 blocker，O(days) 便宜）、
+  │         listRangeDiscordMessages（digest 缺漏時的 raw 訊息兜底，cap 500）、
+  │         searchPastCommits（跨時段 grounding）、finalizeReport（一次性繳交敘事）
+  ├─ agent 自由 drill-down，最後 commit 一份 narrative（summary/highlights/
+  │   blockers/commitThemes＝commit 訊息整理；prompt 內 commits cap 200 行）
+  └─ 最後一輪 tool_choice 強制 finalizeReport；萬一沒繳交 → 退回 deterministic fallback
+
+Step 3 — 寫 dailyReports/{docId}：單日 docId = date、跨日 = `{start}_{end}`，
+         欄位含 startDate / endDate（只有 Cloud Functions 寫得進；前端唯讀）
+```
+
+**(b) `dailyBriefChatFlow` / `dailyBrief` callable（agentic 聊天 — 「問 AI 這段期間」）**
+
+仿 `discordChatFlow`：function-calling loop（`listDayCommits` / `listCompletedTasks` / `listRangeDigests` / `searchPastCommits`，前三者以使用者選的時段為界），把 agent 在過程中撈到的 commits 去重後連同答案一起回傳，前端在答案下方顯示「來源 commit」面板。時段由 Summary tab 的 range picker 同步給 report VM 與聊天 VM。
+
+**(c) `explainCommitFlow` / `explainCommit` callable（commit tree 點擊 → AI 工作總結）**
+
+讀 commit doc + linked tasks + 同作者鄰近 commits → 一次 `gpt-4o-mini` 呼叫產出三段式 markdown（做了什麼／脈絡／改了哪裡）。**結果 cache 在 `commits/{sha}.workSummary`**（commits 只有 Cloud Functions 寫得進），重複點擊零成本；`force=true` 重生。前端 Commits tab 的 tree 地圖（lane-per-author CustomPaint、日期分隔）點 row 開 bottom sheet 顯示。**06-05 D2 — GitHub fallback**：branch-graph 上的 commit 可能沒有 Firestore doc（predates all-branch ingest），此時 handler 解析 repo `name` + caller 的 `githubAccessToken`（同 `getCommitGraph`），flow 改打 `githubClient.getCommit` 取 message/files/stats 生成摘要；fallback 路徑不寫 cache（沒有 doc 可寫）。三者缺一即停用 fallback，維持原本 doc-only 行為。
+
+> tasks 的 `status == done` + `updatedAt` range 複合查詢需要 `firestore.indexes.json` 新增的 `tasks status+updatedAt` 索引（live 模式 `firebase deploy --only firestore:indexes`）。
 
 **排程觸發 — 用 Cloud Tasks 扇出，不要 for-loop**
 
-Cloud Functions 單次執行上限 540 秒（9 分鐘）。若每日 18:00 用一個 function 順序跑 50 個 repo 的 `summarizeDayFlow`（每個約 5–10 秒）→ 直接 timeout 崩潰。
+Cloud Functions 單次執行上限 540 秒（9 分鐘）。若每日 18:00 用一個 function 順序跑 50 個 repo 的 `summarizeDayFlow`（每個約 5–10 秒）→ 直接 timeout 崩潰。採用兩階段（isolated sub-agent，AGENTIC_CONCEPTS §5）：
 
-採用兩階段架構：
+- **`scheduledDailyReport`** — `onSchedule`，每日台北 18:00。**只做扇出**：掃 `apps/gitsync/repos` 所有 ID，對每個 repoId 用 `firebase-admin/functions` `getFunctions().taskQueue('locations/asia-east1/functions/dailyReportWorker').enqueue({ repoId, date })`。`Promise.allSettled` 互不阻擋，回完即結束。
 
-- **`scheduledDailyReport`** — `onSchedule` Cloud Function，每日台北時間 18:00 觸發。**只做扇出**：掃 `apps/gitsync/repos` 所有文件 ID，為每個 repoId 在 `daily-report-queue` 上建一個 Cloud Task，task 內容包含 repoId + 今日日期（ISO 字串），target 指向 `dailyReportWorker` 的 HTTPS URL。本身回 200 後立即結束。
-
-- **`dailyReportWorker`** — `onRequest` Cloud Function，由 Cloud Tasks 觸發。每個 instance 只處理一個 repoId，呼叫 `summarizeDayFlow({ repoId, date })`。Cloud Tasks 自動水平擴展，多個 worker 平行跑，互不影響。
-
-部署前需手動建立 queue（**使用者親自跑**，AI 不可）：
-
-```bash
-gcloud tasks queues create daily-report-queue --location=asia-east1
-```
+- **`dailyReportWorker`** — **`onTaskDispatched`**（Cloud Tasks queue 函式，非裸 HTTP）。每個 dispatch 只處理一個 repoId → 呼叫 `summarizeDayFlow`。用 onTaskDispatched 的好處：queue 隨函式自動建立（**不需** 手動 `gcloud tasks queues create`）、Admin SDK enqueue 自帶 auth + retry、不引入 `@google-cloud/tasks` 依賴。`retryConfig.maxAttempts=3` 讓 OpenAI 偶發失敗有第二次機會。
 
 ### 5.5 Prompt Caching 與成本控制
 
@@ -683,7 +717,9 @@ read:user       # 讀 user info
 
 **重要原則**：webhook handler **只負責「raw payload → 標準化 → 寫入 Firestore」**，不解析業務語意、不呼叫 OpenAI、不跨文件更新。所有後續邏輯下沉給 §4.3 對應的 Firestore Trigger（trigger 才有 idempotency key 保護）。這樣 webhook 永遠在毫秒級回應 GitHub（避免 retry 風暴），重邏輯 / 重 retry 集中在 trigger 層。
 
-**`handlePush`** — 只做寫入：對 payload 中每個 commit，set `repos/{repoId}/commits/{sha}`，欄位含 `repoId`（冗餘）、`message`、`author`、`url`、`filesChanged`、`additions`、`deletions`、`committedAt`。**不解析** commit message 的 `#N`、**不算 embedding**、**不寫 `linkedTaskIds`** — 由 `onCommitCreated` trigger 統一處理。
+**`handlePush`** — 只做寫入：對 payload 中每個 commit，寫 `repos/{repoId}/commits/{sha}`，欄位含 `repoId`（冗餘）、`message`、`author`、`url`、`filesChanged`、`added`/`removed`/`modified`、`committedAt`、`branch`。**不解析** commit message 的 `#N`、**不算 embedding**、**不寫 `linkedTaskIds`** — 由 `onCommitCreated` trigger 統一處理。
+
+> **06-05 D1 — ingest ALL branches（不再只收 default branch）**：舊版會 skip 非 default branch 的 push，導致 feature-branch 工作從不進 Firestore（list 看不到、explainCommit 對 branch-graph commit 404）。現在每個 branch 的 push 都寫 doc，並以 push `ref`（去掉 `refs/heads/`）存 `branch` 欄。**First-seen wins**：merge 進 main 會用同一批 sha 重新 push，故改用 per-commit `create()`（碰到已存在的 doc 會丟 ALREADY_EXISTS，忽略即可），避免 `set` 覆蓋 `onCommitCreated` 寫入的 `aiSummary`/`embedding`/`linkedTaskIds`/`workSummary` 並保留原始 branch 歸屬。GitHub push payload 的 `commits[]` 上限 20，超量靠 backfill / PR-merge 流程補。連帶效果：`dailyIntel` 的 range report 現在也會涵蓋 branch commits（時間範圍查詢，desirable）。歷史缺口由一次性腳本 `functions/scripts/backfill-commits.mjs` 補（GitHub REST 逐 branch 列 commit，跳過已存在的 sha，`--dry-run` gated）。
 
 **`handlePR`**（只在 `action == "closed"` 且 `merged == true` 時處理）— 只做寫入：set `pullRequests/{n}`，欄位含 `repoId`（冗餘）、`title`、`state: "merged"`、`commitShas`、`headBranch`、`baseBranch`、`mergedAt`。**不更新** 對應 tasks 的 status — 由 `onPRMerged` trigger 用 transaction 處理。
 
@@ -767,7 +803,21 @@ read:user       # 讀 user info
 
 **第二層防護**：`discordMessageIngest` 端再過一次相同雜訊規則（`functions/src/tools/discordFilter.ts`，與 bot 端 `filter.ts` 同步維護）——防 bot 規則有漏或兩邊不一致。
 
-### 7.3 頻道設定 — `/gitsync-listen` slash command
+**增量回補 + 起始日期（per-channel watermark）**：每個綁定頻道在 `repos/{repoId}/discordChannels/{channelId}` 存 `startDate`（app date picker 設）+ `lastMessageId`（watermark）。
+
+- `claimDiscordFetch` 回傳改成 per-channel `[{ channelId, startDate, lastMessageId }]`（相容舊 `channelIds`，缺設定的頻道 startDate/lastMessageId 為 null）。
+- bot 對每個頻道用 `channel.messages.fetch({ after })` **往新方向**分頁，cursor = `lastMessageId ?? snowflake(startDate ?? 今天)`，只抓 watermark 之後的新訊息（不再重抓整批；已進 Firestore 的靠 messageId 去重）。snowflake 由日期換算 `((unixMs-1420070400000)<<22)`，`functions/src/tools/discordSnowflake.ts` ↔ `discord-bot/src/snowflake.ts` 須同步。
+- bot 把每頻道抓到的最新 messageId 隨 `completeDiscordFetch` 回報 → 更新各頻道 `lastMessageId`（watermark 前進）。
+- 起始日期由 callable **`setDiscordStartDate({repoId, startDate})`**（auth）設定：對該 repo 所有頻道寫 `startDate` 並 reset `lastMessageId`，下次從新起點補抓缺口（不重複）。
+
+**範圍雙 cursor + prune（2026-06-03 升級，現行）**：單一起始日期升級成 **`[startDate, endDate]` 範圍**，存在 `repos/{repoId}.discordStartDate` / `discordEndDate`（repo-wide）。理由：舊單 watermark 在「已讀到 7 日、想把起點改回 5 日」時會被 `watermark(7) > snowflake(5)` 卡住而抓不到前面。
+
+- **兩個 cursor**：low = `snowflakeForTaipeiDate(start)`（含），high = `snowflakeForTaipeiDayEnd(end)`（= 隔天 00:00，**exclusive 上界**）。per-channel `lastMessageId` 仍是增量高水位。bot 抓 `after: lastMessageId ?? low`，且**忽略 id ≥ high 的訊息**（不抓 end 之後），watermark 只在範圍內前進。`claimDiscordFetch` 回傳新增 top-level `startDate`/`endDate`。
+- **callable `setDiscordRange({repoId, startDate, endDate})`**（auth，取代 app 對 `setDiscordStartDate` 的呼叫）：① 寫範圍到 repo doc（**持久化** → app 重新登入仍記得、預填 range picker）；② reset 各頻道 `lastMessageId`；③ **prune**：刪掉範圍外的 `discordMessages`（timestamp < start 或 ≥ end+1 天）與 `discordDigests/{date}`（date 不在 `[start,end]`）。**破壞性**——縮範圍會真的刪資料，放寬時 bot 重抓回來（messageId 去重不重複）。
+- **逐日 digest** `discordRangeDigestFlow`：`completeDiscordFetch` 在 repo 有範圍時對**範圍內每一天**各產一份 `discordDigests/{date}`（沒範圍則退回單日）。省成本 guard：空白日、鎖定日、以及「stored digest 的 `messageCount` == 當天 `count()`」的未變動日都跳過（不呼叫 OpenAI）；上限 92 天。
+- App picker 改用 `showDateRangePicker`（預設帶入已存範圍）；Refresh 改成串 `fetchRequests/{id}.status` 等 terminal（`done`/`ingested`/`digest_failed`）才停 spinner 並顯示「Updated」。
+
+### 7.3 頻道設定 — `/gitsync-listen` slash command + 起始日期
 
 頻道對照從靜態 `.env` 改成在 Discord 內動態綁定：
 
@@ -786,7 +836,7 @@ read:user       # 讀 user info
 1. 讀該 repo 當天（Asia/Taipei `[00:00,24:00)`）的 `discordMessages`。
 2. 空的就 early-return（`markdown:null`，不呼叫 OpenAI）。
 3. 否則把 `authorName: content` 串成 transcript，用 `gpt-4o-mini` 整理成 markdown。
-4. 寫 `repos/{repoId}/discordDigests/{date}` `{date, markdown, messageCount, generatedAt}`。
+4. 寫 `repos/{repoId}/discordDigests/{date}` `{date, markdown, messageCount, generatedAt}`。**鎖定的 digest 不覆寫**（lock 閘，見 §7.7）；範圍回補時這支 flow 被 `discordRangeDigestFlow` 逐日呼叫（見 §7.2）。
 
 App 的「Daily → Discord」tab 串 `discordDigests/{今天}`，把 digest 卡片渲染在訊息列表上方（refresh 按鈕鏡像 Summary tab 的 Regenerate）。供日報 / 未來交接文件 RAG 取用。
 
@@ -808,6 +858,22 @@ App 的「Daily → Discord」tab 串 `discordDigests/{今天}`，把 digest 卡
 - ❌ 給 bot Firebase Admin service account（改用 poll-via-function）
 
 **注意**：bot 仍需 **24/7 常駐**——為了處理 slash command 與輪詢 fetch queue。正式上線可遷至 Cloud Run（min-instance=1）。
+
+### 7.7 AI 聊天 + digest 編輯／鎖定（2026-06-03 新增）
+
+Daily → Discord 下半部從「訊息列表」改成**與 AI 對話的聊天框**；digest 卡片可收合、鎖定、叫 AI 改寫。
+
+**AI 聊天 `discordChat`**（`onCall`，auth）— agentic function-calling loop（沿用 §5.2 `assignTaskFlow` 模式，`gpt-4o-mini`），三個工具，最省成本優先：
+
+- `listDaySummaries` / `getDaySummary`（`functions/src/tools/discordSearch.ts`）— 讀逐日 digest（§7.2 範圍逐日 digest 產生），摘要類問題先走這條，context 從 O(messages) 降到 O(days)。
+- `searchDiscordMessages` — 關鍵字搜原始訊息，回傳**分組對話 snippet**：每個命中訊息前後各帶 `CONTEXT_BEFORE/AFTER`（=2）則**同頻道**上下文（`isMatch` 標記命中 vs 脈絡），相鄰命中視窗合併，依命中數→時間排序。**仍是子字串關鍵字比對，非語意**（Discord 訊息尚未做 embedding，`onDiscordMessageCreated` 仍 stub；`firestore.indexes.json` 已預留 `discordMessages.embedding` 向量索引供日後接 `findNearest`）。
+- 回傳 `{ answer, snippets }`；UI 把每段 snippet 渲染成叢集（命中強調、脈絡淡化、divider 分隔）。
+
+**digest 編輯／鎖定**（lock 是所有寫 digest 路徑的單一閘）：
+
+- **`setDigestLock({repoId, date, locked})`**（`onCall`）— 寫 `discordDigests/{date}.locked`。鎖住後**自動排程 digest（§7.2/§7.4）與 AI 改寫都跳過**，不覆蓋使用者 pin 的版本。
+- **`editDiscordDigest({repoId, date, instruction})`**（`onCall`）— AI 依指令改寫某天 digest 的 markdown；digest 鎖住則拒絕。
+- **`botEditDigest`**（`onRequest`，secret-auth）— Discord slash command **`/gitsync-digest instruction:<…> [date]`** 的橋接：由 channelId 反查 repo（`discordChannelIds` array-contains），呼叫同一套改寫流程（鎖住回 409、查無回 404）。
 
 ---
 

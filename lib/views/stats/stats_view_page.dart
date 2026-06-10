@@ -1,33 +1,40 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../theme/app_dimens.dart';
-import '../../view_models/commits_vm.dart';
+import '../../view_models/members_vm.dart';
 import '../../view_models/stats_vm.dart';
 import '../../view_models/tasks_board_vm.dart';
+import '../../widgets/markdown_view.dart';
 
-/// StatsViewPage — two tabs: 貢獻度 (contribution) and 進度表 (progress).
+// StatsViewPage — faithful rebuild of the design prototype's two-tab Stats
+// screen (StatsView.tsx): a 貢獻度 contribution pie and a 進度表 per-member
+// progress table with expandable task lists. Derived purely from tasks +
+// members via StatsViewModel (no commits — the prototype has none).
 class StatsViewPage extends StatelessWidget {
   const StatsViewPage({super.key, required this.repoId});
   final String repoId;
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProxyProvider2<TasksBoardViewModel, CommitsViewModel,
+    final s = context.l10n;
+    return ChangeNotifierProxyProvider2<TasksBoardViewModel, MembersViewModel,
         StatsViewModel>(
-      create: (_) => StatsViewModel(),
-      update: (_, tasks, commits, prev) =>
-          (prev ?? StatsViewModel())..updateFromUpstream(tasks: tasks, commits: commits),
+      create: (_) => StatsViewModel(repoId: repoId),
+      update: (_, tasks, members, prev) =>
+          (prev ?? StatsViewModel(repoId: repoId))
+            ..updateFromUpstream(tasks: tasks, members: members),
       child: DefaultTabController(
         length: 2,
         child: Scaffold(
           appBar: AppBar(
-            title: const Text('統計'),
-            centerTitle: true,
-            bottom: const TabBar(
+            title: Text(s.statsTitle),
+            bottom: TabBar(
               tabs: [
-                Tab(text: '貢獻度'),
-                Tab(text: '進度表'),
+                Tab(text: s.contributionTab),
+                Tab(text: s.progressTab),
               ],
             ),
           ),
@@ -47,253 +54,257 @@ class StatsViewPage extends StatelessWidget {
   }
 }
 
-Color _cardBg(BuildContext context) {
-  return Theme.of(context).brightness == Brightness.dark
-      ? const Color(0xFF222630)
-      : Theme.of(context).colorScheme.surface;
-}
+// ---- Tab 1: 貢獻度 (contribution pie) --------------------------------------
 
-// ---------------------------------------------------------------------------
-// Tab 1: 貢獻度
-// ---------------------------------------------------------------------------
-class _ContributionTab extends StatelessWidget {
+/// Which basis the 貢獻度 pie is computed from.
+enum _ContributionBasis { commit, task }
+
+class _ContributionTab extends StatefulWidget {
   const _ContributionTab({required this.vm});
   final StatsViewModel vm;
 
   @override
+  State<_ContributionTab> createState() => _ContributionTabState();
+}
+
+class _ContributionTabState extends State<_ContributionTab> {
+  // Default to the commit basis — the all-history commit share is the headline
+  // the user asked for.
+  _ContributionBasis _basis = _ContributionBasis.commit;
+
+  @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final authorMax = vm.commitsPerAuthor.values.fold<int>(0, _max);
-    final entries = vm.commitsPerAuthor.entries.toList();
+    final vm = widget.vm;
+
+    final isCommit = _basis == _ContributionBasis.commit;
+    final contributions =
+        isCommit ? vm.commitContributions : vm.contributions;
+    final caption = isCommit
+        ? s.commitContributionCaption
+        : s.taskContributionCaption;
+
+    final toggle = Padding(
+      padding: const EdgeInsets.only(bottom: AppDimens.spacingMd),
+      child: Center(
+        child: SegmentedButton<_ContributionBasis>(
+          showSelectedIcon: false,
+          segments: [
+            ButtonSegment(
+              value: _ContributionBasis.commit,
+              label: Text(s.contributionBasisCommit),
+            ),
+            ButtonSegment(
+              value: _ContributionBasis.task,
+              label: Text(s.contributionBasisTask),
+            ),
+          ],
+          selected: {_basis},
+          onSelectionChanged: (s) => setState(() => _basis = s.first),
+        ),
+      ),
+    );
+
+    // Commit basis is still loading its one-shot fetch.
+    if (isCommit && vm.commitsLoading) {
+      return ListView(
+        padding: const EdgeInsets.all(AppDimens.spacingMd),
+        children: [
+          toggle,
+          const Padding(
+            padding: EdgeInsets.all(AppDimens.spacingLg),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        ],
+      );
+    }
+
+    if (contributions.isEmpty) {
+      return ListView(
+        padding: const EdgeInsets.all(AppDimens.spacingMd),
+        children: [
+          toggle,
+          _EmptyHint(isCommit ? s.noCommitRecords : s.noDoneTasks),
+        ],
+      );
+    }
+
+    final palette = _categoricalPalette(scheme);
+    final colored = [
+      for (var i = 0; i < contributions.length; i++)
+        (item: contributions[i], color: palette[i % palette.length]),
+    ];
 
     return ListView(
       padding: const EdgeInsets.all(AppDimens.spacingMd),
       children: [
-        Container(
-          padding: const EdgeInsets.all(AppDimens.spacingMd),
-          decoration: BoxDecoration(
-            color: _cardBg(context),
-            borderRadius: BorderRadius.circular(AppDimens.radiusLg),
-            boxShadow: [
-              BoxShadow(
-                color: isDark
-                    ? Colors.black.withValues(alpha: 0.2)
-                    : const Color(0xFF1565C0).withValues(alpha: 0.10),
-                blurRadius: 4,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (var i = 0; i < entries.length; i++) ...[
-                _ContribRow(
-                  name: entries[i].key,
-                  value: entries[i].value,
-                  max: authorMax,
-                  color: _personColor(entries[i].key, isDark),
-                  isEdge: i == 0 || i == entries.length - 1,
+        toggle,
+        Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(AppDimens.spacingMd),
+            child: Column(
+              children: [
+                SizedBox(
+                  height: 240,
+                  width: 240,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      PieChart(
+                        PieChartData(
+                          sectionsSpace: 2,
+                          centerSpaceRadius: 28,
+                          sections: [
+                            for (final c in colored)
+                              PieChartSectionData(
+                                value: c.item.doneCount.toDouble(),
+                                color: c.color,
+                                radius: 90,
+                                // D2: no in-slice titles — the legend below
+                                // carries every author name + share.
+                                showTitle: false,
+                              ),
+                          ],
+                        ),
+                      ),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            s.contributionTab,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelMedium
+                                ?.copyWith(
+                                  color: scheme.onSurface,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                          Text(
+                            s.pieChart,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(color: scheme.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-                if (i < entries.length - 1)
-                  const SizedBox(height: AppDimens.spacingMd),
+                const SizedBox(height: AppDimens.spacingMd),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: AppDimens.spacingMd,
+                  runSpacing: AppDimens.spacingXs,
+                  children: [
+                    for (final c in colored)
+                      _LegendDot(
+                        color: c.color,
+                        label: '${c.item.label} — ${c.item.pct}%',
+                      ),
+                  ],
+                ),
               ],
-            ],
-          ),
-        ),
-        const SizedBox(height: AppDimens.spacingSm),
-        // Description
-        Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppDimens.spacingMd,
-            vertical: AppDimens.spacingSm + 4,
-          ),
-          decoration: BoxDecoration(
-            color: isDark
-                ? scheme.surfaceContainerHighest.withValues(alpha: 0.3)
-                : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(AppDimens.radiusSm),
-            border: Border.all(
-              color: scheme.outlineVariant.withValues(alpha: 0.3),
             ),
           ),
-          child: Text(
-            '已完成的任務累計的貢獻度',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-          ),
         ),
-      ],
-    );
-  }
-
-  static int _max(int a, int b) => a > b ? a : b;
-}
-
-class _ContribRow extends StatelessWidget {
-  const _ContribRow({
-    required this.name,
-    required this.value,
-    required this.max,
-    required this.color,
-    required this.isEdge,
-  });
-
-  final String name;
-  final int value;
-  final int max;
-  final Color color;
-  final bool isEdge;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final fraction = max == 0 ? 0.0 : value / max;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              name,
-              style: TextStyle(
-                fontSize: 12,
-                color: isEdge ? scheme.primary : scheme.onSurfaceVariant,
-              ),
-            ),
-            Text(
-              '$value',
-              style: TextStyle(
-                fontSize: 12,
-                color: scheme.primary.withValues(alpha: 0.7),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(
-            value: fraction,
-            minHeight: 8,
-            backgroundColor: color.withValues(alpha: 0.15),
-            valueColor: AlwaysStoppedAnimation<Color>(color),
-          ),
-        ),
+        const SizedBox(height: AppDimens.spacingMd),
+        _CaptionCard(caption),
       ],
     );
   }
 }
 
-// ---------------------------------------------------------------------------
-// Tab 2: 進度表
-// ---------------------------------------------------------------------------
-class _ProgressTab extends StatefulWidget {
+// ---- Tab 2: 進度表 (per-author AI work summaries) --------------------------
+
+class _ProgressTab extends StatelessWidget {
   const _ProgressTab({required this.vm});
   final StatsViewModel vm;
 
   @override
-  State<_ProgressTab> createState() => _ProgressTabState();
-}
-
-class _ProgressTabState extends State<_ProgressTab> {
-  final _expanded = <String, bool>{};
-
-  @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final entries = widget.vm.commitsPerAuthor.entries.toList();
+
+    if (vm.commitsLoading) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(AppDimens.spacingLg),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    final authors = vm.authorGroups;
+    if (authors.isEmpty) {
+      return _EmptyHint(s.noCommitRecords);
+    }
+
+    final palette = _categoricalPalette(scheme);
 
     return ListView(
       padding: const EdgeInsets.all(AppDimens.spacingMd),
       children: [
-        Container(
-          padding: const EdgeInsets.all(AppDimens.spacingMd),
-          decoration: BoxDecoration(
-            color: _cardBg(context),
-            borderRadius: BorderRadius.circular(AppDimens.radiusLg),
-            boxShadow: [
-              BoxShadow(
-                color: isDark
-                    ? Colors.black.withValues(alpha: 0.2)
-                    : const Color(0xFF1565C0).withValues(alpha: 0.10),
-                blurRadius: 4,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
-          child: Column(
-            children: [
-              for (var i = 0; i < entries.length; i++) ...[
-                _ProgressSection(
-                  name: entries[i].key,
-                  value: entries[i].value,
-                  color: _personColor(entries[i].key, isDark),
-                  isEdge: i == 0 || i == entries.length - 1,
-                  isExpanded: _expanded[entries[i].key] ?? false,
-                  onToggle: () => setState(() {
-                    _expanded[entries[i].key] =
-                        !(_expanded[entries[i].key] ?? false);
-                  }),
-                ),
-                if (i < entries.length - 1)
-                  const SizedBox(height: AppDimens.spacingMd),
+        Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(AppDimens.spacingMd),
+            child: Column(
+              children: [
+                for (var i = 0; i < authors.length; i++) ...[
+                  if (i > 0) const SizedBox(height: AppDimens.spacingMd),
+                  _AuthorSummaryRow(
+                    vm: vm,
+                    author: authors[i],
+                    color: palette[i % palette.length],
+                  ),
+                ],
               ],
-            ],
-          ),
-        ),
-        const SizedBox(height: AppDimens.spacingSm),
-        Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppDimens.spacingMd,
-            vertical: AppDimens.spacingSm + 4,
-          ),
-          decoration: BoxDecoration(
-            color: isDark
-                ? scheme.surfaceContainerHighest.withValues(alpha: 0.3)
-                : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(AppDimens.radiusSm),
-            border: Border.all(
-              color: scheme.outlineVariant.withValues(alpha: 0.3),
             ),
           ),
-          child: Text(
-            '每個人當前未完成任務的進度',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-          ),
         ),
+        const SizedBox(height: AppDimens.spacingMd),
+        _CaptionCard(s.authorContributionCaption),
       ],
     );
   }
 }
 
-class _ProgressSection extends StatelessWidget {
-  const _ProgressSection({
-    required this.name,
-    required this.value,
+class _AuthorSummaryRow extends StatefulWidget {
+  const _AuthorSummaryRow({
+    required this.vm,
+    required this.author,
     required this.color,
-    required this.isEdge,
-    required this.isExpanded,
-    required this.onToggle,
   });
-
-  final String name;
-  final int value;
+  final StatsViewModel vm;
+  final AuthorGroup author;
   final Color color;
-  final bool isEdge;
-  final bool isExpanded;
-  final VoidCallback onToggle;
+
+  @override
+  State<_AuthorSummaryRow> createState() => _AuthorSummaryRowState();
+}
+
+class _AuthorSummaryRowState extends State<_AuthorSummaryRow> {
+  bool _expanded = false;
+
+  void _toggle() {
+    setState(() => _expanded = !_expanded);
+    if (_expanded) {
+      // First expand triggers the AI summary load (no-op if already cached).
+      widget.vm.loadAuthorSummary(widget.author);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    // Mock percentage from value (capped at 100)
-    final pct = (value * 15).clamp(0, 100);
+    final s = context.l10n;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final g = widget.author;
+    final key = g.key;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -301,72 +312,238 @@ class _ProgressSection extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              name,
-              style: TextStyle(
-                fontSize: 12,
-                color: isEdge ? scheme.primary : scheme.onSurfaceVariant,
+            Expanded(
+              child: Text(
+                g.label,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: scheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
             Text(
-              '$pct%',
-              style: TextStyle(
-                fontSize: 12,
-                color: scheme.primary.withValues(alpha: 0.7),
+              '${g.commitCount} commits · ${g.pct}%',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: AppDimens.spacingSm),
         ClipRRect(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.circular(AppDimens.radiusSm),
           child: LinearProgressIndicator(
-            value: pct / 100,
+            value: g.pct / 100,
             minHeight: 8,
-            backgroundColor: color.withValues(alpha: 0.15),
-            valueColor: AlwaysStoppedAnimation<Color>(color),
+            color: widget.color,
+            backgroundColor: scheme.surfaceContainerHighest,
           ),
         ),
-        const SizedBox(height: 8),
-        GestureDetector(
-          onTap: onToggle,
-          child: Row(
-            children: [
-              Icon(
-                isExpanded ? Icons.expand_more : Icons.chevron_right,
-                size: 16,
-                color: scheme.onSurfaceVariant,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                '詳細情形',
-                style: TextStyle(
-                  fontSize: 12,
+        const SizedBox(height: AppDimens.spacingXs),
+        InkWell(
+          onTap: _toggle,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppDimens.spacingXs),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  _expanded ? Icons.expand_more : Icons.chevron_right,
+                  size: 16,
                   color: scheme.onSurfaceVariant,
                 ),
-              ),
-            ],
+                const SizedBox(width: AppDimens.spacingXs),
+                Text(
+                  s.statsDetails,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+              ],
+            ),
           ),
         ),
+        if (_expanded)
+          Padding(
+            padding: const EdgeInsets.only(
+              left: AppDimens.spacingSm,
+              top: AppDimens.spacingXs,
+            ),
+            child: _AuthorSummaryBody(vm: widget.vm, author: g, summaryKey: key),
+          ),
       ],
     );
   }
 }
 
-// ---------------------------------------------------------------------------
-// Shared helpers
-// ---------------------------------------------------------------------------
-Color _personColor(String name, bool isDark) {
-  final lower = name.toLowerCase();
-  if (lower.contains('alice')) {
-    return isDark ? const Color(0xFFFAB28E) : const Color(0xFF1565C0);
+class _AuthorSummaryBody extends StatelessWidget {
+  const _AuthorSummaryBody({
+    required this.vm,
+    required this.author,
+    required this.summaryKey,
+  });
+  final StatsViewModel vm;
+  final AuthorGroup author;
+  final String summaryKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.l10n;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    if (vm.isSummarizing(summaryKey)) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: AppDimens.spacingSm),
+            Text(s.aiSummaryGenerating),
+          ],
+        ),
+      );
+    }
+
+    final error = vm.summaryError(summaryKey);
+    if (error != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
+        child: InkWell(
+          onTap: () => vm.loadAuthorSummary(author, force: true),
+          child: Text(
+            s.summaryFailedRetry,
+            style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
+          ),
+        ),
+      );
+    }
+
+    final markdown = vm.authorSummary(summaryKey);
+    if (markdown == null) {
+      // Expanded but not yet requested (defensive — the row kicks off the load).
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                s.aiWorkSummaryTitle,
+                style: theme.textTheme.labelSmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ),
+            IconButton(
+              tooltip: s.regenerate,
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.refresh, size: 16),
+              onPressed: () => vm.loadAuthorSummary(author, force: true),
+            ),
+          ],
+        ),
+        MarkdownView(data: markdown),
+      ],
+    );
   }
-  if (lower.contains('bob')) {
-    return isDark ? const Color(0xFF42A5F5) : const Color(0xFF5B9BD5);
-  }
-  if (lower.contains('charlie')) {
-    return isDark ? const Color(0xFF26C6DA) : const Color(0xFF90CAF9);
-  }
-  // Fallback: use primary-ish color
-  return isDark ? const Color(0xFFFAB28E) : const Color(0xFF1565C0);
 }
+
+// ---- Shared bits ------------------------------------------------------------
+
+// A small colored dot + label, used by the pie legend.
+class _LegendDot extends StatelessWidget {
+  const _LegendDot({required this.color, required this.label});
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: AppDimens.spacingXs + 2),
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
+      ],
+    );
+  }
+}
+
+// The caption container under each tab (e.g. 已完成的任務累計的貢獻度).
+class _CaptionCard extends StatelessWidget {
+  const _CaptionCard(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDimens.spacingMd,
+        vertical: AppDimens.spacingSm + AppDimens.spacingXs,
+      ),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+      ),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: theme.textTheme.bodySmall
+            ?.copyWith(color: scheme.onSurfaceVariant),
+      ),
+    );
+  }
+}
+
+// Full-tab empty-state hint when there are no members/tasks for a tab.
+class _EmptyHint extends StatelessWidget {
+  const _EmptyHint(this.message);
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppDimens.spacingLg),
+        child: Text(
+          message,
+          textAlign: TextAlign.center,
+          style: Theme.of(context)
+              .textTheme
+              .bodyMedium
+              ?.copyWith(color: scheme.onSurfaceVariant),
+        ),
+      ),
+    );
+  }
+}
+
+// ---- helpers ----------------------------------------------------------------
+
+// Ordered categorical palette derived from the theme, cycled for >N members.
+// Mirrors the prototype's intent (light: a blue family; dark: the warm accent +
+// blues) by sourcing from colorScheme rather than hardcoded hexes.
+List<Color> _categoricalPalette(ColorScheme scheme) => [
+      scheme.primary,
+      scheme.tertiary,
+      scheme.secondary,
+      scheme.primaryContainer,
+      scheme.tertiaryContainer,
+      scheme.secondaryContainer,
+    ];

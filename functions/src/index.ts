@@ -9,10 +9,20 @@ export { breakdownTask } from './handlers/breakdownTask';
 export { forceUnlockBreakdown } from './handlers/forceUnlockBreakdown';
 export { assignTask } from './handlers/assignTask';
 export { generateHandoff } from './handlers/generateHandoff';
+export { importCollaborators } from './handlers/importCollaborators';
 export { summarizeDay } from './handlers/summarizeDay';
+export { dailyBrief } from './handlers/dailyBrief';
+export { explainCommit } from './handlers/explainCommit';
+export { summarizeAuthorWork } from './handlers/summarizeAuthorWork';
+export { getCommitGraph } from './handlers/getCommitGraph';
 export { setDiscordWebhook } from './handlers/setDiscordWebhook';
 export { subscribeToTopic } from './handlers/subscribeToTopic';
 export { requestDiscordFetch } from './handlers/requestDiscordFetch';
+export { setDiscordStartDate } from './handlers/setDiscordStartDate';
+export { setDiscordRange } from './handlers/setDiscordRange';
+export { discordChat } from './handlers/discordChat';
+export { editDiscordDigest } from './handlers/editDiscordDigest';
+export { setDigestLock } from './handlers/setDigestLock';
 
 // ---- HTTP (webhooks + Cloud Tasks workers) -------------------------------
 export { githubWebhook } from './handlers/githubWebhook';
@@ -21,10 +31,12 @@ export { dailyReportWorker } from './handlers/dailyReportWorker';
 export { claimDiscordFetch } from './handlers/claimDiscordFetch';
 export { completeDiscordFetch } from './handlers/completeDiscordFetch';
 export { setRepoChannel } from './handlers/setRepoChannel';
+export { botEditDigest } from './handlers/botEditDigest';
 
 // ---- Firestore triggers --------------------------------------------------
 export { onTaskCreated } from './triggers/onTaskCreated';
 export { onTaskUpdated } from './triggers/onTaskUpdated';
+export { onTaskDeleted } from './triggers/onTaskDeleted';
 export { onCommitCreated } from './triggers/onCommitCreated';
 export { onPRMerged } from './triggers/onPRMerged';
 export { onIssueWritten } from './triggers/onIssueWritten';

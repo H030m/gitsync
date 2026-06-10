@@ -12,6 +12,16 @@ abstract class DailyReportRepository {
 
   Stream<DailyReport?> streamReport(String repoId, String date);
   Future<DailyReport?> getReport(String repoId, String date);
+
+  /// Streams the per-day reports whose `date` (YYYY-MM-DD) falls inside
+  /// [startDate]..[endDate] inclusive. Composite range docs (id like
+  /// `{start}_{end}`, written by the multi-day summary) are dropped client-side
+  /// so callers only ever see one doc per calendar day.
+  Stream<List<DailyReport>> streamReportsInRange(
+    String repoId,
+    String startDate,
+    String endDate,
+  );
 }
 
 // NOTE: `dailyReports` is write-blocked for clients.
@@ -40,5 +50,25 @@ class _LiveDailyReportRepository implements DailyReportRepository {
     final data = snap.data();
     if (data == null) return null;
     return DailyReport.fromMap(data, snap.id);
+  }
+
+  @override
+  Stream<List<DailyReport>> streamReportsInRange(
+    String repoId,
+    String startDate,
+    String endDate,
+  ) {
+    // YYYY-MM-DD strings sort lexicographically, so a plain string range over
+    // the doc id (`date` field) gives the inclusive day window.
+    return _db
+        .collection(FirestorePaths.dailyReports(repoId))
+        .where(FieldPath.documentId, isGreaterThanOrEqualTo: startDate)
+        .where(FieldPath.documentId, isLessThanOrEqualTo: endDate)
+        .snapshots()
+        .map((snap) => snap.docs
+            // Drop composite range docs (`{start}_{end}`) — keep one per day.
+            .where((d) => !d.id.contains('_'))
+            .map((d) => DailyReport.fromMap(d.data(), d.id))
+            .toList());
   }
 }

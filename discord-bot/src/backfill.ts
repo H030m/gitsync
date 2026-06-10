@@ -2,11 +2,12 @@
 //
 // The bot has no public URL and no Firestore credentials, so it polls the
 // secret-auth `claimDiscordFetch` function (~every pollIntervalMs). When a
-// request is claimed, it REST-backfills that day's messages for each of the
-// repo's configured channels, runs the shared noise filter, POSTs survivors to
-// discordMessageIngest, then signals `completeDiscordFetch`. One failing channel
-// or request must not kill the loop — failures are logged and the loop continues.
-// See ARCHITECTURE.md §7.
+// request is claimed, it REST-backfills each configured channel **incrementally**
+// — starting from the channel's watermark (last fetched message id) or, on the
+// first run, from its configured start date — runs the shared noise filter,
+// POSTs survivors to discordMessageIngest, then reports completion plus the new
+// per-channel watermark to `completeDiscordFetch`. One failing channel or request
+// must not kill the loop. See ARCHITECTURE.md §7.
 import {
   ChannelType,
   type Client,
@@ -17,108 +18,156 @@ import {
 import type { BotConfig } from './config';
 import { shouldKeepMessage } from './filter';
 import { sendWithRetry, type IngestPayload } from './ingest';
+import { snowflakeForTaipeiDate, snowflakeForTaipeiDayEnd } from './snowflake';
 
-// Taipei is a fixed UTC+8 offset year-round (matches discordDailyDigestFlow).
-const TAIPEI_OFFSET_MS = 8 * 60 * 60 * 1000;
 const DISCORD_FETCH_LIMIT = 100; // max messages per REST page
+
+interface ChannelClaim {
+  channelId: string;
+  startDate: string | null; // YYYY-MM-DD, set via the app date picker
+  lastMessageId: string | null; // watermark — newest id ingested so far
+}
 
 interface ClaimResponse {
   none?: boolean;
   requestId?: string;
   repoId?: string;
   date?: string;
-  channelIds?: string[];
-}
-
-// Returns [startMs, endMs) in epoch millis for the given Asia/Taipei calendar
-// day. Mirrors taipeiDayBounds in functions/src/flows/discordDailyDigest.ts.
-function taipeiDayBounds(date: string): { startMs: number; endMs: number } {
-  const utcMidnight = new Date(`${date}T00:00:00Z`).getTime();
-  if (Number.isNaN(utcMidnight)) {
-    throw new Error(`invalid date: ${date}`);
-  }
-  const startMs = utcMidnight - TAIPEI_OFFSET_MS;
-  return { startMs, endMs: startMs + 24 * 60 * 60 * 1000 };
+  startDate?: string | null; // repo-level backfill range (low cursor)
+  endDate?: string | null; // repo-level backfill range (high cursor, inclusive day)
+  channels?: ChannelClaim[]; // new per-channel shape
+  channelIds?: string[]; // legacy fallback
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// Fetches every message in a channel within [startMs, endMs), paginating
-// backwards via the `before` cursor and stopping once messages are older than
-// the day's start. Returns the in-window messages (any order).
-async function fetchDayMessages(
+// Normalizes a claim into per-channel work items (handles the legacy
+// channelIds-only shape from older function deployments).
+function resolveChannels(claim: ClaimResponse): ChannelClaim[] {
+  if (Array.isArray(claim.channels)) {
+    return claim.channels.map((c) => ({
+      channelId: c.channelId,
+      startDate: c.startDate ?? null,
+      lastMessageId: c.lastMessageId ?? null,
+    }));
+  }
+  return (claim.channelIds ?? []).map((id) => ({
+    channelId: id,
+    startDate: null,
+    lastMessageId: null,
+  }));
+}
+
+// Fetches messages in the half-open window (afterId, highCursor), paginating
+// forward via the `after` cursor. `highCursor` (exclusive) bounds the range's
+// end — messages with id >= highCursor are skipped, and once a batch reaches
+// past it we stop. Returns the in-range messages plus the newest in-range id
+// (the new watermark — never beyond the range end).
+async function fetchMessagesAfter(
   channel: TextBasedChannel,
-  startMs: number,
-  endMs: number,
-): Promise<Message[]> {
+  afterId: string,
+  highCursor: string | null,
+): Promise<{ messages: Message[]; newWatermark: string }> {
   const collected: Message[] = [];
-  let before: string | undefined;
+  const high = highCursor ? BigInt(highCursor) : null;
+  let after = afterId;
+  let maxInRange = afterId; // watermark stays within the range end
 
   for (;;) {
     const batch = await channel.messages.fetch({
       limit: DISCORD_FETCH_LIMIT,
-      ...(before ? { before } : {}),
+      after,
     });
     if (batch.size === 0) break;
 
-    let reachedOlderThanDay = false;
+    let batchMax = after;
+    let reachedEnd = false;
     for (const msg of batch.values()) {
-      const ts = msg.createdTimestamp;
-      if (ts < startMs) {
-        // Messages come newest-first; once we cross the day start we're done.
-        reachedOlderThanDay = true;
+      const id = BigInt(msg.id);
+      if (BigInt(batchMax) < id) batchMax = msg.id; // advance over ALL ids
+      if (high !== null && id >= high) {
+        reachedEnd = true; // past the range end — skip but note we're done
         continue;
       }
-      if (ts < endMs) {
-        collected.push(msg);
-      }
-      // ts >= endMs (newer than the day) → skip, keep paginating back.
+      collected.push(msg);
+      if (BigInt(maxInRange) < id) maxInRange = msg.id;
     }
 
-    if (reachedOlderThanDay) break;
-    // Oldest message in this batch becomes the next cursor.
-    before = batch.last()?.id;
-    if (!before) break;
+    if (batchMax === after) break; // no forward progress — safety against loops
+    after = batchMax;
+    if (reachedEnd) break; // saw messages past the range end
+    if (batch.size < DISCORD_FETCH_LIMIT) break;
   }
 
-  return collected;
+  return { messages: collected, newWatermark: maxInRange };
 }
 
-// Processes one claimed fetch request: backfills all its channels, POSTs
-// survivors, and reports completion. Errors are logged; never throws.
+// Processes one claimed fetch request: incrementally backfills each channel,
+// POSTs survivors, and reports completion + new watermarks. Never throws.
 async function processRequest(client: Client, cfg: BotConfig, claim: ClaimResponse): Promise<void> {
-  const { requestId, repoId, date, channelIds } = claim;
+  const { requestId, repoId, date } = claim;
   if (!requestId || !repoId || !date) {
     console.error('[backfill] malformed claim response, skipping', claim);
     return;
   }
-  const ids = channelIds ?? [];
-  console.log(`[backfill] claimed ${requestId} repo=${repoId} date=${date} channels=${ids.length}`);
+  const channels = resolveChannels(claim);
 
-  let bounds: { startMs: number; endMs: number };
-  try {
-    bounds = taipeiDayBounds(date);
-  } catch (e) {
-    console.error(`[backfill] bad date for ${requestId}: ${String(e)}`);
-    await reportComplete(cfg, repoId, requestId, 0);
-    return;
+  // High cursor (exclusive upper bound) from the repo-level range end; null when
+  // no range is configured (no upper bound → fetch up to "now").
+  let highCursor: string | null = null;
+  if (claim.endDate) {
+    try {
+      highCursor = snowflakeForTaipeiDayEnd(claim.endDate);
+    } catch (e) {
+      console.error(`[backfill] bad endDate ${claim.endDate}: ${String(e)}`);
+    }
   }
+  console.log(
+    `[backfill] claimed ${requestId} repo=${repoId} range=${claim.startDate ?? '-'}..${claim.endDate ?? '-'} channels=${channels.length}`,
+  );
 
   let ingestedCount = 0;
-  for (const channelId of ids) {
+  const watermarks: Array<{ channelId: string; lastMessageId: string }> = [];
+
+  for (const ch of channels) {
     try {
-      const channel = await client.channels.fetch(channelId);
+      const channel = await client.channels.fetch(ch.channelId);
       if (
         !channel ||
         !channel.isTextBased() ||
         channel.type === ChannelType.DM ||
         channel.type === ChannelType.GroupDM
       ) {
-        console.warn(`[backfill] channel ${channelId} not a guild text channel, skipping`);
+        console.warn(`[backfill] channel ${ch.channelId} not a guild text channel, skipping`);
         continue;
       }
 
-      const messages = await fetchDayMessages(channel, bounds.startMs, bounds.endMs);
+      // Low cursor: explicit per-channel watermark wins; else the repo-level
+      // range start; else the per-channel start date; else the request's day.
+      // Each channel resolves its OWN watermark — there is no shared watermark.
+      const lowDate = claim.startDate ?? ch.startDate ?? date;
+      let after: string;
+      try {
+        after = ch.lastMessageId ?? snowflakeForTaipeiDate(lowDate);
+      } catch (e) {
+        console.error(`[backfill] bad start date for channel ${ch.channelId}: ${String(e)}`);
+        continue;
+      }
+      // Per-channel cursor trace: confirms each channel reads from its own
+      // marker. If two channels log the same cursor, that channel's stored
+      // watermark is stale (clear it via the app's "Start date" button).
+      const cursorSource = ch.lastMessageId
+        ? 'watermark'
+        : claim.startDate
+          ? 'rangeStart'
+          : ch.startDate
+            ? 'startDate'
+            : 'requestDate';
+      console.log(
+        `[backfill] channel ${ch.channelId} cursor=${after} (${cursorSource}) high=${highCursor ?? '-'}`,
+      );
+
+      const { messages, newWatermark } = await fetchMessagesAfter(channel, after, highCursor);
       for (const msg of messages) {
         if (
           !shouldKeepMessage({
@@ -142,14 +191,19 @@ async function processRequest(client: Client, cfg: BotConfig, claim: ClaimRespon
         const ok = await sendWithRetry(cfg, payload);
         if (ok) ingestedCount++;
       }
+
+      // Advance the watermark only if we actually saw new messages.
+      if (messages.length > 0) {
+        watermarks.push({ channelId: ch.channelId, lastMessageId: newWatermark });
+      }
     } catch (e) {
       // One failing channel must not abort the whole request.
-      console.error(`[backfill] channel ${channelId} failed: ${String(e)}`);
+      console.error(`[backfill] channel ${ch.channelId} failed: ${String(e)}`);
     }
   }
 
   console.log(`[backfill] request ${requestId} ingested ${ingestedCount} message(s)`);
-  await reportComplete(cfg, repoId, requestId, ingestedCount);
+  await reportComplete(cfg, repoId, requestId, ingestedCount, watermarks);
 }
 
 // POSTs completion to completeDiscordFetch. Logged-only on failure.
@@ -158,6 +212,7 @@ async function reportComplete(
   repoId: string,
   requestId: string,
   ingestedCount: number,
+  watermarks: Array<{ channelId: string; lastMessageId: string }>,
 ): Promise<void> {
   try {
     const res = await fetch(cfg.completeUrl, {
@@ -166,7 +221,7 @@ async function reportComplete(
         'content-type': 'application/json',
         'x-ingest-secret': cfg.ingestSecret,
       },
-      body: JSON.stringify({ repoId, requestId, ingestedCount }),
+      body: JSON.stringify({ repoId, requestId, ingestedCount, watermarks }),
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) {

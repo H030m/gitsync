@@ -60,6 +60,12 @@ export const setRepoChannel = onRequest(
       discordChannelIds: FieldValue.arrayUnion(channelId),
       discordGuildId: guildId,
     });
+    // Per-channel config doc holds startDate + watermark (lastMessageId).
+    // merge:true so re-binding a configured channel keeps its existing state.
+    await repoRef.collection('discordChannels').doc(channelId).set(
+      { guildId, addedAt: FieldValue.serverTimestamp() },
+      { merge: true },
+    );
 
     logger.info('setRepoChannel bound channel', { repoId, channelId });
     res.status(200).send({ repoId });

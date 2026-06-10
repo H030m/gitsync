@@ -22,6 +22,8 @@ interface QueryState {
 
 let seededDocs: Array<Record<string, unknown>> = [];
 let lastQuery: QueryState | null = null;
+// The existing digest doc the flow reads before writing (lock check).
+let existingDigest: Record<string, unknown> | undefined;
 const setSpy = jest.fn();
 
 function makeQuery(state: QueryState): Record<string, unknown> {
@@ -45,7 +47,15 @@ const fakeDb = {
     lastQuery = { wheres: [] };
     return makeQuery(lastQuery);
   },
-  doc: () => ({ set: (data: Record<string, unknown>) => setSpy(data) }),
+  doc: () => ({
+    // The flow reads the existing digest to honor a lock before writing.
+    // Default: no existing doc (unlocked) → the write proceeds.
+    get: async () => ({
+      exists: existingDigest !== undefined,
+      data: () => existingDigest,
+    }),
+    set: (data: Record<string, unknown>) => setSpy(data),
+  }),
 };
 
 jest.mock('../admin', () => ({ db: fakeDb, REGION: 'asia-east1' }));
@@ -69,6 +79,7 @@ import { discordDailyDigestFlow } from '../flows/discordDailyDigest';
 beforeEach(() => {
   seededDocs = [];
   lastQuery = null;
+  existingDigest = undefined;
   setSpy.mockReset();
   mockCreate.mockReset();
 });
@@ -118,6 +129,20 @@ describe('discordDailyDigestFlow', () => {
       messageCount: 2,
       markdown: '- Kai shipped the board\n- Jun blocked on auth',
     });
+  });
+
+  it('does not overwrite a locked digest (keeps the pinned markdown)', async () => {
+    seededDocs = [{ authorName: 'Kai', content: 'shipped the board' }];
+    existingDigest = { markdown: '# pinned', locked: true };
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: '- regenerated' } }],
+    });
+
+    const res = await discordDailyDigestFlow({ repoId: 'o_r', date: '2026-06-02' });
+
+    expect(setSpy).not.toHaveBeenCalled();
+    expect(res.markdown).toBe('# pinned');
+    expect(res.messageCount).toBe(1);
   });
 
   it('throws on a malformed date', async () => {

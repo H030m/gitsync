@@ -11,6 +11,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { db, REGION } from '../admin';
 import { discordIngestSecret, openaiKey } from '../config';
 import { discordDailyDigestFlow } from '../flows/discordDailyDigest';
+import { discordRangeDigestFlow } from '../flows/discordRangeDigest';
 
 export const completeDiscordFetch = onRequest(
   { region: REGION, secrets: [discordIngestSecret, openaiKey], maxInstances: 10 },
@@ -28,6 +29,7 @@ export const completeDiscordFetch = onRequest(
       repoId?: string;
       requestId?: string;
       ingestedCount?: number;
+      watermarks?: Array<{ channelId?: string; lastMessageId?: string }>;
     };
     const { repoId, requestId } = body;
     if (!repoId || typeof repoId !== 'string') {
@@ -62,10 +64,40 @@ export const completeDiscordFetch = onRequest(
       ingestedAt: FieldValue.serverTimestamp(),
     });
 
-    // 2. Run the digest flow. A digest failure must not crash the request —
+    // 1b. Advance each channel's watermark to the newest message the bot saw,
+    //     so the next backfill only fetches messages after it.
+    const watermarks = Array.isArray(body.watermarks) ? body.watermarks : [];
+    if (watermarks.length > 0) {
+      const batch = db.batch();
+      for (const w of watermarks) {
+        if (w && typeof w.channelId === 'string' && typeof w.lastMessageId === 'string') {
+          batch.set(
+            db.doc(`apps/gitsync/repos/${repoId}/discordChannels/${w.channelId}`),
+            { lastMessageId: w.lastMessageId, lastFetchedAt: FieldValue.serverTimestamp() },
+            { merge: true },
+          );
+        }
+      }
+      await batch.commit();
+    }
+
+    // 2. Run the digest flow(s). A digest failure must not crash the request —
     //    the messages are already ingested, so flag it and let the user retry.
+    //    When the repo has a backfill range, generate a digest for EACH day in
+    //    it (so the chat agent's per-day summaries cover the whole window);
+    //    otherwise fall back to a single digest for the request day.
+    const repoSnap = await db.doc(`apps/gitsync/repos/${repoId}`).get();
+    const startDate = repoSnap.data()?.discordStartDate as string | undefined;
+    const endDate = repoSnap.data()?.discordEndDate as string | undefined;
     try {
-      const digest = await discordDailyDigestFlow({ repoId, date });
+      let summary: Record<string, unknown>;
+      if (startDate && endDate) {
+        const r = await discordRangeDigestFlow(repoId, startDate, endDate);
+        summary = { rangeDigests: r };
+      } else {
+        const digest = await discordDailyDigestFlow({ repoId, date });
+        summary = { messageCount: digest.messageCount };
+      }
       await reqRef.update({
         status: 'done',
         completedAt: FieldValue.serverTimestamp(),
@@ -74,9 +106,11 @@ export const completeDiscordFetch = onRequest(
         repoId,
         requestId,
         date,
-        messageCount: digest.messageCount,
+        startDate: startDate ?? null,
+        endDate: endDate ?? null,
+        ...summary,
       });
-      res.status(200).send({ ok: true, messageCount: digest.messageCount });
+      res.status(200).send({ ok: true, ...summary });
     } catch (e) {
       logger.error('discordDailyDigestFlow failed', {
         repoId,
