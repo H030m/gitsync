@@ -10,6 +10,7 @@ import '../../models/daily_report.dart';
 import '../../models/discord_chat.dart';
 import '../../models/discord_digest.dart';
 import '../../l10n/app_strings.dart';
+import '../../repositories/user_repo.dart';
 import '../../theme/app_dimens.dart';
 import '../../view_models/commits_vm.dart';
 import '../../view_models/daily_brief_vm.dart';
@@ -772,12 +773,73 @@ class _CommitRollupCard extends StatelessWidget {
 
 // Per-member contribution chips (tasks done + commits), keyed as the backend
 // reports them (userId, or author login for unmatched commits).
-class _ContributionsCard extends StatelessWidget {
+class _ContributionsCard extends StatefulWidget {
   const _ContributionsCard({required this.report});
   final DailyReport report;
 
   @override
+  State<_ContributionsCard> createState() => _ContributionsCardState();
+}
+
+class _ContributionsCardState extends State<_ContributionsCard> {
+  final UserRepository _users = UserRepository();
+  // UID -> display name, filled in for members the report named only by UID.
+  Map<String, String> _resolved = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveNames();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ContributionsCard old) {
+    super.didUpdateWidget(old);
+    if (old.report != widget.report) _resolveNames();
+  }
+
+  // The report usually stores only the Firebase UID for roster members, so look
+  // the unnamed ones up in their user doc (UID -> githubLogin / name). Without
+  // this the chip shows a raw 28-char UID instead of the GitHub handle.
+  Future<void> _resolveNames() async {
+    final entries = widget.report.memberContributions.entries
+        .where((e) => e.value.tasksDone > 0 || e.value.commits > 0);
+    final out = <String, String>{};
+    for (final e in entries) {
+      if (_reportLabel(e) != null) continue; // already named by the report
+      try {
+        final u = await _users.getUser(e.key);
+        if (u == null) continue;
+        final name = u.githubLogin.isNotEmpty
+            ? u.githubLogin
+            : (u.name.isNotEmpty ? u.name : null);
+        if (name != null) out[e.key] = name;
+      } catch (_) {
+        // leave unresolved -> UID fallback
+      }
+    }
+    if (mounted && out.isNotEmpty) setState(() => _resolved = out);
+  }
+
+  // Name the report itself carries (githubLogin -> displayName), or null.
+  static String? _reportLabel(MapEntry<String, MemberContribution> e) {
+    final login = e.value.githubLogin;
+    if (login != null && login.isNotEmpty) return login;
+    final name = e.value.displayName;
+    if (name != null && name.isNotEmpty) return name;
+    return null;
+  }
+
+  // Final label: report name -> resolved user-doc name -> raw key (UID).
+  String _memberLabel(MapEntry<String, MemberContribution> e) =>
+      _reportLabel(e) ?? _resolved[e.key] ?? e.key;
+
+  static String _initial(String key) =>
+      key.isEmpty ? '?' : key.substring(0, 1).toUpperCase();
+
+  @override
   Widget build(BuildContext context) {
+    final report = widget.report;
     final entries = report.memberContributions.entries
         .where((e) => e.value.tasksDone > 0 || e.value.commits > 0)
         .toList();
@@ -840,9 +902,22 @@ class _ContributionsCard extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: AppDimens.spacingXs),
+                          // Cap the name width + ellipsize so a long fallback
+                          // label (the raw Firebase UID, used when the report
+                          // carries no githubLogin/displayName) can't overflow
+                          // the chip. Counts stay outside, always visible.
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 120),
+                            child: Text(
+                              _memberLabel(e),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelMedium,
+                            ),
+                          ),
+                          const SizedBox(width: AppDimens.spacingXs),
                           Text(
-                            '${_memberLabel(e)}  ·  ${e.value.tasksDone}✓ '
-                            '${e.value.commits}⎇',
+                            '·  ${e.value.tasksDone}✓ ${e.value.commits}⎇',
                             style: theme.textTheme.labelMedium,
                           ),
                         ],
@@ -857,19 +932,6 @@ class _ContributionsCard extends StatelessWidget {
     );
   }
 
-  static String _initial(String key) =>
-      key.isEmpty ? '?' : key.substring(0, 1).toUpperCase();
-
-  /// GitHub username, falling back to display name, then the raw map key
-  /// (legacy reports written before the backend persisted names — that key is
-  /// a Firebase UID for roster members or a login for unmatched authors).
-  static String _memberLabel(MapEntry<String, MemberContribution> e) {
-    final login = e.value.githubLogin;
-    if (login != null && login.isNotEmpty) return login;
-    final name = e.value.displayName;
-    if (name != null && name.isNotEmpty) return name;
-    return e.key;
-  }
 }
 
 class _BulletRow extends StatelessWidget {

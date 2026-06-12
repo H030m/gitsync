@@ -168,6 +168,15 @@ land — mirrors `StatsViewModel`'s name-resolution cache. Reuse it; don't re-re
   aren't announced as new — only later transitions fire the banner. `RepoShell` does this and shows
   a SnackBar with a "View" action. Show it from a post-frame callback (the listener can fire
   mid-build).
+- **User-triggered notification UI must surface the permission state.** When Android 13+'s
+  `POST_NOTIFICATIONS` is denied, `flutter_local_notifications` `show()` silently no-ops — a
+  "send test notification" button then looks broken with zero feedback (root cause of the
+  "test button does nothing" report, task `06-03-wire-fcm-notifications`). From a **user
+  gesture**, call `LocalNotificationsService.ensurePermission()` first (short-circuits if
+  enabled, otherwise re-prompts once and re-checks `areNotificationsEnabled()`); on `false`,
+  show a SnackBar hint (`l10n notificationsDisabledHint`) instead of failing silently.
+  **Passive listeners stay silent by design** (the FCM `onMessage` foreground redraw must NOT
+  re-prompt — never pop a permission dialog without a user gesture).
 
 ---
 
