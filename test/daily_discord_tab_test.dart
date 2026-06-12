@@ -11,6 +11,7 @@ import 'package:gitsync/models/sub_task.dart';
 import 'package:gitsync/repositories/fake/fake_discord_digest_repo.dart';
 import 'package:gitsync/services/fake/fake_functions_service.dart';
 import 'package:gitsync/services/functions_service.dart';
+import 'package:gitsync/view_models/ask_repo_vm.dart';
 import 'package:gitsync/view_models/commits_vm.dart';
 import 'package:gitsync/view_models/daily_brief_vm.dart';
 import 'package:gitsync/view_models/daily_report_vm.dart';
@@ -187,6 +188,8 @@ Widget _harness({FunctionsService? functions}) {
             create: (_) => DailyReportViewModel(repoId: _repoId)),
         ChangeNotifierProvider(
             create: (_) => DailyBriefChatViewModel(repoId: _repoId)),
+        // The Summary tab's chat now reads the shared, repo-wide AskRepoViewModel.
+        ChangeNotifierProvider(create: (_) => AskRepoViewModel(repoId: _repoId)),
         ChangeNotifierProvider(create: (_) => IntelRangeViewModel()),
       ],
       child: const DailyViewPage(repoId: _repoId),
