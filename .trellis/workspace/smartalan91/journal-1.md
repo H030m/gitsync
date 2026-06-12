@@ -75,3 +75,37 @@ Replaced the phone-width kanban (horizontally scrolling 200dp columns) with a Ti
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Dual-entry task status editor
+
+**Date**: 2026-06-13
+**Task**: Dual-entry task status editor
+**Branch**: `feature/mobile-board-sections`
+
+### Summary
+
+User acceptance of the section list surfaced a gap: the details-page status chip had always been read-only, so phones could only transition to done. Added a shared showStatusPicker bottom sheet with two entries (tappable details chip, section-row long-press); related chips stay read-only, existing behaviors unchanged. New details-page test harness; suite 85/85.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `931838a` | (see git log) |
+| `931838a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
