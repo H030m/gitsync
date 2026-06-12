@@ -31,11 +31,19 @@ class StatsViewPage extends StatelessWidget {
         child: Scaffold(
           appBar: AppBar(
             title: Text(s.statsTitle),
-            bottom: TabBar(
-              tabs: [
-                Tab(text: s.contributionTab),
-                Tab(text: s.progressTab),
-              ],
+            bottom: PreferredSize(
+              preferredSize: const Size.fromHeight(kTextTabBarHeight + 1),
+              child: Column(
+                children: [
+                  const Divider(height: 1),
+                  TabBar(
+                    tabs: [
+                      Tab(text: s.contributionTab),
+                      Tab(text: s.progressTab),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
           body: Consumer<StatsViewModel>(

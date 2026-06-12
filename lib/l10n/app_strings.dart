@@ -68,6 +68,7 @@ class AppStrings {
       _('Tap the + button to add tasks.', '請點擊右下角 + 號來新增任務');
   String updateStatusFailed(Object e) =>
       _('Failed to update status: $e', '更新狀態失敗:$e');
+  String get changeStatusTitle => _('Change status', '變更狀態');
 
   // ---- Add task ----
   String get addTaskTitle => _('Add task', '新增任務');
@@ -93,6 +94,7 @@ class AppStrings {
   String get assign => _('Assign', '指派');
   String get change => _('Change', '變更');
   String get unassigned => _('Unassigned', '未指派');
+  String get taskContent => _('Task content', '任務內容');
   String get descriptionSection => _('Description', '任務描述');
   String get implementationDetails => _('Implementation details', '實作細節');
   String get subtasks => _('Subtasks', '子任務');
