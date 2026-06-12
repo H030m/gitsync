@@ -134,6 +134,21 @@ jest.mock('../tools/assignTools', () => ({
   ]),
 }));
 
+// Mock the agent-trace side-channel so the W5 insertion points are observable
+// without a real Firestore write (the helper is best-effort + no-op otherwise).
+const traceStartRun = jest.fn(async (..._a: unknown[]) => {});
+const traceAppendStep = jest.fn(async (..._a: unknown[]) => {});
+const traceFinishRun = jest.fn(async (..._a: unknown[]) => {});
+jest.mock('../tools/agentTrace', () => ({
+  startRun: (...a: unknown[]) => traceStartRun(...a),
+  appendStep: (...a: unknown[]) => traceAppendStep(...a),
+  finishRun: (...a: unknown[]) => traceFinishRun(...a),
+  TRACE_LABELS: {
+    listRelatedCommits: 'Listing related commits…',
+    readTeamState: 'Reading team roster…',
+  },
+}));
+
 import { generateHandoffFlow } from '../flows/generateHandoff';
 
 const REPO = 'team17_gitsync';
@@ -154,6 +169,9 @@ beforeEach(() => {
   mockParse.mockClear();
   mockListRelatedCommits.mockClear();
   mockGetCommitDiff.mockClear();
+  traceStartRun.mockClear();
+  traceAppendStep.mockClear();
+  traceFinishRun.mockClear();
   createQueue.length = 0;
   parseQueue.length = 0;
 });
@@ -343,6 +361,28 @@ describe('generateHandoffFlow', () => {
     // draftHandoff won → the read tool was NOT executed this turn.
     expect(mockListRelatedCommits).not.toHaveBeenCalled();
     expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('traces the run (W5): startRun → appendStep per tool round + review → finishRun', async () => {
+    seedTasks();
+    // One tool round, then a draft, then a passing review.
+    createQueue.push(toolThenNothing('listRelatedCommits', {}));
+    createQueue.push(draftCall('## What was done\n- Shipped.'));
+    parseQueue.push({ score: 5, gaps: [] });
+
+    await generateHandoffFlow({ repoId: REPO, taskId: 't-ui', runId: 'run-h1' });
+
+    expect(traceStartRun).toHaveBeenCalledWith(REPO, 'run-h1', 'generateHandoff');
+    // appendStep called for the tool round AND for the review verdict.
+    expect(traceAppendStep).toHaveBeenCalledWith(REPO, 'run-h1', ['Listing related commits…']);
+    expect(traceAppendStep).toHaveBeenCalledWith(REPO, 'run-h1', 'Reviewing draft (score 5/5)…');
+    expect(traceFinishRun).toHaveBeenCalledWith(REPO, 'run-h1', 'done');
+  });
+
+  it('does not open a trace run for a cached handoff (W5)', async () => {
+    store.set(TASK, { title: 'Build the task UI', handoffDoc: 'cached handoff' });
+    await generateHandoffFlow({ repoId: REPO, taskId: 't-ui', runId: 'run-h2' });
+    expect(traceStartRun).not.toHaveBeenCalled();
   });
 
   it('throws internal when the draft markdown is empty', async () => {

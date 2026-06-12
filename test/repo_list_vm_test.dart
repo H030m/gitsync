@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitsync/models/ask_repo.dart';
 import 'package:gitsync/models/commit_graph.dart';
 import 'package:gitsync/models/daily_brief.dart';
 import 'package:gitsync/models/discord_chat.dart';
@@ -87,6 +88,15 @@ class _FakeFunctionsService implements FunctionsService {
     String? endDate,
     required String question,
     List<DailyBriefTurn> history = const [],
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<AskRepoReply> askRepo({
+    required String repoId,
+    required String question,
+    List<AskRepoTurn> history = const [],
+    String? runId,
   }) =>
       throw UnimplementedError();
 

@@ -268,6 +268,21 @@ class AppStrings {
       _('Related conversations ($n)', 'Related conversations ($n)');
   String get thinking => _('Thinking…', 'Thinking…');
 
+  // ---- Ask GitSync (global repo-wide chat) ----
+  String get askRepoTitle => _('Ask GitSync', '問 GitSync');
+  String get askRepoTooltip => _('Ask GitSync', '問 GitSync');
+  String get askRepoHint =>
+      _('Ask GitSync about this repo…', '問問 GitSync 關於這個 repo…');
+  String get askRepoEmptyHint => _(
+      'Ask anything about this repo — progress, people, code, commits, or team discussion.',
+      '關於這個 repo 的任何事都可以問 —— 進度、成員、程式碼、commit，或團隊討論。');
+  String get askRepoThinking => _('Thinking…', '思考中…');
+  String get askRepoNewSession => _('New session', '開啟新 session');
+  String askRepoCommitSources(int n) =>
+      _('Source commits ($n)', '來源 commit（$n）');
+  String askRepoDiscordSources(int n) =>
+      _('Related conversations ($n)', '相關對話（$n）');
+
   // ---- Stats ----
   String get statsTitle => _('Stats', '統計');
   String get contributionTab => _('Contribution', '貢獻度');
