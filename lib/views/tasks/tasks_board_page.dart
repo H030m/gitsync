@@ -491,17 +491,6 @@ class _CardBody extends StatelessWidget {
           // Bottom row: left = 依賴/交接 indicators, right = 負責人 chip.
           Row(
             children: [
-              if (task.dependsOn.isNotEmpty) ...[
-                Icon(Icons.link, size: 14, color: scheme.onSurfaceVariant),
-                const SizedBox(width: 2),
-                Text(
-                  '${task.dependsOn.length}',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(width: AppDimens.spacingSm),
-              ],
               if (task.handoffDoc != null)
                 Icon(
                   Icons.description_outlined,
