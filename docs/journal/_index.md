@@ -10,11 +10,16 @@
 
 | 隊員 | 在做什麼 | 預計動的檔案 |
 |---|---|---|
+| 嘉駿（多代理） | **Final demo 衝刺 W1–W5**（計畫見 [`docs/FINAL_DEMO_PLAN.md`](../FINAL_DEMO_PLAN.md)；分支 `feature/agentic-final-demo` ← `feat/w1`~`feat/w5`，全部從 develop 出，不碰既有分支） | `functions/src/flows/{generateHandoff,summarizeDay,assignTask}.ts`、`functions/src/tools/{discordSearch,dailyIntel,embedding}.ts` + 新 `repoDocs.ts`、`functions/src/triggers/onDiscordMessageCreated.ts`、新 `flows/askRepo.ts`、`functions/src/index.ts`、W5 前端聊天入口 |
 | 嘉駿 | Discord 整合（模組 B）| `discord-bot/`、`functions/src/handlers/discordMessageIngest.ts` |
 
 > 嘉駿剛把骨架鋪完（Sprint 1）。**接下來各模組隊員就 [`ARCHITECTURE.md §9`](../ARCHITECTURE.md#9-模組職責--隊員分工建議) 開工**，避免動到別人的層；如要跨層改動先在這列出。
 
 ---
+
+## 2026-06-12
+
+- **嘉駿 — Final demo 衝刺開工（W1–W5 計畫定案 + 多代理分工）**：對照評分標準定案五個工作項——W1 agentic 交接文件（工具循環＋self-review）、W2 語意搜尋強化（Discord embedding 補 stub＋向量優先＋backfill）、W3 專案記憶（滾動 projectBrief＋expertiseTags 寫回）、W4 讀 repo 的 `.trellis`/`AGENTS.md` 工具、W5 統一問答入口 `askRepo`＋工具軌跡顯示。完整計畫與 3 分鐘 demo 腳本見 [`docs/FINAL_DEMO_PLAN.md`](../FINAL_DEMO_PLAN.md)。分支：`feature/agentic-final-demo`（整合）← `feat/w2-semantic-search`、`feat/w4-repo-docs`、`feat/w1-agentic-handoff`、`feat/w3-project-memory`、`feat/w5-ask-repo`，全從 develop @ `92f858a` 出。FCM 由廷煥的分支完成，本批不碰。
 
 ## 2026-06-04
 
