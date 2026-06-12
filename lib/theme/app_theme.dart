@@ -44,6 +44,11 @@ ThemeData _themeFrom(ColorScheme scheme, TextTheme textTheme) {
         fontWeight: FontWeight.w600,
         color: scheme.onSurface,
       ),
+      shape: Border(
+        bottom: BorderSide(
+          color: scheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+      ),
     ),
     cardTheme: CardThemeData(
       elevation: 0,
