@@ -227,9 +227,18 @@ export async function askRepoFlow(input: AskRepoInput): Promise<AskRepoResult> {
 
   // Sources surfaced across rounds — commits deduped by sha, snippets by key,
   // both first-seen order (the order the agent found them).
+  //
+  // Only TARGETED retrieval (searchPastCommits) feeds the cited-sources panel.
+  // The bulk listing tool (listDayCommits) is context the agent SUMMARIZES, not
+  // per-commit evidence — surfacing all of it dumped the whole window on broad
+  // "how's progress" questions. A hard cap bounds the panel either way.
+  const MAX_SURFACED_COMMITS = 8;
   const surfacedCommits = new Map<string, DayCommit>();
   const collectCommits = (cs: DayCommit[]) => {
-    for (const c of cs) if (!surfacedCommits.has(c.sha)) surfacedCommits.set(c.sha, c);
+    for (const c of cs) {
+      if (surfacedCommits.size >= MAX_SURFACED_COMMITS) break;
+      if (!surfacedCommits.has(c.sha)) surfacedCommits.set(c.sha, c);
+    }
   };
   const surfacedSnippets = new Map<string, DiscordSnippet>();
   const collectSnippets = (ss: DiscordSnippet[]) => {
@@ -323,8 +332,9 @@ async function runTool(
   const name = call.function.name;
   switch (name) {
     case 'listDayCommits': {
+      // Bulk context for the agent to summarize — intentionally NOT surfaced as
+      // cited sources (that dumped the whole window on "how's progress").
       const cs = await listRangeCommits(repoId, sinceKey(clampDays(args.days)), today);
-      collect.collectCommits(cs);
       return { id: call.id, content: JSON.stringify(cs), label: TRACE_LABELS.listDayCommits };
     }
     case 'listCompletedTasks': {
