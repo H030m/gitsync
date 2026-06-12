@@ -34,7 +34,7 @@ ThemeData _themeFrom(ColorScheme scheme, TextTheme textTheme) {
     textTheme: textTheme,
     scaffoldBackgroundColor: scheme.surface,
     appBarTheme: AppBarTheme(
-      centerTitle: false,
+      centerTitle: true,
       elevation: 0,
       scrolledUnderElevation: 2,
       backgroundColor: scheme.surface,

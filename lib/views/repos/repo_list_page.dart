@@ -32,7 +32,6 @@ class RepoListPage extends StatelessWidget {
       child: Scaffold(
         appBar: AppBar(
           title: Text(s.yourRepos),
-          centerTitle: true,
           automaticallyImplyLeading: false,
         ),
         floatingActionButton: FloatingActionButton(
