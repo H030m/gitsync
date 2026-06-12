@@ -28,6 +28,10 @@ dependencies:
   firebase_messaging: ^14.9.2
   firebase_storage: ^11.1.0
 
+  # Show OS-level notifications while the app is in the foreground (FCM alone
+  # only surfaces them when backgrounded on Android).
+  flutter_local_notifications: ^17.2.4
+
   # UI
   google_fonts: ^6.1.0
   flutter_native_splash: ^2.3.10

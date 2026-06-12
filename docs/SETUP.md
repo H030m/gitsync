@@ -340,6 +340,21 @@ gcloud run services add-iam-policy-binding <service-name> \
 
 > 用 `firebase functions:log --only <name>` 看雲端錯誤。`internal` 多半是「呼叫被擋在函式外」(c) 或「函式內丟非 HttpsError 例外」。
 
+### 5.10 Android 編譯卡 `File google-services.json is missing`
+
+`android/app/google-services.json` 已 gitignore 且 repo **沒有範本**，所以 fresh clone 對
+Android 裝置/模擬器編譯時，Gradle 的 `:app:processDebugGoogleServices` 一定失敗——
+**即使是 fake mode**（Chrome/Web 不受影響）。二選一：
+
+1. **要連真 Firebase**：跑 `flutterfire configure --project=gitsync-645b3`（會自動產生此檔）。
+2. **只跑 fake mode**：放一個佔位檔 `android/app/google-services.json` 即可過編譯
+   （fake mode 執行期不會讀它的值）。最小內容：`project_info.project_id: "gitsync-645b3"`、
+   `client[0].client_info.android_client_info.package_name: "com.example.gitsync"`，
+   其餘 `project_number` / `mobilesdk_app_id` / `api_key` 填假值（格式對即可）。
+
+另外模擬器空間不足時 `INSTALL_FAILED_INSUFFICIENT_STORAGE`：用
+`adb shell pm list packages -3` 找舊練習 app、`adb uninstall <package>` 清掉即可。
+
 ---
 
 ## 6. Setup 完成檢查清單

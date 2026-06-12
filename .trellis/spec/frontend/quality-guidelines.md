@@ -55,6 +55,14 @@
     ASCII-only path, or use **`flutter build web --no-pub`** (or a clean `flutter run`) as the
     compile gate instead. The IDE analyzer is unaffected.
 - Ran the golden path in fake mode (`flutter run`, default `BACKEND=fake`).
+  - **Gotcha — Android build needs `google-services.json` even in fake mode**: the file is
+    gitignored and the repo ships **no template**, so a fresh clone fails the Gradle task
+    `:app:processDebugGoogleServices` when targeting an Android device/emulator. Either run
+    `flutterfire configure --project=gitsync-645b3` (real config), or drop a placeholder at
+    `android/app/google-services.json` (`project_id: gitsync-645b3`,
+    `package_name: com.example.gitsync`, dummy number/app-id/api-key) — fake mode never reads
+    its values at runtime, it only has to satisfy the Google Services Gradle plugin.
+    (Web/Chrome targets don't need it.) See `docs/SETUP.md §5.10`.
 - Report with the 5-field format: ✅做了 / 📁動了 / ⚠️沒做 / 🧪驗證 / 💬建議 commit message
   (English, imperative; AI generates the string only, never runs `git commit`).
 - Wrote a journal entry under `docs/journal/<you>.md` and updated `_index.md`. See the
