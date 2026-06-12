@@ -1,4 +1,4 @@
-# Workspace Index - smartalan91
+﻿# Workspace Index - smartalan91
 
 > Journal tracking for AI development sessions.
 
@@ -29,7 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
-| 3 | 2026-06-13 | Dual-entry task status editor | `931838a`, `931838a` | `feature/mobile-board-sections` |
+| 3 | 2026-06-13 | Dual-entry task status editor | `89bae12`, `931838a` | `feature/mobile-board-sections` |
 | 2 | 2026-06-13 | Mobile board redesign: collapsible status sections | `9470677`, `236419b` | `feature/mobile-board-sections` |
 | 1 | 2026-06-12 | FCM notifications: live e2e verified, permission-feedback fix, PR #38 to main | `0d4ef9a`, `7286a44`, `bd4a703`, `e1363cd` | `feature/foreground-notifications` |
 <!-- @@@/auto:session-history -->
