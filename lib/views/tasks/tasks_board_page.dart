@@ -34,11 +34,19 @@ class TasksBoardPage extends StatelessWidget {
       child: Scaffold(
         appBar: AppBar(
           title: Text(s.tasksTitle),
-          bottom: TabBar(
-            tabs: [
-              Tab(text: s.boardTab),
-              Tab(text: s.graphTab),
-            ],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(kTextTabBarHeight + 1),
+            child: Column(
+              children: [
+                const Divider(height: 1),
+                TabBar(
+                  tabs: [
+                    Tab(text: s.boardTab),
+                    Tab(text: s.graphTab),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
         floatingActionButton: FloatingActionButton(
