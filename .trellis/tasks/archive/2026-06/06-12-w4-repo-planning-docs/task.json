@@ -3,7 +3,7 @@
   "name": "w4-repo-planning-docs",
   "title": "W4: readRepoPlanningDocs tool — agent reads repo .trellis/.claude/AGENTS docs for zero-cost project context",
   "description": "New read-only tool readRepoPlanningDocs(repoId) in tools/repoDocs.ts. Fetches the repo's planning docs (.trellis task.json/prd.md progress, AGENTS.md/CLAUDE.md, .claude/**.md, README/docs fallback) via the GitHub contents API using the repo owner's githubAccessToken, truncates to a ~8000-token budget, caches the result in repos/{repoId}/meta/repoDocsCache (TTL 10min). Wired into breakdownTaskFlow's project-context step; exported as a pure async function so W1 (generateHandoff) and W5 (askRepo) can register it as an OpenAI function-calling tool later.",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": "backend",
   "scope": "functions",
   "package": "functions",
@@ -11,7 +11,7 @@
   "creator": "gitsync",
   "assignee": "gitsync",
   "createdAt": "2026-06-12",
-  "completedAt": null,
+  "completedAt": "2026-06-12",
   "branch": "feat/w4-repo-docs",
   "base_branch": "develop",
   "worktree_path": "C:\\Users\\a0905\\work\\ssfinal\\gitsync-w4",
@@ -26,7 +26,7 @@
     "functions/src/flows/breakdownTask.ts",
     "functions/src/__tests__/repoDocs.test.ts"
   ],
-  "notes": "PLANNING PHASE ONLY — no .ts source changes in this commit. See prd.md for the fetch-priority algorithm, truncation, cache design, security constraints, integration point, test plan, out-of-scope and risks. Baseline recorded green: typecheck clean, 29 suites / 211 tests pass.",
+  "notes": "Implemented per prd + Fable 5 rulings (Q1–Q4 resolved in prd.md). Gates green: typecheck 0 errors, jest 30 suites / 225 tests, lint 0. Reviewed and closed by Fable 5 (orchestrator) 2026-06-12.",
   "meta": {
     "workItem": "W4",
     "sprint": "final-demo",
