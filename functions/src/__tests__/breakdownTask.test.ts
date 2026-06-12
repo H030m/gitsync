@@ -100,11 +100,35 @@ jest.mock('../config', () => ({
 // zodResponseFormat from openai pulls in zod; keep it but it's harmless. The
 // real helper is used so the call shape matches production.
 
+// Mock tools/repoDocs so the flow's Step-1 call is scriptable per test and the
+// test never pulls in githubClient → @octokit/rest (ESM, jest can't parse it).
+let repoDocsResult: {
+  content: string;
+  summary: string;
+  source: string;
+  cached: boolean;
+} = { content: '', summary: 'no GitHub docs available', source: 'none', cached: false };
+const mockReadRepoPlanningDocs = jest.fn((_repoId: string) =>
+  Promise.resolve(repoDocsResult),
+);
+jest.mock('../tools/repoDocs', () => ({
+  readRepoPlanningDocs: (repoId: string) => mockReadRepoPlanningDocs(repoId),
+}));
+
 // Import after mocks.
 import { breakdownTaskFlow, detectCycles } from '../flows/breakdownTask';
 
 function seedRepo(repoId: string, data: Record<string, unknown>) {
   store.set(`apps/gitsync/repos/${repoId}`, data);
+}
+
+/** The `content` of the user message in the first OpenAI parse() call. */
+function firstUserMessage(): string {
+  const call = mockParse.mock.calls[0] as unknown[];
+  const arg = call[0] as {
+    messages: Array<{ role: string; content: string }>;
+  };
+  return arg.messages.find((m) => m.role === 'user')!.content;
 }
 
 beforeEach(() => {
@@ -113,6 +137,8 @@ beforeEach(() => {
   parseQueue.length = 0;
   idCounter = 0;
   mockParse.mockClear();
+  mockReadRepoPlanningDocs.mockClear();
+  repoDocsResult = { content: '', summary: 'no GitHub docs available', source: 'none', cached: false };
 });
 
 // ---- detectCycles ---------------------------------------------------------
@@ -193,6 +219,34 @@ describe('breakdownTaskFlow', () => {
     });
     expect(docA?.createdAt).toBe('__serverTimestamp__');
     expect(docB).toMatchObject({ title: 'B', source: 'ai_breakdown' });
+  });
+
+  it('prepends readRepoPlanningDocs content to the OpenAI context and drops the "newly imported" line', async () => {
+    seedRepo('x_y', { name: 'x/y', description: 'a demo' });
+    repoDocsResult = {
+      content: '## Project progress (.trellis)\n\n3 tasks — done 2 / in_progress 1 / todo 0',
+      summary: '2/3 tasks done; 1 open',
+      source: 'trellis',
+      cached: false,
+    };
+    parseQueue.push({ parsed: { subtasks: [] } });
+
+    await breakdownTaskFlow({ repoId: 'x_y', goal: 'spec', requestedBy: 'u1' });
+
+    expect(mockReadRepoPlanningDocs).toHaveBeenCalledWith('x_y');
+    const userMsg = firstUserMessage();
+    expect(userMsg).toContain('## Project progress (.trellis)');
+    expect(userMsg).not.toContain('This is a newly imported project');
+  });
+
+  it('keeps the "newly imported" line when no planning docs are found', async () => {
+    seedRepo('x_y', { name: 'x/y' });
+    // repoDocsResult defaults to the empty none result.
+    parseQueue.push({ parsed: { subtasks: [] } });
+
+    await breakdownTaskFlow({ repoId: 'x_y', goal: 'spec', requestedBy: 'u1' });
+
+    expect(firstUserMessage()).toContain('This is a newly imported project');
   });
 
   it('translates dependsOn 0-based indices into real taskIds', async () => {
