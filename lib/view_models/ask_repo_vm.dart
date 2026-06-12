@@ -48,7 +48,10 @@ class AskRepoViewModel with ChangeNotifier {
   /// can subscribe to the trace doc immediately (the callable carries it in).
   static String _newRunId() {
     final ts = DateTime.now().microsecondsSinceEpoch;
-    final nonce = _rng.nextInt(1 << 32).toRadixString(16);
+    // Use 1<<30 (web-safe), NOT 1<<32: on the web platform ints are JS numbers
+    // and `1 << 32` overflows to 0, making Random.nextInt(0) throw RangeError.
+    // 30 bits of randomness plus the microsecond timestamp is ample for a nonce.
+    final nonce = _rng.nextInt(1 << 30).toRadixString(16);
     return 'run-$ts-$nonce';
   }
 
