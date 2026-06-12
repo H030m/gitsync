@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import 'app_colors.dart';
 import 'app_dimens.dart';
 
 // App themes. Light is seeded from the brand blue; dark from the warm accent.
@@ -10,8 +9,8 @@ import 'app_dimens.dart';
 final ThemeData lightTheme = _themeFrom(
   ColorScheme.fromSeed(
     brightness: Brightness.light,
-    seedColor: AppColors.primary,
-    surface: AppColors.surfaceLight,
+    seedColor: const Color(0xFF1565C0),
+    surface: const Color(0xFFEEF5FF),
   ),
   GoogleFonts.notoSansTcTextTheme(),
 );
@@ -19,8 +18,8 @@ final ThemeData lightTheme = _themeFrom(
 final ThemeData darkTheme = _themeFrom(
   ColorScheme.fromSeed(
     brightness: Brightness.dark,
-    seedColor: AppColors.accentDark,
-    surface: AppColors.surfaceDark,
+    seedColor: const Color(0xFFFAB28E),
+    surface: const Color(0xFF1C1E26),
   ),
   GoogleFonts.notoSansTcTextTheme(
     ThemeData(brightness: Brightness.dark).textTheme,
