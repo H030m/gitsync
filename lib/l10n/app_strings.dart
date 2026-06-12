@@ -93,6 +93,7 @@ class AppStrings {
   String get assign => _('Assign', '指派');
   String get change => _('Change', '變更');
   String get unassigned => _('Unassigned', '未指派');
+  String get taskContent => _('Task content', '任務內容');
   String get descriptionSection => _('Description', '任務描述');
   String get implementationDetails => _('Implementation details', '實作細節');
   String get subtasks => _('Subtasks', '子任務');

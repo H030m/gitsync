@@ -280,14 +280,25 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
                 child: InkWell(
                   borderRadius: BorderRadius.circular(AppDimens.radiusMd),
                   onTap: () => _pickAssignee(task),
-                  child: _AssigneeCardBody(
-                    assigneeId: task.assigneeId,
-                    membersVm: membersVm,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _AssigneeCardBody(
+                          assigneeId: task.assigneeId,
+                          membersVm: membersVm,
+                        ),
+                      ),
+                      const SizedBox(width: AppDimens.spacingSm),
+                      _StatusChip(status: task.status),
+                      const SizedBox(width: AppDimens.spacingXs),
+                      Icon(Icons.chevron_right,
+                          color: scheme.onSurfaceVariant, size: 20),
+                    ],
                   ),
                 ),
               ),
 
-              const SizedBox(height: AppDimens.spacingSm),
+              const SizedBox(height: AppDimens.spacingMd),
 
               // ---- Task content card (description + subtasks) ----
               _DetailCard(
@@ -301,7 +312,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
                             size: 20, color: scheme.primary),
                         const SizedBox(width: AppDimens.spacingSm),
                         Text(
-                          s.descriptionSection,
+                          s.taskContent,
                           style: theme.textTheme.titleMedium?.copyWith(
                             color: scheme.primary,
                             fontWeight: FontWeight.w700,
@@ -354,7 +365,10 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
                         padding: const EdgeInsets.all(AppDimens.spacingMd),
                         decoration: BoxDecoration(
                           color: scheme.surfaceContainerHighest
-                              .withValues(alpha: 0.5),
+                              .withValues(alpha:
+                                  theme.brightness == Brightness.light
+                                      ? 0.5
+                                      : 0.8),
                           borderRadius:
                               BorderRadius.circular(AppDimens.radiusSm),
                         ),
@@ -378,32 +392,32 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
                         ),
                       ),
                       const SizedBox(height: AppDimens.spacingSm),
-                      for (final t in subtasks)
-                        Padding(
-                          padding: const EdgeInsets.only(
-                              bottom: AppDimens.spacingSm),
-                          child: InkWell(
-                            borderRadius:
-                                BorderRadius.circular(AppDimens.radiusSm),
-                            onTap: () =>
-                                Provider.of<NavigationService>(context,
-                                        listen: false)
-                                    .goTaskDetails(widget.repoId, t.id),
+                      for (var i = 0; i < subtasks.length; i++) ...[
+                        InkWell(
+                          borderRadius:
+                              BorderRadius.circular(AppDimens.radiusSm),
+                          onTap: () =>
+                              Provider.of<NavigationService>(context,
+                                      listen: false)
+                                  .goTaskDetails(widget.repoId, subtasks[i].id),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                vertical: AppDimens.spacingSm),
                             child: Row(
                               children: [
                                 Icon(
-                                  t.status == TaskStatus.done
+                                  subtasks[i].status == TaskStatus.done
                                       ? Icons.check_box
                                       : Icons.check_box_outline_blank,
                                   size: 22,
-                                  color: t.status == TaskStatus.done
+                                  color: subtasks[i].status == TaskStatus.done
                                       ? scheme.primary
                                       : scheme.outline,
                                 ),
                                 const SizedBox(width: AppDimens.spacingSm),
                                 Expanded(
                                   child: Text(
-                                    t.title,
+                                    subtasks[i].title,
                                     style: theme.textTheme.bodyMedium,
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
@@ -413,12 +427,15 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
                             ),
                           ),
                         ),
+                        if (i < subtasks.length - 1)
+                          const Divider(height: 1),
+                      ],
                     ],
                   ],
                 ),
               ),
 
-              const SizedBox(height: AppDimens.spacingSm),
+              const SizedBox(height: AppDimens.spacingMd),
 
               // ---- Dependencies card ----
               _DetailCard(
@@ -466,7 +483,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
               // ---- GitHub links card ----
               if (task.githubIssueNumber != null ||
                   task.linkedPRNumbers.isNotEmpty) ...[
-                const SizedBox(height: AppDimens.spacingSm),
+                const SizedBox(height: AppDimens.spacingMd),
                 _DetailCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -514,7 +531,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
               ],
 
               // ---- Handoff doc card ----
-              const SizedBox(height: AppDimens.spacingSm),
+              const SizedBox(height: AppDimens.spacingMd),
               _DetailCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
