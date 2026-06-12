@@ -2,6 +2,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 
 import '../repositories/user_repo.dart';
+import 'local_notifications.dart';
 import 'navigation.dart';
 
 // FCM wiring. Three responsibilities:
@@ -36,10 +37,24 @@ class PushMessagingService {
     }
     _initialized = true;
 
-    // Foreground messages: log only. The in-app banner (RepoShell, Firestore
-    // listener on assigneeId == me) handles the user-facing foreground prompt.
+    // Local-notification channel so foreground FCM can surface as a real OS
+    // notification (Android otherwise swallows them while the app is open).
+    await LocalNotificationsService.instance.init(
+      onTap: (_) => _navigation?.goNotify(),
+    );
+
+    // Foreground messages: redraw as a visible local notification, in addition
+    // to the in-app banner (RepoShell, Firestore listener on assigneeId == me).
     FirebaseMessaging.onMessage.listen((m) {
       debugPrint('[FCM foreground] ${m.notification?.title}');
+      final n = m.notification;
+      final title = n?.title ?? m.data['title'] ?? 'GitSync';
+      final body = n?.body ?? m.data['body'] ?? '';
+      LocalNotificationsService.instance.show(
+        title: title,
+        body: body,
+        payload: m.data['taskId'],
+      );
     });
 
     // Tap while the app was backgrounded.

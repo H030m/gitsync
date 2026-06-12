@@ -42,7 +42,7 @@ class _AddRepoPageState extends State<AddRepoPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('新增 Repo'), centerTitle: true),
+      appBar: AppBar(title: const Text('Add repo')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Form(
@@ -52,20 +52,20 @@ class _AddRepoPageState extends State<AddRepoPage> {
             children: [
               TextFormField(
                 decoration: const InputDecoration(
-                  labelText: 'Repo 路徑',
+                  labelText: 'GitHub URL',
                   hintText: 'https://github.com/owner/repo',
                   border: OutlineInputBorder(),
                 ),
                 validator: (v) =>
                     (v == null || !v.contains('github.com'))
-                        ? '請輸入有效的 GitHub URL'
+                        ? 'Invalid GitHub URL'
                         : null,
                 onSaved: (v) => _githubUrl = v!.trim(),
               ),
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: _busy ? null : _submit,
-                child: Text(_busy ? '新增中…' : '確認新增'),
+                child: Text(_busy ? 'Adding…' : 'Add'),
               ),
               if (_error != null) ...[
                 const SizedBox(height: 16),

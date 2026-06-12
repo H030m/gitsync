@@ -5,6 +5,7 @@ import '../../config/app_config.dart';
 import '../../l10n/app_locale.dart';
 import '../../l10n/app_strings.dart';
 import '../../services/authentication.dart';
+import '../../services/local_notifications.dart';
 import '../../services/locale_notifier.dart';
 import '../../services/navigation.dart';
 import '../../services/theme_mode_notifier.dart';
@@ -29,6 +30,37 @@ class SettingsPage extends StatelessWidget {
           const SizedBox(height: AppDimens.spacingSm),
           _SectionLabel(s.appearance),
           const _ThemeSelector(),
+          const SizedBox(height: AppDimens.spacingSm),
+          _SectionLabel(s.notifications),
+          ListTile(
+            leading: const Icon(Icons.notifications_active_outlined),
+            title: Text(s.sendTestNotification),
+            onTap: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              try {
+                final permitted =
+                    await LocalNotificationsService.instance.ensurePermission();
+                if (!permitted) {
+                  // Permission denied at the OS level: show() would silently
+                  // no-op, so tell the user where to turn notifications on.
+                  messenger.showSnackBar(
+                    SnackBar(content: Text(s.notificationsDisabledHint)),
+                  );
+                  return;
+                }
+                await LocalNotificationsService.instance.show(
+                  title: s.testNotificationTitle,
+                  body: s.testNotificationBody,
+                );
+              } catch (e) {
+                // Most likely the app was hot-restarted without a full rebuild,
+                // so the native plugin isn't in the running APK.
+                messenger.showSnackBar(
+                  SnackBar(content: Text('${s.notificationFailed}: $e')),
+                );
+              }
+            },
+          ),
           const SizedBox(height: AppDimens.spacingSm),
           _SectionLabel(s.account),
           ListTile(
