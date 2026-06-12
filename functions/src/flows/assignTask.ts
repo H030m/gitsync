@@ -16,7 +16,9 @@ import {
   readTeamState,
   searchMemberCommits,
   getTaskDependents,
+  mergeLearnedTags,
 } from '../tools/assignTools';
+import { readProjectBrief, formatBriefForPrompt } from '../tools/projectBrief';
 import { applyAssignment } from '../tools/taskStatus';
 import { db } from '../admin';
 
@@ -99,6 +101,15 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
             type: 'string',
             description: 'Concise justification for the choice.',
           },
+          learnedTags: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              "0-4 short lowercase skill tags (e.g. 'frontend','auth','ml') that " +
+              'the EVIDENCE YOU ACTUALLY RETRIEVED shows this assignee has. Derive ' +
+              'ONLY from commits among tools you called this run — do NOT guess from ' +
+              'the task title. Omit or [] if you have no evidence.',
+          },
         },
         required: ['assigneeId', 'reason'],
         additionalProperties: false,
@@ -147,13 +158,17 @@ export async function assignTaskFlow(
     };
   }
 
+  // Best-effort: the accumulated project brief, prepended (as a stable prefix)
+  // to the user message — the system prompt stays byte-identical for caching.
+  const briefPrefix = formatBriefForPrompt(await readProjectBrief(repoId));
+
   // ---- Agentic function-calling loop (>=2 members) -------------------------
   const openai = getOpenAI();
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: 'system', content: assignTaskSystem },
     {
       role: 'user',
-      content: buildTaskBrief(repoId, taskId, task, members),
+      content: briefPrefix + buildTaskBrief(repoId, taskId, task, members),
     },
   ];
 
@@ -203,6 +218,14 @@ export async function assignTaskFlow(
         }
         logger.info('assignTaskFlow: finalize', { repoId, taskId, assigneeId });
         await applyAssignment(repoId, taskId, assigneeId);
+        // W3b: best-effort learn the agent's tags into the assignee's expertise.
+        // Separate from the applyAssignment transaction (different doc, best-effort).
+        const learnedTags = Array.isArray(args.learnedTags)
+          ? args.learnedTags.map((t) => String(t))
+          : [];
+        if (learnedTags.length > 0) {
+          await mergeLearnedTags(repoId, assigneeId, learnedTags);
+        }
         return { assigneeId, reasoning: reason };
       }
     }

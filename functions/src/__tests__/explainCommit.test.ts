@@ -234,4 +234,72 @@ describe('explainCommitFlow', () => {
     ).rejects.toMatchObject({ code: 'internal' });
     expect(updateSpy).not.toHaveBeenCalled();
   });
+
+  // ---- W6: recompute in the app language -----------------------------------
+  const systemContent = (callIdx = 0): string =>
+    (
+      mockCreate.mock.calls[callIdx] as unknown as [
+        { messages: Array<{ role: string; content: string }> },
+      ]
+    )[0].messages.find((m) => m.role === 'system')?.content ?? '';
+
+  it('language present → the directive is appended to the system prompt', async () => {
+    seedCommit('c1', {});
+
+    await explainCommitFlow({
+      repoId: REPO,
+      sha: 'c1',
+      force: true,
+      language: 'Traditional Chinese',
+    });
+
+    expect(systemContent()).toContain(
+      'Write your entire response in Traditional Chinese.',
+    );
+  });
+
+  it('language absent → system prompt has no directive (byte-identical base)', async () => {
+    seedCommit('c1', {});
+    await explainCommitFlow({ repoId: REPO, sha: 'c1' });
+    const base = systemContent();
+    expect(base).not.toContain('Write your entire response in');
+
+    // A WITH-language run appends exactly the one line to that same base.
+    mockCreate.mockClear();
+    await explainCommitFlow({
+      repoId: REPO,
+      sha: 'c1',
+      force: true,
+      language: 'English',
+    });
+    expect(systemContent()).toBe(
+      `${base}\nWrite your entire response in English.`,
+    );
+  });
+
+  it('language threads into the GitHub fallback path too', async () => {
+    mockGetCommit.mockResolvedValue({
+      sha: 'branch1',
+      message: 'feat: branch-only work',
+      authorLogin: 'bob-dev',
+      authorName: 'Bob',
+      committedAt: '2026-06-05T00:00:00Z',
+      files: ['lib/views/commits/branch_view.dart'],
+      additions: 80,
+      deletions: 10,
+    });
+
+    await explainCommitFlow({
+      repoId: REPO,
+      sha: 'branch1',
+      owner: 'team17',
+      repo: 'gitsync',
+      accessToken: 'tok',
+      language: 'Traditional Chinese',
+    });
+
+    expect(systemContent()).toContain(
+      'Write your entire response in Traditional Chinese.',
+    );
+  });
 });

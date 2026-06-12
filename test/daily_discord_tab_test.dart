@@ -11,6 +11,7 @@ import 'package:gitsync/models/sub_task.dart';
 import 'package:gitsync/repositories/fake/fake_discord_digest_repo.dart';
 import 'package:gitsync/services/fake/fake_functions_service.dart';
 import 'package:gitsync/services/functions_service.dart';
+import 'package:gitsync/view_models/ask_repo_vm.dart';
 import 'package:gitsync/view_models/commits_vm.dart';
 import 'package:gitsync/view_models/daily_brief_vm.dart';
 import 'package:gitsync/view_models/daily_report_vm.dart';
@@ -83,14 +84,22 @@ class _SpyFunctions implements FunctionsService {
       _fake.assignTask(repoId: repoId, taskId: taskId);
   @override
   Future<String> generateHandoff(
-          {required String repoId, required String taskId}) =>
-      _fake.generateHandoff(repoId: repoId, taskId: taskId);
+          {required String repoId,
+          required String taskId,
+          String? language}) =>
+      _fake.generateHandoff(
+          repoId: repoId, taskId: taskId, language: language);
   @override
   Future<String> summarizeDay(
           {required String repoId,
           required String startDate,
-          String? endDate}) =>
-      _fake.summarizeDay(repoId: repoId, startDate: startDate, endDate: endDate);
+          String? endDate,
+          String? language}) =>
+      _fake.summarizeDay(
+          repoId: repoId,
+          startDate: startDate,
+          endDate: endDate,
+          language: language);
   @override
   Future<DailyBriefReply> dailyBrief(
           {required String repoId,
@@ -106,8 +115,12 @@ class _SpyFunctions implements FunctionsService {
           history: history);
   @override
   Future<String> explainCommit(
-          {required String repoId, required String sha, bool force = false}) =>
-      _fake.explainCommit(repoId: repoId, sha: sha, force: force);
+          {required String repoId,
+          required String sha,
+          bool force = false,
+          String? language}) =>
+      _fake.explainCommit(
+          repoId: repoId, sha: sha, force: force, language: language);
   @override
   Future<void> setDiscordWebhook(
           {required String repoId,
@@ -175,6 +188,8 @@ Widget _harness({FunctionsService? functions}) {
             create: (_) => DailyReportViewModel(repoId: _repoId)),
         ChangeNotifierProvider(
             create: (_) => DailyBriefChatViewModel(repoId: _repoId)),
+        // The Summary tab's chat now reads the shared, repo-wide AskRepoViewModel.
+        ChangeNotifierProvider(create: (_) => AskRepoViewModel(repoId: _repoId)),
         ChangeNotifierProvider(create: (_) => IntelRangeViewModel()),
       ],
       child: const DailyViewPage(repoId: _repoId),

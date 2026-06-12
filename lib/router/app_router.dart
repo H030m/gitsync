@@ -8,6 +8,7 @@ import '../view_models/daily_brief_vm.dart';
 import '../view_models/daily_report_vm.dart';
 import '../view_models/discord_chat_vm.dart';
 import '../view_models/discord_messages_vm.dart';
+import '../view_models/ask_repo_vm.dart';
 import '../view_models/intel_range_vm.dart';
 import '../view_models/members_vm.dart';
 import '../view_models/repo_vm.dart';
@@ -93,6 +94,11 @@ final GoRouter appRouter = GoRouter(
             ),
             ChangeNotifierProvider(
               create: (_) => DailyBriefChatViewModel(repoId: repoId),
+            ),
+            // The global "Ask GitSync" chat VM — read by the repo-shell FAB and
+            // its sheet on every tab, so they share one transcript.
+            ChangeNotifierProvider(
+              create: (_) => AskRepoViewModel(repoId: repoId),
             ),
             // One shared date range driving all three Daily tabs (see
             // IntelRangeViewModel). Scoped here so Tasks-page navigation

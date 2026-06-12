@@ -80,6 +80,85 @@ export async function getCommit(
   };
 }
 
+export interface CommitDiffFile {
+  filename: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  /** Unified diff for this file; null for binary files or once truncated. */
+  patch: string | null;
+}
+
+export interface CommitDiff {
+  sha: string;
+  message: string;
+  files: CommitDiffFile[];
+  /** True when later files' patches were dropped to stay under the char cap. */
+  truncated: boolean;
+}
+
+/**
+ * Fetches a single commit's unified diff (GET /repos/{owner}/{repo}/commits/{sha})
+ * keeping the per-file `patch` text that {@link getCommit} deliberately strips.
+ * Files are walked in order, accumulating patch characters; once the running
+ * total would exceed `maxPatchChars` the remaining files keep their metadata but
+ * get `patch: null` and `truncated` is set — this bounds one commit's diff to a
+ * predictable budget (the handoff agent's getCommitDiff tool). Binary files
+ * (no patch from GitHub) also surface as `patch: null`. All GitHub API access
+ * stays in this file (ARCHITECTURE.md §6.4).
+ */
+export async function getCommitDiff(
+  owner: string,
+  repo: string,
+  accessToken: string,
+  sha: string,
+  maxPatchChars: number,
+): Promise<CommitDiff> {
+  const octokit = getOctokit(accessToken);
+  const res = await octokit.repos.getCommit({ owner, repo, ref: sha });
+  const data = res.data;
+
+  let used = 0;
+  let truncated = false;
+  const files: CommitDiffFile[] = (data.files ?? []).map((f) => {
+    const patch = typeof f.patch === 'string' ? f.patch : null;
+    if (patch === null) {
+      return {
+        filename: f.filename,
+        status: f.status ?? '',
+        additions: f.additions ?? 0,
+        deletions: f.deletions ?? 0,
+        patch: null,
+      };
+    }
+    if (truncated || used + patch.length > maxPatchChars) {
+      truncated = true;
+      return {
+        filename: f.filename,
+        status: f.status ?? '',
+        additions: f.additions ?? 0,
+        deletions: f.deletions ?? 0,
+        patch: null,
+      };
+    }
+    used += patch.length;
+    return {
+      filename: f.filename,
+      status: f.status ?? '',
+      additions: f.additions ?? 0,
+      deletions: f.deletions ?? 0,
+      patch,
+    };
+  });
+
+  return {
+    sha: data.sha,
+    message: data.commit.message,
+    files,
+    truncated,
+  };
+}
+
 // ---- Commit graph (branch topology) ----------------------------------------
 
 export interface GraphCommitRaw {
@@ -468,4 +547,77 @@ export async function deleteWebhook(
 ): Promise<void> {
   const octokit = getOctokit(accessToken);
   await octokit.repos.deleteWebhook({ owner, repo, hook_id: hookId });
+}
+
+// ---- Repo contents (read-only file/dir access for tools/repoDocs) ----------
+
+/** One entry in a directory listing (GET /repos/{owner}/{repo}/contents/{dir}). */
+export interface RepoEntry {
+  path: string;
+  name: string;
+  type: 'file' | 'dir';
+  size: number;
+}
+
+/**
+ * Lists a directory's entries via the contents API
+ * (GET /repos/{owner}/{repo}/contents/{path}). Returns `[]` when the path is
+ * missing (404) — callers treat "no docs" as normal, not an error. Non-file/dir
+ * entries (`submodule`/`symlink`) are dropped defensively. A file path (not a
+ * dir) also yields `[]`. All GitHub API access stays in this file
+ * (ARCHITECTURE.md §6.4).
+ */
+export async function listRepoDir(
+  owner: string,
+  repo: string,
+  accessToken: string,
+  path: string,
+): Promise<RepoEntry[]> {
+  const octokit = getOctokit(accessToken);
+  try {
+    const res = await octokit.repos.getContent({ owner, repo, path });
+    if (!Array.isArray(res.data)) return []; // a file, not a directory
+    return res.data
+      .filter((e) => e.type === 'file' || e.type === 'dir')
+      .map((e) => ({
+        path: e.path,
+        name: e.name,
+        type: e.type as 'file' | 'dir',
+        size: e.size ?? 0,
+      }));
+  } catch (err) {
+    if ((err as { status?: number } | null)?.status === 404) return [];
+    throw err;
+  }
+}
+
+/**
+ * Fetches one text file's decoded UTF-8 content via the contents API
+ * (GET /repos/{owner}/{repo}/contents/{path}). Returns `null` on 404, when the
+ * path is a directory rather than a file, or when the file's size exceeds
+ * `maxBytes` (the caller's hard cap — larger files are skipped, never
+ * truncated-and-read). All GitHub API access stays in this file
+ * (ARCHITECTURE.md §6.4).
+ */
+export async function getRepoFile(
+  owner: string,
+  repo: string,
+  accessToken: string,
+  path: string,
+  maxBytes: number,
+): Promise<string | null> {
+  const octokit = getOctokit(accessToken);
+  let data;
+  try {
+    const res = await octokit.repos.getContent({ owner, repo, path });
+    data = res.data;
+  } catch (err) {
+    if ((err as { status?: number } | null)?.status === 404) return null;
+    throw err;
+  }
+  // A directory comes back as an array; only single files carry `content`.
+  if (Array.isArray(data) || data.type !== 'file') return null;
+  if (typeof data.size === 'number' && data.size > maxBytes) return null;
+  if (typeof data.content !== 'string') return null;
+  return Buffer.from(data.content, 'base64').toString('utf-8');
 }

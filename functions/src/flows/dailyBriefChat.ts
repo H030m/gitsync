@@ -13,6 +13,7 @@ import type OpenAI from 'openai';
 
 import { getOpenAI, MODELS } from '../config';
 import { dailyBriefSystem } from '../prompts/dailyBrief';
+import { readProjectBrief, formatBriefForPrompt } from '../tools/projectBrief';
 import {
   listRangeCommits,
   listRangeCompletedTasks,
@@ -100,9 +101,13 @@ export async function dailyBriefChatFlow(
   const endDate = input.endDate ?? date;
   const history = Array.isArray(input.history) ? input.history : [];
 
+  // Best-effort: append the accumulated project brief to the system message
+  // (stable prefix, before history + question). Empty brief → '' → unchanged.
+  const briefPrefix = formatBriefForPrompt(await readProjectBrief(repoId));
+
   const openai = getOpenAI();
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: 'system', content: dailyBriefSystem(date, endDate) },
+    { role: 'system', content: dailyBriefSystem(date, endDate) + briefPrefix },
     ...history
       .slice(-MAX_HISTORY_TURNS)
       .filter((t) => t && (t.role === 'user' || t.role === 'assistant') && t.content)

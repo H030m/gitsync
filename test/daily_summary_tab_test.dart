@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 import 'package:gitsync/data/dummy_data.dart';
+import 'package:gitsync/view_models/ask_repo_vm.dart';
 import 'package:gitsync/view_models/commits_vm.dart';
 import 'package:gitsync/view_models/daily_brief_vm.dart';
 import 'package:gitsync/view_models/daily_report_vm.dart';
@@ -12,8 +13,11 @@ import 'package:gitsync/view_models/intel_range_vm.dart';
 import 'package:gitsync/views/daily/daily_view_page.dart';
 
 // Renders the real DailyViewPage (Summary tab) against the fake backend and
-// drives the "ask AI about today" chat, verifying the intelligence-hub UI wires
-// up end-to-end.
+// drives the global "Ask GitSync" chat — now the shared, repo-wide
+// AskRepoViewModel — verifying the intelligence-hub UI wires up end-to-end.
+//
+// DailyBriefChatViewModel is still provided (the page's range fan-out keeps it
+// in sync) even though the Summary chat no longer reads it.
 Widget _harness() {
   const repoId = DummyData.demoRepoId;
   return MaterialApp(
@@ -28,6 +32,7 @@ Widget _harness() {
             create: (_) => DailyReportViewModel(repoId: repoId)),
         ChangeNotifierProvider(
             create: (_) => DailyBriefChatViewModel(repoId: repoId)),
+        ChangeNotifierProvider(create: (_) => AskRepoViewModel(repoId: repoId)),
         ChangeNotifierProvider(create: (_) => IntelRangeViewModel()),
       ],
       child: const DailyViewPage(repoId: repoId),
@@ -51,10 +56,13 @@ void main() {
     expect(find.textContaining('Sprint 1 skeleton merged'), findsOneWidget);
     expect(find.text('Commit rollup'), findsOneWidget);
     expect(find.text('Contributions'), findsOneWidget);
-    expect(find.text('Ask AI about today'), findsOneWidget);
+    // The lower chat is now the global, repo-wide "Ask GitSync" assistant.
+    // (The test locale resolves to zh, like the report sections above.)
+    expect(find.text('問 GitSync'), findsOneWidget);
     expect(
       find.byWidgetPredicate((w) =>
-          w is TextField && w.decoration?.hintText == 'Ask AI about today…'),
+          w is TextField &&
+          w.decoration?.hintText == '問問 GitSync 關於這個 repo…'),
       findsOneWidget,
     );
   });
@@ -67,7 +75,7 @@ void main() {
     final field = find.byWidgetPredicate(
       (w) =>
           w is TextField &&
-          w.decoration?.hintText == 'Ask AI about today…',
+          w.decoration?.hintText == '問問 GitSync 關於這個 repo…',
     );
     expect(field, findsOneWidget);
 
@@ -75,9 +83,10 @@ void main() {
     await tester.testTextInput.receiveAction(TextInputAction.send);
     await tester.pumpAndSettle();
 
-    // The user's question and an AI source panel are now on screen.
+    // The user's question and an AI source panel are now on screen. The shared
+    // Ask-GitSync rendering labels cited commits with the zh source-commits copy.
     expect(find.text('OAuth 進度?'), findsOneWidget);
-    expect(find.textContaining('Source commits'), findsOneWidget);
+    expect(find.textContaining('來源 commit'), findsOneWidget);
   });
 
   testWidgets('a multi-day range shows one collapsible card per day',
@@ -166,7 +175,8 @@ void main() {
     // Seed a turn by asking a question.
     final field = find.byWidgetPredicate(
       (w) =>
-          w is TextField && w.decoration?.hintText == 'Ask AI about today…',
+          w is TextField &&
+          w.decoration?.hintText == '問問 GitSync 關於這個 repo…',
     );
     await tester.enterText(field, 'OAuth 進度?');
     await tester.testTextInput.receiveAction(TextInputAction.send);

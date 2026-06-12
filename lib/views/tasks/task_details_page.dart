@@ -55,6 +55,8 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
       final markdown = await functions.generateHandoff(
         repoId: widget.repoId,
         taskId: task.id,
+        // W6: regenerate in the app's current language.
+        language: s.backendLanguage,
       );
       if (!mounted) return;
       setState(() => _localHandoff = markdown);

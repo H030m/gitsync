@@ -30,4 +30,11 @@ class FirestorePaths {
   static String fetchRequests(String repoId) =>
       '${repo(repoId)}/fetchRequests';
   static String dailyReports(String repoId) => '${repo(repoId)}/dailyReports';
+
+  /// Agent tool-trace runs (askRepo / generateHandoff). One doc per run, keyed
+  /// by the client-generated runId; written only by Cloud Functions (admin SDK),
+  /// streamed read-only by the client.
+  static String agentRuns(String repoId) => '${repo(repoId)}/agentRuns';
+  static String agentRun(String repoId, String runId) =>
+      '${agentRuns(repoId)}/$runId';
 }

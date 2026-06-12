@@ -112,6 +112,61 @@ export async function searchMemberCommits(
   }
 }
 
+/** Max skill tags kept per member (oldest-first eviction beyond this). */
+export const MAX_TAGS = 8;
+
+/**
+ * Merge AI-learned skill tags into a member's `expertiseTags` (W3b). The next
+ * `assignTaskFlow` reads them back via `readTeamState` — the agent's last
+ * decision becomes its next input.
+ *
+ * Writes to `apps/gitsync/users/{userId}.expertiseTags` (the SAME field
+ * readTeamState reads — NOT the members doc). Uses `set(...,{merge:true})`, not
+ * `update()`, because the users doc may not pre-exist for a member (readTeamState
+ * tolerates its absence); `update()` would throw NOT_FOUND.
+ *
+ * Set-union with a deterministic cap: keep existing tags first, append only new
+ * ones, then if over MAX_TAGS drop from the FRONT (oldest) so the newest stay.
+ *
+ * BEST-EFFORT — a write failure is logged and swallowed (the assignment already
+ * applied). NEVER throws.
+ */
+export async function mergeLearnedTags(
+  repoId: string,
+  userId: string,
+  newTags: string[],
+): Promise<void> {
+  const clean = [
+    ...new Set(
+      newTags
+        .map((t) => t.trim().toLowerCase())
+        .filter((t) => t.length > 0 && t.length <= 30),
+    ),
+  ];
+  if (clean.length === 0) return;
+
+  try {
+    const snap = await db.doc(`apps/gitsync/users/${userId}`).get();
+    const existing = (snap.data()?.expertiseTags as string[] | undefined) ?? [];
+
+    const merged = [...existing];
+    for (const t of clean) if (!merged.includes(t)) merged.push(t);
+    const capped =
+      merged.length > MAX_TAGS ? merged.slice(merged.length - MAX_TAGS) : merged;
+
+    await db
+      .doc(`apps/gitsync/users/${userId}`)
+      .set({ expertiseTags: capped }, { merge: true });
+  } catch (err) {
+    // The assignment already applied — never fail the flow over a learning signal.
+    logger.warn('mergeLearnedTags failed (best-effort)', {
+      repoId,
+      userId,
+      err: String(err),
+    });
+  }
+}
+
 /** A downstream task blocked by the task being assigned. */
 export interface TaskDependent {
   taskId: string;
