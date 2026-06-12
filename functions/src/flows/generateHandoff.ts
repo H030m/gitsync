@@ -33,6 +33,12 @@ import { readRepoPlanningDocs } from '../tools/repoDocs';
 import { listRelatedCommits, getCommitDiff } from '../tools/handoffTools';
 import { readProjectBrief, formatBriefForPrompt } from '../tools/projectBrief';
 import {
+  startRun,
+  appendStep,
+  finishRun,
+  TRACE_LABELS,
+} from '../tools/agentTrace';
+import {
   generateHandoffSystem,
   generateHandoffSeedContext,
   handoffReviewSystem,
@@ -47,6 +53,9 @@ export interface GenerateHandoffInput {
   taskId: string;
   /** Regenerate even when the task already has a handoffDoc. */
   force?: boolean;
+  /** Client-generated agent-trace doc id (manual callable only). The auto
+   *  trigger has no client and omits it → the trace is a no-op (best-effort). */
+  runId?: string;
 }
 
 export interface GenerateHandoffResult {
@@ -205,7 +214,7 @@ const PHASE1_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
 export async function generateHandoffFlow(
   input: GenerateHandoffInput,
 ): Promise<GenerateHandoffResult> {
-  const { repoId, taskId, force = false } = input;
+  const { repoId, taskId, force = false, runId } = input;
 
   const taskRef = db.doc(`apps/gitsync/repos/${repoId}/tasks/${taskId}`);
   const taskSnap = await taskRef.get();
@@ -251,6 +260,10 @@ export async function generateHandoffFlow(
 
   // Default task-id set for listRelatedCommits when the agent omits taskIds.
   const defaultCommitTaskIds = [...dependsOn, taskId];
+
+  // Best-effort agent-trace (no-op without a runId — e.g. the auto trigger).
+  // Trace writes NEVER affect this flow's control flow or result.
+  await startRun(repoId, runId, 'generateHandoff');
 
   const openai = getOpenAI();
 
@@ -362,6 +375,18 @@ export async function generateHandoffFlow(
       for (const r of results) {
         messages.push({ role: 'tool', tool_call_id: r.id, content: r.content });
       }
+
+      // One batch trace write per Phase-1 tool round (best-effort, no-op
+      // without a runId). Map each tool name to its English label.
+      await appendStep(
+        repoId,
+        runId,
+        calls.map((c) =>
+          c.type === 'function'
+            ? (TRACE_LABELS as Record<string, string>)[c.function.name] ?? c.function.name
+            : '',
+        ),
+      );
     }
 
     if (!draft) {
@@ -376,6 +401,9 @@ export async function generateHandoffFlow(
       acceptanceCriteria,
     });
     finalScore = review.score;
+
+    // Trace the review verdict (best-effort, no-op without a runId).
+    await appendStep(repoId, runId, `Reviewing draft (score ${review.score}/5)…`);
 
     const capReached = totalRounds >= TOTAL_ROUNDS_CAP;
     if (review.score >= REVIEW_PASS_SCORE || capReached) {
@@ -416,6 +444,9 @@ export async function generateHandoffFlow(
       err: String(err),
     });
   }
+
+  // Close the agent-trace run (best-effort, no-op without a runId).
+  await finishRun(repoId, runId, 'done');
 
   logger.info('generateHandoff: finalized', {
     repoId,

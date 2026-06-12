@@ -21,6 +21,7 @@ export { requestDiscordFetch } from './handlers/requestDiscordFetch';
 export { setDiscordStartDate } from './handlers/setDiscordStartDate';
 export { setDiscordRange } from './handlers/setDiscordRange';
 export { discordChat } from './handlers/discordChat';
+export { askRepo } from './handlers/askRepo';
 export { editDiscordDigest } from './handlers/editDiscordDigest';
 export { setDigestLock } from './handlers/setDigestLock';
 export { backfillEmbeddings } from './handlers/backfillEmbeddings';

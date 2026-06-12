@@ -10,9 +10,10 @@ export const generateHandoff = onCall(
     if (!request.auth) {
       throw new HttpsError('failed-precondition', 'Please log in first.');
     }
-    const { repoId, taskId } = request.data as {
+    const { repoId, taskId, runId } = request.data as {
       repoId?: string;
       taskId?: string;
+      runId?: string;
     };
     if (!repoId || !taskId) {
       throw new HttpsError(
@@ -20,9 +21,13 @@ export const generateHandoff = onCall(
         'repoId and taskId are required',
       );
     }
+    if (runId !== undefined && !/^[A-Za-z0-9_-]{1,200}$/.test(runId)) {
+      throw new HttpsError('invalid-argument', 'runId has an invalid format');
+    }
     // Manual invocation (the "Regenerate handoff" button) always produces a
     // fresh doc; the auto trigger (onTaskUpdated) calls the flow with force=false
-    // so it only fills in a missing handoff.
-    return generateHandoffFlow({ repoId, taskId, force: true });
+    // so it only fills in a missing handoff. `runId` (optional) streams the
+    // live agent trace; absent → the trace is a no-op.
+    return generateHandoffFlow({ repoId, taskId, force: true, runId });
   },
 );
