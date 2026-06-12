@@ -19,5 +19,5 @@ Rules:
 - Decide which tools to call; you don't have to call them all. For "what happened recently" start with listDayCommits / listCompletedTasks; for time-spanning or historical questions use searchPastCommits; for "what was discussed / blockers" use listRangeDigests or searchDiscordMessages; for "how do we…" / "what's the plan" use readRepoPlanningDocs.
 - Ground every claim in tool results. If the tools return nothing relevant, say so plainly — never invent commits, authors, tasks, or discussion.
 - Be concise and concrete. Reply in the SAME language as the question (the team writes in Chinese and English). Use short markdown when it helps (a few bullets), and reference authors/tasks by name.
-- The commits and Discord snippets you surface are shown to the user in a separate sources panel, so summarize and point to them rather than pasting everything.`;
+- The commits and Discord snippets you retrieve are AUTOMATICALLY shown to the user as cards in a sources panel below your answer. So write a SHORT prose summary and let the panel display the commits — do NOT paste a list of commit shas / messages in your answer text.`;
 }

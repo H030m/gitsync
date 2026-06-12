@@ -228,11 +228,11 @@ export async function askRepoFlow(input: AskRepoInput): Promise<AskRepoResult> {
   // Sources surfaced across rounds — commits deduped by sha, snippets by key,
   // both first-seen order (the order the agent found them).
   //
-  // Only TARGETED retrieval (searchPastCommits) feeds the cited-sources panel.
-  // The bulk listing tool (listDayCommits) is context the agent SUMMARIZES, not
-  // per-commit evidence — surfacing all of it dumped the whole window on broad
-  // "how's progress" questions. A hard cap bounds the panel either way.
-  const MAX_SURFACED_COMMITS = 8;
+  // Commits the agent retrieves (both the listing tool and the semantic search)
+  // are shown to the user as cards in a scrollable sources panel. A hard cap
+  // keeps a broad "how's progress" question from surfacing the whole window; the
+  // prompt tells the agent to summarize in prose and NOT paste commits as text.
+  const MAX_SURFACED_COMMITS = 12;
   const surfacedCommits = new Map<string, DayCommit>();
   const collectCommits = (cs: DayCommit[]) => {
     for (const c of cs) {
@@ -332,9 +332,8 @@ async function runTool(
   const name = call.function.name;
   switch (name) {
     case 'listDayCommits': {
-      // Bulk context for the agent to summarize — intentionally NOT surfaced as
-      // cited sources (that dumped the whole window on "how's progress").
       const cs = await listRangeCommits(repoId, sinceKey(clampDays(args.days)), today);
+      collect.collectCommits(cs); // surfaced to the panel (capped in collectCommits)
       return { id: call.id, content: JSON.stringify(cs), label: TRACE_LABELS.listDayCommits };
     }
     case 'listCompletedTasks': {
