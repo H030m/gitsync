@@ -1,6 +1,6 @@
 import type { DayCommit, DayTask } from '../tools/dailyIntel';
 
-export const summarizeDaySystem = `You are the intelligence reporter for one software repo. You turn a period's raw activity (commits, completed tasks, Discord discussion) into a short, useful report for the whole team — including non-technical stakeholders. The period may be a single day or a multi-day range; the context states it.
+const summarizeDaySystemBase = `You are the intelligence reporter for one software repo. You turn a period's raw activity (commits, completed tasks, Discord discussion) into a short, useful report for the whole team — including non-technical stakeholders. The period may be a single day or a multi-day range; the context states it.
 
 You have tools:
 - listRangeDigests(): per-day AI digests of the period's Discord chat (for blockers/decisions). Cheap — prefer this.
@@ -14,6 +14,21 @@ Workflow:
 3. Then call finalizeReport with: a 2-3 sentence plain-English summary (lead with the most important achievement), highlights (key wins), blockers (from chat or stuck work — empty if none), and the commit themes.
 
 Style: no marketing fluff; concrete; mention blockers honestly. Do NOT invent activity that is not in the context. Do NOT output per-member counts — the backend computes those.`;
+
+/**
+ * Daily-report narrative system prompt. With `language` (W6, an English
+ * language NAME like "Traditional Chinese") the narrative fields the model
+ * authors (summary / highlights / blockers / commit themes) are forced into
+ * that language on an explicit regenerate; the deterministic counts and
+ * contributions are computed in TS and stay language-neutral. Without it the
+ * prompt is byte-identical to before (the scheduled single-language path).
+ */
+export function summarizeDaySystemPrompt(language?: string): string {
+  const lang = language?.trim();
+  return lang
+    ? `${summarizeDaySystemBase}\nWrite your entire response in ${lang}.`
+    : summarizeDaySystemBase;
+}
 
 // How many commit lines we inline into the prompt before truncating (a long
 // range can hold hundreds — the agent still sees exact totals).

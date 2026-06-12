@@ -394,4 +394,80 @@ describe('generateHandoffFlow', () => {
     ).rejects.toMatchObject({ code: 'internal' });
     expect(updateSpy).not.toHaveBeenCalled();
   });
+
+  // ---- W6: regenerate in the app language ----------------------------------
+  // The system content of each phase is read straight off the scripted calls:
+  // Phase 1 from mockCreate (chat.completions.create), Phase 2 from mockParse
+  // (beta.chat.completions.parse).
+  const phase1System = (callIdx = 0): string =>
+    (
+      mockCreate.mock.calls[callIdx] as unknown as [
+        { messages: Array<{ role: string; content: string }> },
+      ]
+    )[0].messages.find((m) => m.role === 'system')?.content ?? '';
+  const phase2System = (callIdx = 0): string =>
+    (
+      mockParse.mock.calls[callIdx] as unknown as [
+        { messages: Array<{ role: string; content: string }> },
+      ]
+    )[0].messages.find((m) => m.role === 'system')?.content ?? '';
+
+  it('language present → the directive reaches BOTH phase system prompts', async () => {
+    seedTasks();
+    createQueue.push(draftCall('## What was done\n- 完成 API。'));
+    parseQueue.push({ score: 5, gaps: [] });
+
+    await generateHandoffFlow({
+      repoId: REPO,
+      taskId: 't-ui',
+      force: true,
+      language: 'Traditional Chinese',
+    });
+
+    const expectedLine = 'Write your entire response in Traditional Chinese.';
+    expect(phase1System()).toContain(expectedLine);
+    expect(phase2System()).toContain(expectedLine);
+  });
+
+  it('language absent → phase system prompts are byte-identical to a present run minus the line', async () => {
+    // Baseline run WITHOUT language.
+    seedTasks();
+    createQueue.push(draftCall('## What was done\n- Shipped.'));
+    parseQueue.push({ score: 5, gaps: [] });
+    await generateHandoffFlow({ repoId: REPO, taskId: 't-ui', force: true });
+    const baseP1 = phase1System();
+    const baseP2 = phase2System();
+
+    // No language directive at all.
+    expect(baseP1).not.toContain('Write your entire response in');
+    expect(baseP2).not.toContain('Write your entire response in');
+
+    // A run WITH language appends exactly the one line to each base prompt.
+    mockCreate.mockClear();
+    mockParse.mockClear();
+    createQueue.push(draftCall('## What was done\n- Shipped.'));
+    parseQueue.push({ score: 5, gaps: [] });
+    await generateHandoffFlow({
+      repoId: REPO,
+      taskId: 't-ui',
+      force: true,
+      language: 'English',
+    });
+    expect(phase1System()).toBe(`${baseP1}\nWrite your entire response in English.`);
+    expect(phase2System()).toBe(`${baseP2}\nWrite your entire response in English.`);
+  });
+
+  it('empty/whitespace language → byte-identical prompt (no directive)', async () => {
+    seedTasks();
+    createQueue.push(draftCall('## What was done\n- Shipped.'));
+    parseQueue.push({ score: 5, gaps: [] });
+    await generateHandoffFlow({
+      repoId: REPO,
+      taskId: 't-ui',
+      force: true,
+      language: '   ',
+    });
+    expect(phase1System()).not.toContain('Write your entire response in');
+    expect(phase2System()).not.toContain('Write your entire response in');
+  });
 });

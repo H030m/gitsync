@@ -70,6 +70,7 @@ class _FakeFunctionsService implements FunctionsService {
   Future<String> generateHandoff({
     required String repoId,
     required String taskId,
+    String? language,
   }) =>
       throw UnimplementedError();
 
@@ -78,6 +79,7 @@ class _FakeFunctionsService implements FunctionsService {
     required String repoId,
     required String startDate,
     String? endDate,
+    String? language,
   }) =>
       throw UnimplementedError();
 
@@ -105,6 +107,7 @@ class _FakeFunctionsService implements FunctionsService {
     required String repoId,
     required String sha,
     bool force = false,
+    String? language,
   }) =>
       throw UnimplementedError();
 

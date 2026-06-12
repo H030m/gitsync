@@ -39,9 +39,9 @@ import {
   TRACE_LABELS,
 } from '../tools/agentTrace';
 import {
-  generateHandoffSystem,
+  generateHandoffSystemPrompt,
   generateHandoffSeedContext,
-  handoffReviewSystem,
+  handoffReviewSystemPrompt,
   handoffReviewContext,
   handoffGapsFeedback,
 } from '../prompts/generateHandoff';
@@ -56,6 +56,14 @@ export interface GenerateHandoffInput {
   /** Client-generated agent-trace doc id (manual callable only). The auto
    *  trigger has no client and omits it → the trace is a no-op (best-effort). */
   runId?: string;
+  /**
+   * W6: optional human-readable English language NAME (e.g. "Traditional
+   * Chinese", "English") that forces the handoff output into the user's app
+   * language on an explicit regenerate. Threaded into BOTH the Phase-1 drafting
+   * prompt and the Phase-2 reviewer prompt. Absent/empty → byte-identical
+   * prompts to before (the auto trigger never sends it). Independent of `force`.
+   */
+  language?: string;
 }
 
 export interface GenerateHandoffResult {
@@ -214,7 +222,7 @@ const PHASE1_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
 export async function generateHandoffFlow(
   input: GenerateHandoffInput,
 ): Promise<GenerateHandoffResult> {
-  const { repoId, taskId, force = false, runId } = input;
+  const { repoId, taskId, force = false, runId, language } = input;
 
   const taskRef = db.doc(`apps/gitsync/repos/${repoId}/tasks/${taskId}`);
   const taskSnap = await taskRef.get();
@@ -272,7 +280,7 @@ export async function generateHandoffFlow(
   const briefPrefix = formatBriefForPrompt(await readProjectBrief(repoId));
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: 'system', content: generateHandoffSystem },
+    { role: 'system', content: generateHandoffSystemPrompt(language) },
     {
       role: 'user',
       content: briefPrefix + generateHandoffSeedContext({
@@ -399,6 +407,7 @@ export async function generateHandoffFlow(
       taskTitle,
       taskDescription,
       acceptanceCriteria,
+      language,
     });
     finalScore = review.score;
 
@@ -471,12 +480,14 @@ async function reviewDraft(args: {
   taskTitle: string;
   taskDescription: string;
   acceptanceCriteria: string[];
+  /** W6: forces the reviewer to expect (and not penalize) this language. */
+  language?: string;
 }): Promise<HandoffReview> {
   try {
     const completion = await getOpenAI().beta.chat.completions.parse({
       model: MODELS.fast,
       messages: [
-        { role: 'system', content: handoffReviewSystem },
+        { role: 'system', content: handoffReviewSystemPrompt(args.language) },
         { role: 'user', content: handoffReviewContext(args) },
       ],
       response_format: zodResponseFormat(HandoffReviewSchema, 'handoffReview'),

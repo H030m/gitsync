@@ -4,7 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:gitsync/models/commit.dart';
+import 'package:gitsync/models/commit_graph.dart';
 import 'package:gitsync/repositories/commit_repo.dart';
+import 'package:gitsync/services/functions_service.dart';
 import 'package:gitsync/view_models/commits_vm.dart';
 
 /// Stub repo whose stream errors on demand — reproduces the live-mode bug
@@ -41,6 +43,41 @@ class _StubCommitRepository implements CommitRepository {
 
   @override
   Future<List<Commit>> fetchAllCommits(String repoId) async => const [];
+}
+
+/// Captures the args passed to explainCommit so the W6 wiring (force + language)
+/// is observable. getCommitGraph returns an empty graph (the VM calls it on
+/// construction); every other callable throws via noSuchMethod.
+class _CapturingFunctionsService implements FunctionsService {
+  bool? lastForce;
+  String? lastLanguage;
+  int explainCalls = 0;
+
+  @override
+  Future<String> explainCommit({
+    required String repoId,
+    required String sha,
+    bool force = false,
+    String? language,
+  }) async {
+    explainCalls++;
+    lastForce = force;
+    lastLanguage = language;
+    return 'explanation for $sha';
+  }
+
+  @override
+  Future<CommitGraph> getCommitGraph({
+    required String repoId,
+    String? startDate,
+    String? endDate,
+    bool force = false,
+  }) async =>
+      const CommitGraph(commits: [], branches: []);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError(invocation.memberName.toString());
 }
 
 void main() {
@@ -100,6 +137,41 @@ void main() {
       expect(repo.subscriptions, 2);
       expect(vm.streamError, isNull);
       expect(vm.loading, isFalse);
+    });
+  });
+
+  group('CommitsViewModel W6 explain language', () {
+    test('recompute (force) forwards the mapped language to explainCommit',
+        () async {
+      final functions = _CapturingFunctionsService();
+      final vm = CommitsViewModel(
+        repoId: 'r',
+        commitRepository: _StubCommitRepository(),
+        functionsService: functions,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      await vm.explain('sha1', force: true, language: 'Traditional Chinese');
+
+      expect(functions.lastForce, isTrue);
+      expect(functions.lastLanguage, 'Traditional Chinese');
+      expect(vm.explanationFor('sha1'), 'explanation for sha1');
+    });
+
+    test('first tap (no force) sends no language — default-language path',
+        () async {
+      final functions = _CapturingFunctionsService();
+      final vm = CommitsViewModel(
+        repoId: 'r',
+        commitRepository: _StubCommitRepository(),
+        functionsService: functions,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      await vm.explain('sha2');
+
+      expect(functions.lastForce, isFalse);
+      expect(functions.lastLanguage, isNull);
     });
   });
 }

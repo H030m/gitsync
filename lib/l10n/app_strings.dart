@@ -26,6 +26,11 @@ class AppStrings {
 
   String _(String en, String zh) => locale == AppLocale.en ? en : zh;
 
+  /// English language NAME for the active locale, sent to the backend AI flows
+  /// on an explicit regenerate so the artifact comes back in the app language
+  /// (W6). Not a user-facing string — a stable backend signal.
+  String get backendLanguage => locale.backendLanguage;
+
   // ---- Common ----
   String get cancel => _('Cancel', '取消');
   String get delete => _('Delete', '刪除');

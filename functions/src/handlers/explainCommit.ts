@@ -19,13 +19,20 @@ export const explainCommit = onCall(
       throw new HttpsError('failed-precondition', 'Please log in first.');
     }
     const uid = request.auth.uid;
-    const { repoId, sha, force } = request.data as {
+    const { repoId, sha, force, language } = request.data as {
       repoId?: string;
       sha?: string;
       force?: boolean;
+      language?: string;
     };
     if (!repoId || !sha) {
       throw new HttpsError('invalid-argument', 'repoId and sha are required');
+    }
+    // W6: optional language (a human-readable English language NAME the client
+    // derives from the app locale) forces the recomputed summary into that
+    // language; absent → unchanged behavior (the first tap omits it).
+    if (language !== undefined && typeof language !== 'string') {
+      throw new HttpsError('invalid-argument', 'language must be a string');
     }
 
     // Best-effort fallback inputs: resolve owner/repo from the repo doc's `name`
@@ -48,6 +55,7 @@ export const explainCommit = onCall(
       repoId,
       sha,
       force: force === true,
+      language,
       owner,
       repo,
       accessToken,

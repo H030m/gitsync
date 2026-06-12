@@ -51,16 +51,24 @@ abstract class FunctionsService {
     required String repoId,
     required String taskId,
   });
+  /// Regenerates the AI handoff doc for [taskId] (force=true). [language] is an
+  /// English language NAME (e.g. "Traditional Chinese") derived from the app
+  /// locale so the regenerated doc comes back in the user's language (W6);
+  /// omit it to keep the backend's default-language behavior.
   Future<String> generateHandoff({
     required String repoId,
     required String taskId,
+    String? language,
   });
   /// Generates the Summary tab report for the inclusive day range
   /// [startDate]..[endDate] (both YYYY-MM-DD; omit [endDate] for one day).
+  /// [language] (W6) is the English language NAME for the app locale; when set,
+  /// the narrative is regenerated in that language (counts stay neutral).
   Future<String> summarizeDay({
     required String repoId,
     required String startDate,
     String? endDate,
+    String? language,
   });
 
   /// Asks the AI a question about a period's activity (commits / completed
@@ -91,10 +99,13 @@ abstract class FunctionsService {
 
   /// Asks the AI to explain the work behind one commit (the commit tree map's
   /// tap action). Returns markdown; the backend caches it on the commit doc.
+  /// [language] (W6) is the English language NAME for the app locale; on a
+  /// recompute ([force] = true) it makes the summary come back in that language.
   Future<String> explainCommit({
     required String repoId,
     required String sha,
     bool force = false,
+    String? language,
   });
 
   /// Asks the AI to summarize what one commit author worked on across the
@@ -263,10 +274,13 @@ class _LiveFunctionsService implements FunctionsService {
   Future<String> generateHandoff({
     required String repoId,
     required String taskId,
+    String? language,
   }) async {
     final res = await _callable('generateHandoff').call({
       'repoId': repoId,
       'taskId': taskId,
+      // Only sent on an explicit regenerate; absent → backend default language.
+      'language': ?language,
     });
     final data = Map<String, dynamic>.from(res.data as Map);
     return data['handoffMarkdown'] as String;
@@ -277,11 +291,13 @@ class _LiveFunctionsService implements FunctionsService {
     required String repoId,
     required String startDate,
     String? endDate,
+    String? language,
   }) async {
     final res = await _callable('summarizeDay').call({
       'repoId': repoId,
       'startDate': startDate,
       'endDate': endDate ?? startDate,
+      'language': ?language,
     });
     final data = Map<String, dynamic>.from(res.data as Map);
     return data['summary'] as String;
@@ -327,11 +343,14 @@ class _LiveFunctionsService implements FunctionsService {
     required String repoId,
     required String sha,
     bool force = false,
+    String? language,
   }) async {
     final res = await _callable('explainCommit').call({
       'repoId': repoId,
       'sha': sha,
       'force': force,
+      // Only sent on a recompute; absent → backend default language.
+      'language': ?language,
     });
     final data = Map<String, dynamic>.from(res.data as Map);
     return data['markdown'] as String;

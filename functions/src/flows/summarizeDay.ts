@@ -18,7 +18,7 @@ import type OpenAI from 'openai';
 
 import { db } from '../admin';
 import { getOpenAI, MODELS } from '../config';
-import { summarizeDaySystem, summarizeDayContext } from '../prompts/summarizeDay';
+import { summarizeDaySystemPrompt, summarizeDayContext } from '../prompts/summarizeDay';
 import {
   listRangeCommits,
   listRangeCompletedTasks,
@@ -36,6 +36,14 @@ export interface SummarizeDayInput {
   repoId: string;
   startDate: string; // YYYY-MM-DD, inclusive
   endDate: string; // YYYY-MM-DD, inclusive (== startDate for a single day)
+  /**
+   * W6: optional human-readable English language NAME (e.g. "Traditional
+   * Chinese") that forces the narrative (summary / highlights / blockers /
+   * commit themes) into the user's app language on an explicit regenerate. The
+   * deterministic counts/contributions stay language-neutral. Absent/empty →
+   * unchanged behavior (the scheduled report never sends it).
+   */
+  language?: string;
 }
 
 export interface SummarizeDayResult {
@@ -156,7 +164,7 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
 export async function summarizeDayFlow(
   input: SummarizeDayInput,
 ): Promise<SummarizeDayResult> {
-  const { repoId, startDate, endDate } = input;
+  const { repoId, startDate, endDate, language } = input;
   logger.info('summarizeDayFlow: start', { repoId, startDate, endDate });
 
   // ---- Step 1: deterministic context (exact counts, not LLM-guessed) -------
@@ -175,6 +183,7 @@ export async function summarizeDayFlow(
     endDate,
     commits,
     tasks,
+    language,
   );
 
   // commitThemes counts come from the model's grouping; clamp to >= 0.
@@ -240,10 +249,11 @@ async function runReportAgent(
   endDate: string,
   commits: Awaited<ReturnType<typeof listRangeCommits>>,
   tasks: Awaited<ReturnType<typeof listRangeCompletedTasks>>,
+  language?: string,
 ): Promise<DailyReportNarrative> {
   const openai = getOpenAI();
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: 'system', content: summarizeDaySystem },
+    { role: 'system', content: summarizeDaySystemPrompt(language) },
     {
       role: 'user',
       content: summarizeDayContext({ startDate, endDate, commits, tasks }),
