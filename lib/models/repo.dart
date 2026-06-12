@@ -20,6 +20,10 @@ class Repo {
   // Channel IDs the forwarder bot should route to this repo.
   final List<String> discordChannelIds;
 
+  // Discord backfill date range (YYYY-MM-DD), null when unset.
+  final String? discordStartDate;
+  final String? discordEndDate;
+
   // Mirrored from the members subcollection so we can `array-contains` query.
   final List<String> memberIds;
 
@@ -41,6 +45,8 @@ class Repo {
     required this.createdBy,
     this.discordWebhookUrl,
     this.discordChannelIds = const [],
+    this.discordStartDate,
+    this.discordEndDate,
     this.memberIds = const [],
     this.isBreakingDown = false,
     this.breakdownStartedAt,
@@ -55,6 +61,8 @@ class Repo {
     required this.createdBy,
     this.discordWebhookUrl,
     required this.discordChannelIds,
+    this.discordStartDate,
+    this.discordEndDate,
     required this.memberIds,
     required this.isBreakingDown,
     this.breakdownStartedAt,
@@ -72,6 +80,8 @@ class Repo {
       discordWebhookUrl: map['discordWebhookUrl'] as String?,
       discordChannelIds:
           List<String>.from(map['discordChannelIds'] as List? ?? []),
+      discordStartDate: map['discordStartDate'] as String?,
+      discordEndDate: map['discordEndDate'] as String?,
       memberIds: List<String>.from(map['memberIds'] as List? ?? []),
       isBreakingDown: map['isBreakingDown'] as bool? ?? false,
       breakdownStartedAt: map['breakdownStartedAt'] as Timestamp?,
@@ -87,6 +97,8 @@ class Repo {
         'createdBy': createdBy,
         if (discordWebhookUrl != null) 'discordWebhookUrl': discordWebhookUrl,
         'discordChannelIds': discordChannelIds,
+        if (discordStartDate != null) 'discordStartDate': discordStartDate,
+        if (discordEndDate != null) 'discordEndDate': discordEndDate,
         'memberIds': memberIds,
         'isBreakingDown': isBreakingDown,
         if (breakdownStartedAt != null)

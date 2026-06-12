@@ -30,6 +30,26 @@ class AppConfig {
 
   static bool get useFakeBackend => backend == Backend.fake;
 
+  // ---- Target: cloud (real Firebase) vs local emulator ------------------
+
+  /// Which Firebase backend a *live* build talks to. One switch for the whole
+  /// system — keep it in sync with the Discord bot's `TARGET` in
+  /// `discord-bot/.env` so the app and bot hit the same place:
+  ///   --dart-define=TARGET=cloud      → the real gitsync-645b3 cloud (default)
+  ///   --dart-define=TARGET=emulator   → the local Firebase Emulator Suite
+  /// Ignored in fake mode (no Firebase at all).
+  static const String _target =
+      String.fromEnvironment('TARGET', defaultValue: 'cloud');
+
+  /// True when [backend] is live AND TARGET=emulator.
+  static bool get useEmulator => _target.toLowerCase() == 'emulator';
+
+  /// Host the emulator is reachable at. `localhost` works for web / desktop /
+  /// iOS simulator; for the Android AVD use
+  /// `--dart-define=EMULATOR_HOST=10.0.2.2`.
+  static const String emulatorHost =
+      String.fromEnvironment('EMULATOR_HOST', defaultValue: 'localhost');
+
   // ---- Fake-mode tuning -------------------------------------------------
 
   /// Artificial delay added to fake repository / service calls so streams

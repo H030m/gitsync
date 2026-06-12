@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../config/app_config.dart';
+import '../../l10n/app_strings.dart';
+import '../../services/locale_notifier.dart';
 import '../../services/navigation.dart';
+import '../../services/push_messaging.dart';
 import '../../theme/app_dimens.dart';
 import '../../view_models/auth_vm.dart';
 
@@ -16,6 +20,7 @@ class SignInPage extends StatelessWidget {
       body: Center(
         child: Consumer<AuthViewModel>(
           builder: (ctx, vm, _) {
+            final s = ctx.l10n;
             final theme = Theme.of(ctx);
             final scheme = theme.colorScheme;
             return ConstrainedBox(
@@ -47,7 +52,7 @@ class SignInPage extends StatelessWidget {
                     ),
                     const SizedBox(height: AppDimens.spacingSm),
                     Text(
-                      'Your team\'s repos, tasks, and daily activity in one place.',
+                      s.appTagline,
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodyMedium
                           ?.copyWith(color: scheme.onSurfaceVariant),
@@ -62,9 +67,28 @@ class SignInPage extends StatelessWidget {
                                 final ok = await vm.signInWithGitHub();
                                 if (!ctx.mounted) return;
                                 if (ok) {
-                                  Provider.of<NavigationService>(ctx,
-                                          listen: false)
-                                      .goRepos();
+                                  final nav = Provider.of<NavigationService>(
+                                      ctx,
+                                      listen: false);
+                                  // Register for push: pull the FCM token and
+                                  // wire tap-routing. Live mode only — fake
+                                  // mode has no Firebase app. Fire-and-forget so
+                                  // the permission prompt doesn't block nav.
+                                  final uid = vm.currentUid;
+                                  if (uid != null) {
+                                    // Mirror the chosen UI language to the user
+                                    // doc so backend push copy is localized.
+                                    Provider.of<LocaleNotifier>(ctx,
+                                            listen: false)
+                                        .attachUser(uid);
+                                  }
+                                  if (!AppConfig.useFakeBackend && uid != null) {
+                                    Provider.of<PushMessagingService>(ctx,
+                                            listen: false)
+                                        .initialize(
+                                            userId: uid, navigation: nav);
+                                  }
+                                  nav.goRepos();
                                 }
                               },
                         icon: vm.isSigningIn
@@ -75,8 +99,8 @@ class SignInPage extends StatelessWidget {
                               )
                             : const Icon(Icons.code),
                         label: Text(vm.isSigningIn
-                            ? 'Signing in…'
-                            : 'Sign in with GitHub'),
+                            ? s.signingIn
+                            : s.signInWithGitHub),
                       ),
                     ),
                     if (vm.lastError != null) ...[

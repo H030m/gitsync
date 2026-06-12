@@ -37,8 +37,33 @@ class FakeCommitRepository implements CommitRepository {
   }
 
   @override
+  Stream<List<Commit>> streamRange(
+      String repoId, DateTime startDay, DateTime endDay) async* {
+    final start = DateTime(startDay.year, startDay.month, startDay.day);
+    final end = DateTime(endDay.year, endDay.month, endDay.day)
+        .add(const Duration(days: 1));
+    List<Commit> filter(List<Commit> all) => (all
+        .where((c) {
+          final t = c.committedAt.toDate();
+          return !t.isBefore(start) && t.isBefore(end);
+        })
+        .toList())
+      ..sort((a, b) => b.committedAt.compareTo(a.committedAt));
+    yield filter(_state(repoId).value);
+    await for (final list in _state(repoId).stream) {
+      yield filter(list);
+    }
+  }
+
+  @override
   Future<Commit?> getCommit(String repoId, String sha) async {
     await Future.delayed(AppConfig.simulatedLatency);
     return _state(repoId).value.where((c) => c.sha == sha).firstOrNull;
+  }
+
+  @override
+  Future<List<Commit>> fetchAllCommits(String repoId) async {
+    await Future.delayed(AppConfig.simulatedLatency);
+    return List<Commit>.from(_state(repoId).value);
   }
 }

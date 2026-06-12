@@ -27,6 +27,16 @@ jest.mock('../flows/assignTask', () => ({
   assignTaskFlow: (...args: unknown[]) => mockAssignTaskFlow(...args),
 }));
 
+const mockGenerateHandoff = jest.fn();
+jest.mock('../flows/generateHandoff', () => ({
+  generateHandoffFlow: (...args: unknown[]) => mockGenerateHandoff(...args),
+}));
+
+const mockSetIssueAssignees = jest.fn();
+jest.mock('../services/githubClient', () => ({
+  setIssueAssignees: (...args: unknown[]) => mockSetIssueAssignees(...args),
+}));
+
 const mockMarkIdempotent = jest.fn();
 jest.mock('../tools/idempotency', () => ({
   markIdempotent: (...args: unknown[]) => mockMarkIdempotent(...args),
@@ -102,11 +112,20 @@ function seedUser(uid: string, data: Record<string, unknown>) {
   store.set(`apps/gitsync/users/${uid}`, data);
 }
 
+function seedRepo(data: Record<string, unknown>) {
+  store.set(`apps/gitsync/repos/${REPO_ID}`, data);
+}
+
 beforeEach(() => {
   store.clear();
   mockMarkIdempotent.mockReset().mockResolvedValue(true);
   mockSend.mockReset().mockResolvedValue('msg-id');
   mockAssignTaskFlow.mockReset();
+  mockGenerateHandoff.mockReset().mockResolvedValue({
+    handoffMarkdown: 'handoff',
+    cached: false,
+  });
+  mockSetIssueAssignees.mockReset().mockResolvedValue(undefined);
 });
 
 describe('onTaskUpdated', () => {
@@ -124,6 +143,22 @@ describe('onTaskUpdated', () => {
       expect.objectContaining({
         token: 'tok-1',
         notification: { title: '有新任務可以開始了', body: 'Build UI' },
+      }),
+    );
+  });
+
+  it('FCM title is localized to the recipient locale (en)', async () => {
+    seedTask('A', { status: 'done', title: 'A' });
+    seedTask('B', { status: 'todo', title: 'Build UI', dependsOn: ['A'] });
+    mockAssignTaskFlow.mockResolvedValue({ assigneeId: 'u1', reasoning: 'x' });
+    seedUser('u1', { fcmToken: 'tok-1', locale: 'en' });
+
+    await handler(makeEvent('in_progress', 'done', 'A'));
+
+    expect(mockSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        token: 'tok-1',
+        notification: { title: 'A new task is ready to start', body: 'Build UI' },
       }),
     );
   });
@@ -223,5 +258,88 @@ describe('onTaskUpdated', () => {
     await handler(makeEvent('in_progress', undefined, 'A'));
     expect(mockAssignTaskFlow).not.toHaveBeenCalled();
     expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it('ready downstream → AI handoff generated before notify', async () => {
+    seedTask('A', { status: 'done', title: 'A' });
+    seedTask('B', { status: 'todo', title: 'Build UI', dependsOn: ['A'], assigneeId: 'u1' });
+    seedUser('u1', { fcmToken: 'tok-1' });
+
+    await handler(makeEvent('in_progress', 'done', 'A'));
+
+    expect(mockGenerateHandoff).toHaveBeenCalledWith({
+      repoId: REPO_ID,
+      taskId: 'B',
+      force: false,
+    });
+    expect(mockSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('handoff generation failure does not block the notify', async () => {
+    seedTask('A', { status: 'done', title: 'A' });
+    seedTask('B', { status: 'todo', title: 'B', dependsOn: ['A'], assigneeId: 'u1' });
+    seedUser('u1', { fcmToken: 'tok-1' });
+    mockGenerateHandoff.mockRejectedValue(new Error('OpenAI down'));
+
+    await expect(handler(makeEvent('in_progress', 'done', 'A'))).resolves.toBeUndefined();
+
+    expect(mockSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('assignee change with a linked issue → GitHub issue assignee synced', async () => {
+    seedRepo({ name: 'octocat/hello' });
+    seedUser('creator', { githubAccessToken: 'ght' });
+    seedUser('u1', { githubLogin: 'alice-dev' });
+
+    const event = {
+      id: 'evt-assign',
+      params: { repoId: REPO_ID, taskId: 'A' },
+      data: {
+        before: {
+          data: () => ({
+            status: 'in_progress',
+            githubIssueNumber: 7,
+            createdBy: 'creator',
+          }),
+        },
+        after: {
+          data: () => ({
+            status: 'in_progress',
+            assigneeId: 'u1',
+            githubIssueNumber: 7,
+            createdBy: 'creator',
+          }),
+        },
+      },
+    };
+
+    await handler(event);
+
+    expect(mockSetIssueAssignees).toHaveBeenCalledWith(
+      'octocat',
+      'hello',
+      'ght',
+      7,
+      ['alice-dev'],
+    );
+    // status stayed in_progress → no downstream processing
+    expect(mockAssignTaskFlow).not.toHaveBeenCalled();
+  });
+
+  it('assignee change without a linked issue → no GitHub sync', async () => {
+    const event = {
+      id: 'evt-noissue',
+      params: { repoId: REPO_ID, taskId: 'A' },
+      data: {
+        before: { data: () => ({ status: 'in_progress', createdBy: 'creator' }) },
+        after: {
+          data: () => ({ status: 'in_progress', assigneeId: 'u1', createdBy: 'creator' }),
+        },
+      },
+    };
+
+    await handler(event);
+
+    expect(mockSetIssueAssignees).not.toHaveBeenCalled();
   });
 });

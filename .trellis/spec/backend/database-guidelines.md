@@ -33,6 +33,14 @@ field-by-field schema of every collection.
 - `tasks` / `users` / repo root → the app writes (rules check membership / ownership).
 - Never invent a new collection or field without proposing it in `docs/MEMORY.md` first.
 
+> **Membership model**: `members/{uid}` is keyed by **Firebase Auth uid** and is
+> **client-write-blocked** — only Cloud Functions write it. A person becomes a member by
+> (a) **self-join** (`addRepo` adds the caller when they connect a repo) or (b)
+> `importCollaborators` (pulls the repo's GitHub collaborators and adds those who **already have a
+> GitSync account** — `users.githubLogin == login`). Collaborators who've never signed in have no
+> uid, so they can't be members/assignees (returned as `pending`). Assigning a task to someone
+> therefore requires them to have signed in at least once.
+
 ---
 
 ## Concurrency rules (triggers & webhooks run concurrently)
@@ -52,6 +60,16 @@ From [`ARCHITECTURE.md §4.4`](../../../docs/ARCHITECTURE.md) — violating thes
 - **Rule D — never put slow side-effects in the idempotency transaction.** Mark the key,
   *exit* the transaction, *then* call OpenAI / GitHub, then write results back. MVP accepts
   an occasional null `aiSummary`/`embedding` on failure + a manual "regenerate" button.
+  - **Rule D.1 — one trigger per doc path; fold related concerns in, don't add a second
+    trigger.** `markIdempotent(event.id)` keys on `event.id`, which is the SAME for every
+    function bound to the same document write. So a *second* trigger on the same path (e.g. a
+    new `onTaskAssigneeChanged` alongside `onTaskUpdated`) would call `markIdempotent` with an
+    id the first trigger already consumed → it silently returns `!fresh` and never runs. Put
+    the new concern inside the existing trigger instead. Concrete (06-06): assignee→GitHub-issue
+    sync lives at the TOP of `onTaskUpdated` (before the `status==='done'` transition guard), so
+    it runs on every task update — manual reassignment AND `assignTaskFlow`'s downstream
+    auto-assign — while the done-only downstream logic stays gated below. Each folded-in concern
+    gets its own `try/catch` so one failing on a given event never aborts the others.
 - **Rule E — match the trigger type to how the source doc is written.** If the producing
   write **creates** the doc already in its terminal state, `onDocumentUpdated` will **never
   fire** (it only fires on updates to an existing doc). The webhook's `handlePR` writes
@@ -147,3 +165,71 @@ pointers permanently. Pair external cleanup (e.g. best-effort `deleteWebhook`) w
 
 - Server-authored times use `FieldValue.serverTimestamp()` on write (`createdAt`, `updatedAt`,
   `processedAt`). Don't persist client clock values for these.
+- Event times parsed from external payloads (e.g. a webhook's ISO-8601 `timestamp`) MUST be
+  converted to a Firestore `Timestamp` before writing — never store the raw string. See the
+  type-strict query rule below for why.
+
+---
+
+## Rule H — Firestore queries are TYPE-STRICT (a schema bug needs a data migration, not just a writer fix)
+
+**What**: A `where()` comparison only matches docs whose field holds the **same type** as the
+operand. Comparing against a `Timestamp` silently excludes docs where the field is a string —
+no error, no warning, just zero matches. `orderBy()`-only queries still return those docs
+(Firestore sorts mixed types in type order), which hides the corruption.
+
+**Symptom profile** (recognize it fast): *"the default/unfiltered list works, but every
+filtered/range view is empty"* — and switching the filter back doesn't help. That smell means a
+type mismatch between the stored field and the query operand, not a missing index (a missing
+index throws; a type mismatch doesn't).
+
+**Why it bit us** (06-04 task): the old `githubWebhook` wrote `committedAt` as the payload's
+ISO string. Fixing the webhook (7144b4b) fixed *new* docs only — all 37 existing commit docs
+still silently fell out of every Timestamp range query (Flutter `streamRange`, dailyIntel
+`listRangeCommits`), so the Commits tab range filter returned nothing.
+
+**The complete fix is always two-sided**:
+
+1. **Writer**: parse + convert at the ingest boundary
+   (`Timestamp.fromDate(new Date(payload.timestamp))`, fall back to `serverTimestamp()`).
+2. **Data**: migrate existing docs with an idempotent, `--dry-run`-gated script — pattern:
+   `functions/scripts/normalize-commits.mjs` (scan → report would-fix count → real run →
+   re-run dry-run must report 0).
+
+```ts
+// Wrong — "fixed the webhook, done": old docs still invisible to range queries
+batch.set(ref, { committedAt: payload.timestamp });        // string
+
+// Correct — uniform type on write + one-off migration for what's already stored
+const parsed = payload.timestamp ? new Date(payload.timestamp) : null;
+const committedAt = parsed && !Number.isNaN(parsed.getTime())
+  ? Timestamp.fromDate(parsed)
+  : FieldValue.serverTimestamp();
+```
+
+**Tests required**: the webhook unit test asserts the stored field is a real `Timestamp`
+parsed from the payload ISO string AND the server-time fallback when absent
+(`__tests__/githubWebhook.test.ts`); reader models tolerate the legacy shape defensively
+(`Commit._parseTimestamp`) so a stray doc degrades instead of hanging a stream.
+
+---
+
+## Localizing outbound push (FCM) per recipient
+
+Push **titles** are localized to the *recipient's* language, not the actor's or a fixed
+default. The language is read from the recipient's user doc — `users/{uid}.locale`
+(`'en' | 'zhHant'`, written by the client in `services/locale_notifier.dart` on sign-in and on
+every Settings language change via `UserRepository.updateLocale`, a `set(merge)` so it never
+races the sign-in upsert). `notifyAssignee` already fetches the user doc for `fcmToken`, so it
+reads `locale` from the **same snapshot** (no extra read) and defaults to `zhHant` for
+missing/unknown values (`notifyLocaleFromPref`).
+
+- **Only titles are localized.** The body is real data (the task title) and stays verbatim.
+  Localized copy lives in `tools/i18n.ts` (`notifyMessages.*`, both languages side by side —
+  the backend mirror of the client `app_strings.dart`).
+- **Pass a builder, not a fixed string**, so resolution happens after the locale is known:
+  `notifyAssignee(uid, (locale) => ({ title: notifyMessages.taskReadyTitle(locale), body }), data)`.
+  `notifyAssignee` accepts either `{title,body}` or `(locale) => {title,body}`.
+- **Tests required**: assert the sent `notification.title` switches with the seeded user
+  `locale` — default (no `locale` field → zh) AND `locale:'en'` → English
+  (`__tests__/onTaskUpdated.test.ts`).

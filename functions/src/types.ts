@@ -52,3 +52,33 @@ export const DailySummarySchema = z.object({
 });
 
 export type DailySummary = z.infer<typeof DailySummarySchema>;
+
+// The agentic daily report (Summary tab "intelligence hub"). The agent gathers
+// the day's commits / completed tasks / Discord digest via tools, then calls
+// `finalizeReport` with this shape. `memberContributions` is filled in
+// deterministically by the backend (TS counts), NOT by the model — so the
+// schema here is the LLM-authored narrative only.
+export const CommitThemeSchema = z.object({
+  theme: z.string().describe('Short label for a group of related commits'),
+  summary: z.string().describe('One plain sentence on what changed'),
+  commitCount: z.number().int().describe('How many commits fall under it'),
+});
+
+export type CommitTheme = z.infer<typeof CommitThemeSchema>;
+
+export const DailyReportNarrativeSchema = z.object({
+  summary: z
+    .string()
+    .describe('2-3 plain-English sentences for a non-technical stakeholder'),
+  highlights: z
+    .array(z.string())
+    .describe("Today's key achievements, most important first"),
+  blockers: z
+    .array(z.string())
+    .describe('Blockers/risks raised in chat or stuck tasks; [] if none'),
+  commitThemes: z
+    .array(CommitThemeSchema)
+    .describe('The day’s commits grouped into themes (commit-message rollup)'),
+});
+
+export type DailyReportNarrative = z.infer<typeof DailyReportNarrativeSchema>;

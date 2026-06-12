@@ -111,6 +111,32 @@ class FakeTaskRepository implements TaskRepository {
   }
 
   @override
+  Future<void> updateDependsOn(
+      String repoId, String taskId, List<String> dependsOn) async {
+    await Future.delayed(AppConfig.simulatedLatency);
+    final state = _state(repoId);
+    state.update(state.value.map((t) {
+      if (t.id != taskId) return t;
+      return Task(
+        id: t.id,
+        title: t.title,
+        description: t.description,
+        status: t.status,
+        assigneeId: t.assigneeId,
+        dependsOn: dependsOn,
+        githubIssueNumber: t.githubIssueNumber,
+        linkedPRNumbers: t.linkedPRNumbers,
+        acceptanceCriteria: t.acceptanceCriteria,
+        handoffDoc: t.handoffDoc,
+        handoffGeneratedAt: t.handoffGeneratedAt,
+        source: t.source,
+        parentTaskId: t.parentTaskId,
+        createdBy: t.createdBy,
+      );
+    }).toList());
+  }
+
+  @override
   Future<void> deleteTask(String repoId, String taskId) async {
     await Future.delayed(AppConfig.simulatedLatency);
     final state = _state(repoId);

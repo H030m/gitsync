@@ -63,21 +63,58 @@ export const claimDiscordFetch = onRequest(
       return;
     }
 
-    // 3. Look up the repo's configured channels.
-    const repoSnap = await db.doc(`apps/gitsync/repos/${claimed.repoId}`).get();
-    const channelIds =
+    // 3. Resolve the repo's channels + per-channel backfill state. The
+    //    discordChannels subcollection is the source of truth for startDate /
+    //    watermark; fall back to the legacy discordChannelIds array for
+    //    channels bound before per-channel config existed.
+    const repoRef = db.doc(`apps/gitsync/repos/${claimed.repoId}`);
+    const [repoSnap, chanSnap] = await Promise.all([
+      repoRef.get(),
+      repoRef.collection('discordChannels').get(),
+    ]);
+    const legacyIds =
       (repoSnap.data()?.discordChannelIds as string[] | undefined) ?? [];
+
+    const byId = new Map<
+      string,
+      { channelId: string; startDate: string | null; lastMessageId: string | null }
+    >();
+    for (const id of legacyIds) {
+      byId.set(id, { channelId: id, startDate: null, lastMessageId: null });
+    }
+    for (const doc of chanSnap.docs) {
+      const d = doc.data();
+      byId.set(doc.id, {
+        channelId: doc.id,
+        startDate: (d.startDate as string | undefined) ?? null,
+        lastMessageId: (d.lastMessageId as string | undefined) ?? null,
+      });
+    }
+    const channels = [...byId.values()];
+
+    // Repo-level backfill range (set via setDiscordRange). The bot derives the
+    // low/high snowflake cursors from these; null falls back to per-channel
+    // startDate / the request day.
+    const repoData = repoSnap.data() ?? {};
+    const startDate = (repoData.discordStartDate as string | undefined) ?? null;
+    const endDate = (repoData.discordEndDate as string | undefined) ?? null;
 
     logger.info('claimDiscordFetch claimed request', {
       requestId: claimed.requestId,
       repoId: claimed.repoId,
       date: claimed.date,
+      channelCount: channels.length,
+      startDate,
+      endDate,
     });
     res.status(200).send({
       requestId: claimed.requestId,
       repoId: claimed.repoId,
       date: claimed.date,
-      channelIds,
+      startDate,
+      endDate,
+      channels,
+      channelIds: channels.map((c) => c.channelId), // legacy field
     });
   },
 );

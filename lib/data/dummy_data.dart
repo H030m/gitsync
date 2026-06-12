@@ -207,6 +207,7 @@ class DummyData {
           deletions: 12,
           linkedTaskIds: const ['task-001'],
           aiSummary: 'Initial Flutter MVVM scaffolding committed.',
+          committedAt: _daysAgo(2, hours: 5),
         ),
         Commit(
           sha: 'b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3',
@@ -223,6 +224,7 @@ class DummyData {
           deletions: 3,
           linkedTaskIds: const ['task-002'],
           aiSummary: 'GitHub OAuth flow added; access token persisted.',
+          committedAt: _daysAgo(1, hours: 8),
         ),
         Commit(
           sha: 'c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
@@ -242,6 +244,44 @@ class DummyData {
           deletions: 5,
           linkedTaskIds: const ['task-003'],
           aiSummary: 'Initial OpenAI flow scaffold without the live call.',
+          committedAt: _daysAgo(1, hours: 3),
+        ),
+        Commit(
+          sha: 'd4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5',
+          repoId: demoRepoId,
+          message: 'OAuth callback URL fix for Windows + sign-in error states',
+          author: const CommitAuthor(
+            login: 'alice-dev',
+            name: 'Alice Chen',
+            email: 'alice@gitsync.local',
+          ),
+          url: 'https://github.com/team17/gitsync/commit/d4e5f6a',
+          filesChanged: const [
+            'lib/services/authentication.dart',
+            'lib/views/sign_in/sign_in_page.dart',
+          ],
+          additions: 38,
+          deletions: 9,
+          linkedTaskIds: const ['task-002'],
+          aiSummary: 'Fixed the Windows OAuth callback and surfaced errors.',
+          committedAt: _daysAgo(0, hours: 7),
+        ),
+        Commit(
+          sha: 'e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6',
+          repoId: demoRepoId,
+          message: 'TaskBoard drag-and-drop between columns',
+          author: const CommitAuthor(
+            login: 'demo-user',
+            name: 'Demo User',
+            email: 'demo@gitsync.local',
+          ),
+          url: 'https://github.com/team17/gitsync/commit/e5f6a1b',
+          filesChanged: const ['lib/views/tasks/tasks_board_page.dart'],
+          additions: 86,
+          deletions: 14,
+          linkedTaskIds: const ['task-001'],
+          aiSummary: 'Kanban columns now support drag-and-drop.',
+          committedAt: _daysAgo(0, hours: 2),
         ),
       ];
 
@@ -334,11 +374,52 @@ No blockers raised in chat today.''';
         summary:
             'Sprint 1 skeleton merged. Alice started GitHub OAuth wiring; Bob '
             'drafted the breakdownTask zod schema. No blockers reported.',
+        highlights: const [
+          'Sprint 1 MVVM skeleton merged (PR #1)',
+          'GitHub OAuth flow wired into AuthService',
+          'breakdownTask zod schema + cycle detection drafted',
+        ],
+        blockers: const [
+          'Callback URL on Windows not yet verified by anyone',
+        ],
+        commitThemes: const [
+          CommitTheme(
+            theme: 'Project skeleton',
+            summary: 'MVVM scaffolding and Firebase config placeholders landed.',
+            commitCount: 1,
+          ),
+          CommitTheme(
+            theme: 'Auth',
+            summary: 'GitHub OAuth provider added; access token persisted.',
+            commitCount: 1,
+          ),
+          CommitTheme(
+            theme: 'AI flows',
+            summary: 'breakdownTask schema + cycle-detection draft started.',
+            commitCount: 1,
+          ),
+        ],
+        commitCount: 3,
         completedTaskIds: const ['task-001'],
         memberContributions: const {
-          demoUserId: MemberContribution(tasksDone: 1, commits: 1),
-          aliceId: MemberContribution(tasksDone: 0, commits: 1),
-          bobId: MemberContribution(tasksDone: 0, commits: 1),
+          demoUserId: MemberContribution(
+            tasksDone: 1,
+            commits: 1,
+            githubLogin: 'demo-dev',
+            displayName: 'Demo User',
+          ),
+          aliceId: MemberContribution(
+            tasksDone: 0,
+            commits: 1,
+            githubLogin: 'alice-dev',
+            displayName: 'Alice',
+          ),
+          bobId: MemberContribution(
+            tasksDone: 0,
+            commits: 1,
+            githubLogin: 'bob-ml',
+            displayName: 'Bob',
+          ),
         },
       );
 }

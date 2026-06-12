@@ -1,4 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitsync/models/commit_graph.dart';
+import 'package:gitsync/models/daily_brief.dart';
+import 'package:gitsync/models/discord_chat.dart';
 import 'package:gitsync/models/repo.dart';
 import 'package:gitsync/models/sub_task.dart';
 import 'package:gitsync/repositories/repo_repo.dart';
@@ -40,6 +43,11 @@ class _FakeFunctionsService implements FunctionsService {
       throw UnimplementedError();
 
   @override
+  Future<({int added, int alreadyMembers, List<String> pending})>
+      importCollaborators({required String repoId}) =>
+          throw UnimplementedError();
+
+  @override
   Future<List<SubTask>> breakdownTask({
     required String repoId,
     required String goal,
@@ -67,7 +75,44 @@ class _FakeFunctionsService implements FunctionsService {
   @override
   Future<String> summarizeDay({
     required String repoId,
+    required String startDate,
+    String? endDate,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<DailyBriefReply> dailyBrief({
+    required String repoId,
     required String date,
+    String? endDate,
+    required String question,
+    List<DailyBriefTurn> history = const [],
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<String> explainCommit({
+    required String repoId,
+    required String sha,
+    bool force = false,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<String> summarizeAuthorWork({
+    required String repoId,
+    String? login,
+    List<String> names = const [],
+    bool force = false,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<CommitGraph> getCommitGraph({
+    required String repoId,
+    String? startDate,
+    String? endDate,
+    bool force = false,
   }) =>
       throw UnimplementedError();
 
@@ -83,6 +128,47 @@ class _FakeFunctionsService implements FunctionsService {
   Future<String> requestDiscordFetch({
     required String repoId,
     required String date,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> setDiscordStartDate({
+    required String repoId,
+    required String startDate,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> setDiscordRange({
+    required String repoId,
+    required String startDate,
+    required String endDate,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<String> editDiscordDigest({
+    required String repoId,
+    required String date,
+    required String instruction,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> setDigestLock({
+    required String repoId,
+    required String date,
+    required bool locked,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<DiscordChatReply> discordChat({
+    required String repoId,
+    required String question,
+    List<DiscordChatTurn> history = const [],
+    String? startDate,
+    String? endDate,
   }) =>
       throw UnimplementedError();
 
