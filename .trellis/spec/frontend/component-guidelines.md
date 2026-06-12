@@ -125,10 +125,17 @@ layout (`lib/views/tasks/widgets/task_graph_tab.dart`). Conventions learned:
 - **Columns/lists that grow must scroll, and need a bounded height to do so.** A
   kanban column whose card list is a plain `Column` overflows once tasks exceed the
   viewport. Give the column a bounded height — `Row(crossAxisAlignment: stretch)` in
-  fill mode; wrap the `Row` in a `SizedBox(height: constraints.maxHeight - padding)`
-  inside a horizontal `SingleChildScrollView` for the phone layout — then make the card
-  area `Expanded(child: ListView(...))` so it scrolls within the column
-  (`tasks_board_page.dart` `_BoardColumn`).
+  fill mode — then make the card area `Expanded(child: ListView(...))` so it scrolls
+  within the column (`tasks_board_page.dart` `_BoardColumn`).
+- **Phone board = collapsible sections, not horizontal columns** (06-13 redesign):
+  below the fill threshold the board renders ONE vertical `ListView` of three
+  status sections (`_SectionedBoardList`) — tonal tappable headers (reuse
+  `_ColumnTheme` + `_CountChip` + `AnimatedRotation` chevron), `AnimatedSize`
+  expand/collapse (todo+inProgress open / done collapsed by default, page-local
+  state), simple rows (circle + title + `_AssigneeCircle`). Circle tap = mark done
+  (capture messenger/l10n before the await — StatelessWidget has no `mounted`);
+  done rows absorb the circle tap. Never reintroduce horizontal column scrolling
+  on narrow widths — that was the UX complaint that triggered the redesign.
 - **Pin panel scrollbars flush to the right edge.** A panel's scrolling `ListView` carries no
   right padding; wrap it in `Scrollbar(controller, thumbVisibility: true)` and push the horizontal
   inset INTO each child instead, so the scrollbar gutter sits at the outermost right

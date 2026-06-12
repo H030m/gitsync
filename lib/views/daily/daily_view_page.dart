@@ -97,12 +97,20 @@ class _DailyViewPageState extends State<DailyViewPage> {
         appBar: AppBar(
           title: Text(s.dailyTitle),
           actions: const [_SharedRefreshAction(), _SharedRangeAction()],
-          bottom: TabBar(
-            tabs: [
-              Tab(text: s.dailyTabSummary),
-              Tab(text: s.dailyTabCommits),
-              Tab(text: s.dailyTabDiscord),
-            ],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(kTextTabBarHeight + 1),
+            child: Column(
+              children: [
+                const Divider(height: 1),
+                TabBar(
+                  tabs: [
+                    Tab(text: s.dailyTabSummary),
+                    Tab(text: s.dailyTabCommits),
+                    Tab(text: s.dailyTabDiscord),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
         body: const TabBarView(

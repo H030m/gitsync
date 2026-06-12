@@ -12,7 +12,6 @@
 |---|---|---|
 | 嘉駿（多代理） | **Final demo 衝刺 W1–W5**（計畫見 [`docs/FINAL_DEMO_PLAN.md`](../FINAL_DEMO_PLAN.md)；分支 `feature/agentic-final-demo` ← `feat/w1`~`feat/w5`，全部從 develop 出，不碰既有分支） | `functions/src/flows/{generateHandoff,summarizeDay,assignTask}.ts`、`functions/src/tools/{discordSearch,dailyIntel,embedding}.ts` + 新 `repoDocs.ts`、`functions/src/triggers/onDiscordMessageCreated.ts`、新 `flows/askRepo.ts`、`functions/src/index.ts`、W5 前端聊天入口 |
 | 嘉駿 | Discord 整合（模組 B）| `discord-bot/`、`functions/src/handlers/discordMessageIngest.ts` |
-| 廷煥 | FCM 通知收尾（接手 06-03，分支 `feature/foreground-notifications`）| `lib/services/local_notifications.dart`、`lib/services/push_messaging.dart`、`lib/views/settings/settings_page.dart` |
 
 > 嘉駿剛把骨架鋪完（Sprint 1）。**接下來各模組隊員就 [`ARCHITECTURE.md §9`](../ARCHITECTURE.md#9-模組職責--隊員分工建議) 開工**，避免動到別人的層；如要跨層改動先在這列出。
 
@@ -22,6 +21,15 @@
 
 - **嘉駿 — Final demo 衝刺【完工】：W1–W5 全部合入 `feature/agentic-final-demo`（@`cee696c`，已 push）**：① W1 交接文件升級兩階段 agentic（gpt-4o 工具循環含**新 getCommitDiff**＋gpt-4o-mini self-review 打分迴圈、`handoffReview` 存 task doc）；② W2 語意搜尋（Discord embedding 補上、commit/Discord 搜尋向量優先＋關鍵字兜底、`backfillEmbeddings` callable）；③ W3 專案記憶（`meta/projectBrief` 滾動簡報餵所有 flow＋指派 `learnedTags` 寫回 `users/{uid}.expertiseTags`）；④ W4 `readRepoPlanningDocs`（agent 讀 repo 的 `.trellis`/AGENTS/CLAUDE，接進 breakdown）；⑤ W5 `askRepo` 統一問答 callable＋`agentRuns` 工具軌跡 side-channel＋全 tab「Ask GitSync」FAB（live 顯示 agent 工具呼叫、亮暗模式、fake 模式可跑）。整合 gate：functions jest **310/310**、typecheck/lint 0；flutter analyze 0 新增、test 85 過（1 失敗為既有環境問題）。五個 trellis task 已 archive。**Demo 前待辦（人工）**：deploy functions＋indexes、對演示 repo 跑 backfill、確認 `.trellis` 內容可投影。**develop→main 大 PR 落地後**才開 integration→develop 的 PR。
 - **嘉駿 — Final demo 衝刺開工（W1–W5 計畫定案 + 多代理分工）**：對照評分標準定案五個工作項——W1 agentic 交接文件（工具循環＋self-review）、W2 語意搜尋強化（Discord embedding 補 stub＋向量優先＋backfill）、W3 專案記憶（滾動 projectBrief＋expertiseTags 寫回）、W4 讀 repo 的 `.trellis`/`AGENTS.md` 工具、W5 統一問答入口 `askRepo`＋工具軌跡顯示。完整計畫與 3 分鐘 demo 腳本見 [`docs/FINAL_DEMO_PLAN.md`](../FINAL_DEMO_PLAN.md)。分支：`feature/agentic-final-demo`（整合）← `feat/w2-semantic-search`、`feat/w4-repo-docs`、`feat/w1-agentic-handoff`、`feat/w3-project-memory`、`feat/w5-ask-repo`，全從 develop @ `92f858a` 出。FCM 由廷煥的分支完成，本批不碰。
+## 2026-06-13
+
+- **廷煥 — 任務狀態編輯雙入口**：收合清單驗收時發現詳情頁狀態 chip 從來都是唯讀、手機只能「→完成」。新增共用 `showStatusPicker` bottom sheet，雙入口：詳情頁主任務 chip 可點、清單列長按；相關任務 chip 維持唯讀、既有行為不變。測試 85/85（新建 task_details 測試 harness）。trellis `06-13-task-status-editor`，同分支 `feature/mobile-board-sections`。
+- **廷煥 — Tasks 看板手機版重設計（收合式三段清單）**：手機寬度從「三條 200dp 欄橫向捲動」改為 TickTick 風格垂直收合清單（待辦/進行中/完成 header + 數量、AnimatedSize 展開收合、預設完成區收起）；任務列點擊進詳情、**圓圈勾選直接標完成**（直達 done→AI 分派→FCM 推播的 demo 鏈路）。寬螢幕 kanban 不動。順手清掉 temmie 06-12 遺留的 2 個紅測試並新增 5 個清單測試——**全套 81/81 綠**。trellis `06-13-mobile-board-sections`，分支 `feature/mobile-board-sections`。詳見 [113062340_tinghuan.md](./113062340_tinghuan.md)。
+
+## 2026-06-12
+
+- **廷煥 — FCM live e2e 全過、PR #38 併入 main，06-03 收工**：環境補齊（flutterfire configure + SHA 登記）後在 Android emulator live mode 完整驗證：fcmToken 寫入 ✓、done→自動通知下游（前景重畫/背景推播/點擊導頁）✓、per-locale 繁中推播文案 ✓、權限拒絕 SnackBar 提示 ✓。併入 develop 零衝突、analyze/test 全綠。**經隊友同意 PR #38 直接合入 main**。⚠️ 待辦：main 需 back-merge 回 develop（目前 develop 沒有 FCM 工作，兩分支分岔 9 vs 7）；另發現後端既有 bug `summarizeDay` 回 internal（與通知無關，owner 請查 cloud log）。詳見 [113062340_tinghuan.md](./113062340_tinghuan.md)。
+
 ## 2026-06-10
 
 - **廷煥 — 接手 FCM 通知 task、修權限被拒的靜默失敗**：經嘉駿同意接手 `06-03-wire-fcm-notifications`（assignee → smartalan91，分支沿用 `feature/foreground-notifications`）。乾淨環境重現「測試通知按了沒彈」→ 重現不出來（code 是好的）；實測證實根因候選之一：**通知權限被拒後按按鈕完全靜默**。修補：`ensurePermission()`（被拒先 re-prompt 一次）+ SnackBar 提示（l10n en/zh）；FCM `onMessage` 被動重畫刻意維持靜默。模擬器雙路徑實測通過、analyze 0 warn、test 79/79。lesson 沉澱至 spec（通知權限回饋慣例、`google-services.json` 佔位檔解法 → SETUP §5.10）。**待辦**：live FCM 端到端（環境未備）、併回 develop（settings_page 預期衝突）。詳見 [113062340_tinghuan.md](./113062340_tinghuan.md)。
