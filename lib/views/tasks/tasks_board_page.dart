@@ -16,9 +16,9 @@ import 'widgets/task_graph_tab.dart';
 // three Expanded columns; narrow ones fall back to fixed-width horizontal
 // scrolling. See task 06-06.
 
-// Layout tuning. A column needs ~240dp for the rich card content to breathe; the
+// Layout tuning. A column needs ~200dp for the card content to breathe; the
 // board switches to fill mode once three of those + gaps + padding fit.
-const double _kMinColumnWidth = 240;
+const double _kMinColumnWidth = 200;
 const double _kColumnGap = AppDimens.spacingSm + 2;
 const double _kBoardHPad = AppDimens.spacingSm + AppDimens.spacingXs;
 
@@ -487,19 +487,6 @@ class _CardBody extends StatelessWidget {
               height: 1.25,
             ),
           ),
-          // Description snippet — 工作摘要 (omitted when empty).
-          if (task.description.trim().isNotEmpty) ...[
-            const SizedBox(height: AppDimens.spacingXs),
-            Text(
-              task.description,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: scheme.onSurfaceVariant,
-                height: 1.3,
-              ),
-            ),
-          ],
           const SizedBox(height: AppDimens.spacingSm),
           // Bottom row: left = 依賴/交接 indicators, right = 負責人 chip.
           Row(
