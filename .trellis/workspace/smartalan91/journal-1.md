@@ -41,3 +41,37 @@ Took over 06-03-wire-fcm-notifications from opal. Reproduced the reported 'test 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: Mobile board redesign: collapsible status sections
+
+**Date**: 2026-06-13
+**Task**: Mobile board redesign: collapsible status sections
+**Branch**: `feature/mobile-board-sections`
+
+### Summary
+
+Replaced the phone-width kanban (horizontally scrolling 200dp columns) with a TickTick-style vertical list of three collapsible status sections; rows open task details, circle-tap marks done (feeding the done->AI-assign->FCM demo chain). Wide kanban untouched. Removed the 2 stale red tests from the 06-12 card simplification and added 5 behavioral tests - suite 81/81 green. Captured the phone-board convention in component-guidelines.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9470677` | (see git log) |
+| `236419b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
