@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitsync/models/ask_repo.dart';
 import 'package:gitsync/models/commit_graph.dart';
 import 'package:gitsync/models/daily_brief.dart';
 import 'package:gitsync/models/discord_chat.dart';
@@ -69,6 +70,7 @@ class _FakeFunctionsService implements FunctionsService {
   Future<String> generateHandoff({
     required String repoId,
     required String taskId,
+    String? language,
   }) =>
       throw UnimplementedError();
 
@@ -77,6 +79,7 @@ class _FakeFunctionsService implements FunctionsService {
     required String repoId,
     required String startDate,
     String? endDate,
+    String? language,
   }) =>
       throw UnimplementedError();
 
@@ -91,10 +94,20 @@ class _FakeFunctionsService implements FunctionsService {
       throw UnimplementedError();
 
   @override
+  Future<AskRepoReply> askRepo({
+    required String repoId,
+    required String question,
+    List<AskRepoTurn> history = const [],
+    String? runId,
+  }) =>
+      throw UnimplementedError();
+
+  @override
   Future<String> explainCommit({
     required String repoId,
     required String sha,
     bool force = false,
+    String? language,
   }) =>
       throw UnimplementedError();
 

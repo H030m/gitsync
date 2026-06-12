@@ -11,13 +11,20 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { db } from '../admin';
 import { getOpenAI, MODELS } from '../config';
 import { getCommit } from '../services/githubClient';
-import { explainCommitSystem, explainCommitContext } from '../prompts/explainCommit';
+import { explainCommitSystemPrompt, explainCommitContext } from '../prompts/explainCommit';
 
 export interface ExplainCommitInput {
   repoId: string;
   sha: string;
   /** Regenerate even when a cached workSummary exists. */
   force?: boolean;
+  /**
+   * W6: optional human-readable English language NAME (e.g. "Traditional
+   * Chinese") that forces the work summary into the user's app language on an
+   * explicit recompute. Applies to both the doc path and the GitHub fallback
+   * path. Absent/empty → unchanged behavior (the auto/first tap omits it).
+   */
+  language?: string;
   /**
    * Optional GitHub fallback (06-05 D2): when the commit doc is missing (e.g. a
    * branch-graph commit predating all-branch ingest), fetch the commit from the
@@ -42,7 +49,7 @@ const TASK_LIMIT = 5;
 export async function explainCommitFlow(
   input: ExplainCommitInput,
 ): Promise<ExplainCommitResult> {
-  const { repoId, sha, force, owner, repo, accessToken } = input;
+  const { repoId, sha, force, language, owner, repo, accessToken } = input;
 
   const ref = db.doc(`apps/gitsync/repos/${repoId}/commits/${sha}`);
   const snap = await ref.get();
@@ -52,7 +59,7 @@ export async function explainCommitFlow(
     // ingest). If we have GitHub creds, fetch the commit and summarize it from
     // that context — no linked tasks, no neighbors, no cache write-back.
     if (owner && repo && accessToken) {
-      return explainFromGitHub({ repoId, sha, owner, repo, accessToken });
+      return explainFromGitHub({ repoId, sha, owner, repo, accessToken, language });
     }
     throw new HttpsError('not-found', 'commit not found');
   }
@@ -118,7 +125,7 @@ export async function explainCommitFlow(
   const completion = await getOpenAI().chat.completions.create({
     model: MODELS.fast,
     messages: [
-      { role: 'system', content: explainCommitSystem },
+      { role: 'system', content: explainCommitSystemPrompt(language) },
       {
         role: 'user',
         content: explainCommitContext({
@@ -173,14 +180,16 @@ async function explainFromGitHub(input: {
   owner: string;
   repo: string;
   accessToken: string;
+  /** W6: forces the fallback explanation into the user's app language. */
+  language?: string;
 }): Promise<ExplainCommitResult> {
-  const { repoId, sha, owner, repo, accessToken } = input;
+  const { repoId, sha, owner, repo, accessToken, language } = input;
   const detail = await getCommit(owner, repo, accessToken, sha);
 
   const completion = await getOpenAI().chat.completions.create({
     model: MODELS.fast,
     messages: [
-      { role: 'system', content: explainCommitSystem },
+      { role: 'system', content: explainCommitSystemPrompt(language) },
       {
         role: 'user',
         content: explainCommitContext({

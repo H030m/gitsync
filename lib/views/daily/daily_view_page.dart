@@ -1,17 +1,17 @@
-import 'dart:math' as math;
+﻿import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/commit.dart';
 import '../../models/commit_graph.dart';
-import '../../models/daily_brief.dart';
 import '../../models/daily_report.dart';
 import '../../models/discord_chat.dart';
 import '../../models/discord_digest.dart';
 import '../../l10n/app_strings.dart';
 import '../../repositories/user_repo.dart';
 import '../../theme/app_dimens.dart';
+import '../../view_models/ask_repo_vm.dart';
 import '../../view_models/commits_vm.dart';
 import '../../view_models/daily_brief_vm.dart';
 import '../../view_models/daily_report_vm.dart';
@@ -20,6 +20,7 @@ import '../../view_models/discord_messages_vm.dart';
 import '../../view_models/intel_range_vm.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/markdown_view.dart';
+import '../ask/ask_repo_chat.dart';
 
 // DailyViewPage — three tabs: Summary / Commits / Discord, all driven by ONE
 // shared date range (IntelRangeViewModel). A single picker in the AppBar (shown
@@ -209,10 +210,12 @@ class _SharedRangeAction extends StatelessWidget {
 
 // The Summary tab is the developer "intelligence hub": an AI daily report
 // (summary + highlights + blockers + commit-message rollup + per-member
-// contributions) on top, and an agentic "ask AI about today" chat at the
-// bottom. The report streams from `dailyReports/{date}`; the chat hits the
-// `dailyBrief` callable. Both areas share one vertical scroll, with the chat
-// input bar pinned to the bottom (mirrors the Discord tab).
+// contributions) on top, and the global, repo-wide "Ask GitSync" assistant at
+// the bottom. The report streams from `dailyReports/{date}`; the chat drives the
+// SHARED [AskRepoViewModel] (the `askRepo` callable) — the same instance the
+// repo-shell FAB opens, so the transcript is shared across both entry points.
+// Both areas share one vertical scroll, with the chat input bar pinned to the
+// bottom (mirrors the Discord tab).
 class _SummaryTab extends StatefulWidget {
   const _SummaryTab();
 
@@ -235,7 +238,7 @@ class _SummaryTabState extends State<_SummaryTab> {
     super.dispose();
   }
 
-  void _send(DailyBriefChatViewModel vm) {
+  void _send(AskRepoViewModel vm) {
     final text = _controller.text;
     if (text.trim().isEmpty || vm.sending) return;
     _controller.clear();
@@ -272,7 +275,7 @@ class _SummaryTabState extends State<_SummaryTab> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer2<DailyReportViewModel, DailyBriefChatViewModel>(
+    return Consumer2<DailyReportViewModel, AskRepoViewModel>(
       builder: (ctx, report, chat, _) {
         if (report.loading) {
           return const Center(child: CircularProgressIndicator());
@@ -292,23 +295,25 @@ class _SummaryTabState extends State<_SummaryTab> {
               cards: _dayCards(report),
             ),
             const Divider(height: 1),
-            // ---- Lower area: the "ask AI about today" chat, own scroll.
+            // ---- Lower area: the global "Ask GitSync" chat, own scroll. Drives
+            // the shared AskRepoViewModel (same instance as the FAB sheet), so
+            // its transcript is repo-wide and shared across both entry points.
             Expanded(
               child: ListView(
                 controller: _scrollController,
                 padding: const EdgeInsets.all(AppDimens.spacingMd),
                 children: [
-                  const _BriefHeader(),
+                  const _AskRepoHeader(),
                   const SizedBox(height: AppDimens.spacingSm),
                   if (chat.turns.isEmpty)
-                    const _BriefHint()
+                    const AskRepoEmptyHint()
                   else
-                    for (final turn in chat.turns) _BriefTurnView(turn: turn),
-                  if (chat.sending) const _ThinkingBubble(),
+                    for (final turn in chat.turns) AskRepoTurnView(turn: turn),
+                  if (chat.sending) AskRepoLiveTraceStrip(steps: chat.liveSteps),
                 ],
               ),
             ),
-            _BriefInputBar(
+            AskRepoInputBar(
               controller: _controller,
               sending: chat.sending,
               onSend: () => _send(chat),
@@ -561,7 +566,10 @@ class _DayReportCardState extends State<_DayReportCard> {
                         ? _DayReportBody(vm: vm, day: widget.day, report: report)
                         : _DayReportEmpty(
                             generating: generating,
-                            onGenerate: () => vm.generateDay(widget.day),
+                            onGenerate: () => vm.generateDay(
+                              widget.day,
+                              language: context.l10n.backendLanguage,
+                            ),
                           ),
                   )
                 : const SizedBox(width: double.infinity),
@@ -598,7 +606,12 @@ class _DayReportBody extends StatelessWidget {
         Align(
           alignment: Alignment.centerLeft,
           child: FilledButton.icon(
-            onPressed: generating ? null : () => vm.generateDay(day),
+            onPressed: generating
+                ? null
+                : () => vm.generateDay(
+                      day,
+                      language: context.l10n.backendLanguage,
+                    ),
             icon: generating
                 ? const SizedBox(
                     width: 16,
@@ -996,9 +1009,10 @@ class _CountChip extends StatelessWidget {
   }
 }
 
-// "Ask AI about today" section header.
-class _BriefHeader extends StatelessWidget {
-  const _BriefHeader();
+// The global "Ask GitSync" section header for the Summary tab's chat. Repo-wide
+// framing (not date-scoped) — reuses the shared `askRepoTitle` string.
+class _AskRepoHeader extends StatelessWidget {
+  const _AskRepoHeader();
 
   @override
   Widget build(BuildContext context) {
@@ -1006,270 +1020,15 @@ class _BriefHeader extends StatelessWidget {
     final theme = Theme.of(context);
     return Row(
       children: [
-        Icon(Icons.forum_outlined, size: 20, color: theme.colorScheme.primary),
+        Icon(Icons.auto_awesome, size: 20, color: theme.colorScheme.primary),
         const SizedBox(width: AppDimens.spacingSm),
         Text(
-          s.askAiAboutToday,
+          s.askRepoTitle,
           style: theme.textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.w600,
           ),
         ),
       ],
-    );
-  }
-}
-
-class _BriefHint extends StatelessWidget {
-  const _BriefHint();
-
-  @override
-  Widget build(BuildContext context) {
-    final s = context.l10n;
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.all(AppDimens.spacingMd),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        s.briefHint,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
-}
-
-// One turn of the daily-brief chat: user bubble, or AI markdown answer with an
-// optional commit-sources panel.
-class _BriefTurnView extends StatelessWidget {
-  const _BriefTurnView({required this.turn});
-  final DailyBriefTurn turn;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-
-    if (turn.isUser) {
-      return Padding(
-        padding: const EdgeInsets.only(
-          top: AppDimens.spacingMd,
-          bottom: AppDimens.spacingXs,
-        ),
-        child: Align(
-          alignment: Alignment.centerRight,
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 520),
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppDimens.spacingMd,
-              vertical: AppDimens.spacingSm,
-            ),
-            decoration: BoxDecoration(
-              color: scheme.primaryContainer,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Text(
-              turn.content,
-              style: TextStyle(color: scheme.onPrimaryContainer),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppDimens.spacingMd),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.auto_awesome_outlined,
-                size: 18,
-                color: scheme.primary,
-              ),
-              const SizedBox(width: AppDimens.spacingSm),
-              Text(
-                'AI',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppDimens.spacingSm),
-          MarkdownView(data: turn.content),
-          if (turn.sources.isNotEmpty) ...[
-            const SizedBox(height: AppDimens.spacingSm),
-            _BriefSourcesPanel(sources: turn.sources),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-// Scrollable panel of the commits the AI surfaced for an answer.
-class _BriefSourcesPanel extends StatelessWidget {
-  const _BriefSourcesPanel({required this.sources});
-  final List<DailyBriefSource> sources;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = context.l10n;
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Container(
-      constraints: const BoxConstraints(maxHeight: 220),
-      decoration: BoxDecoration(
-        border: Border.all(color: scheme.outlineVariant),
-        borderRadius: BorderRadius.circular(12),
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppDimens.spacingMd,
-              AppDimens.spacingSm,
-              AppDimens.spacingMd,
-              AppDimens.spacingXs,
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.commit_outlined, size: 16, color: scheme.tertiary),
-                const SizedBox(width: AppDimens.spacingXs),
-                Text(
-                  s.sourceCommits(sources.length),
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Flexible(
-            child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(
-                AppDimens.spacingMd,
-                0,
-                AppDimens.spacingMd,
-                AppDimens.spacingSm,
-              ),
-              shrinkWrap: true,
-              itemCount: sources.length,
-              separatorBuilder: (_, _) => const Divider(height: 12),
-              itemBuilder: (_, i) {
-                final s = sources[i];
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      s.message,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (s.aiSummary != null && s.aiSummary!.isNotEmpty)
-                      Text(
-                        s.aiSummary!,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    Text(
-                      '${s.authorName.isEmpty ? s.authorLogin : s.authorName}'
-                      ' · ${s.shortSha}',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// Pinned input bar for the daily-brief chat (mirrors the Discord chat bar).
-class _BriefInputBar extends StatelessWidget {
-  const _BriefInputBar({
-    required this.controller,
-    required this.sending,
-    required this.onSend,
-    required this.onNewSession,
-  });
-
-  final TextEditingController controller;
-  final bool sending;
-  final VoidCallback onSend;
-
-  /// Clears the conversation to start a fresh session (D3). Null disables it
-  /// (e.g. while a question is in flight).
-  final VoidCallback? onNewSession;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = context.l10n;
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      elevation: 2,
-      color: scheme.surface,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          AppDimens.spacingMd,
-          AppDimens.spacingSm,
-          AppDimens.spacingMd,
-          AppDimens.spacingMd,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            // Start a new chat session — clears the transcript (D3).
-            IconButton(
-              tooltip: s.newSession,
-              onPressed: sending ? null : onNewSession,
-              icon: const Icon(Icons.restart_alt),
-            ),
-            Expanded(
-              child: TextField(
-                controller: controller,
-                minLines: 1,
-                maxLines: 4,
-                textInputAction: TextInputAction.send,
-                enabled: !sending,
-                onSubmitted: (_) => onSend(),
-                decoration: InputDecoration(
-                  hintText: s.askAiAboutTodayHint,
-                  border: const OutlineInputBorder(),
-                  isDense: true,
-                ),
-              ),
-            ),
-            const SizedBox(width: AppDimens.spacingSm),
-            IconButton.filled(
-              onPressed: sending ? null : onSend,
-              icon: sending
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.send),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -2492,7 +2251,11 @@ class _CommitDetailSheet extends StatelessWidget {
                   if (explanation != null && !explaining)
                     IconButton(
                       tooltip: s.regenerate,
-                      onPressed: () => vm.explain(c.sha, force: true),
+                      onPressed: () => vm.explain(
+                        c.sha,
+                        force: true,
+                        language: s.backendLanguage,
+                      ),
                       icon: const Icon(Icons.refresh, size: 18),
                     ),
                 ],

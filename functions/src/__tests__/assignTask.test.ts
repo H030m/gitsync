@@ -111,12 +111,25 @@ function makeQuery(colPath: string, clauses: WhereClause[]) {
   };
 }
 
+// When set, doc().set() throws this (simulates a best-effort write failure).
+let docSetError: Error | null = null;
+const docSetSpy = jest.fn();
+
 const fakeDb = {
   doc: (path: string) => ({
     path,
     async get() {
       const data = store.get(path);
       return { exists: data !== undefined, data: () => data };
+    },
+    // set(data) replaces; set(data, {merge:true}) shallow-merges (mergeLearnedTags).
+    async set(data: Record<string, unknown>, options?: { merge?: boolean }) {
+      if (docSetError) throw docSetError;
+      const next = options?.merge
+        ? { ...(store.get(path) ?? {}), ...data }
+        : data;
+      store.set(path, next);
+      docSetSpy(path, data, options);
     },
   }),
   collection: (path: string) => makeQuery(path, []),
@@ -155,7 +168,7 @@ jest.mock('../tools/embedding', () => ({
 }));
 
 import { assignTaskFlow } from '../flows/assignTask';
-import { searchMemberCommits } from '../tools/assignTools';
+import { searchMemberCommits, mergeLearnedTags } from '../tools/assignTools';
 
 // ---- Helpers --------------------------------------------------------------
 
@@ -178,7 +191,14 @@ function seedMember(userId: string, member: Record<string, unknown>, user?: Reco
 }
 
 // Script an assistant turn that calls finalizeAssignment.
-function finalizeTurn(assigneeId: string, reason: string, id = 'tc1') {
+function finalizeTurn(
+  assigneeId: string,
+  reason: string,
+  id = 'tc1',
+  learnedTags?: string[],
+) {
+  const args: Record<string, unknown> = { assigneeId, reason };
+  if (learnedTags !== undefined) args.learnedTags = learnedTags;
   return {
     message: {
       role: 'assistant',
@@ -189,7 +209,7 @@ function finalizeTurn(assigneeId: string, reason: string, id = 'tc1') {
           type: 'function',
           function: {
             name: 'finalizeAssignment',
-            arguments: JSON.stringify({ assigneeId, reason }),
+            arguments: JSON.stringify(args),
           },
         },
       ],
@@ -210,11 +230,22 @@ function readToolTurn(name: string, args: Record<string, unknown>, id = 'tc1') {
   };
 }
 
+/** The `content` of the user message in the first OpenAI create() call. */
+function firstUserMessage(): string {
+  const call = mockCreate.mock.calls[0] as unknown[];
+  const arg = call[0] as {
+    messages: Array<{ role: string; content: string }>;
+  };
+  return arg.messages.find((m) => m.role === 'user')!.content;
+}
+
 beforeEach(() => {
   store.clear();
   createQueue.length = 0;
   mockCreate.mockClear();
   findNearestError = null;
+  docSetError = null;
+  docSetSpy.mockClear();
 });
 
 // ---- Tests ----------------------------------------------------------------
@@ -370,5 +401,147 @@ describe('assignTaskFlow resilient to commit search failure', () => {
     expect(mockCreate).toHaveBeenCalledTimes(2);
     expect(store.get(`apps/gitsync/repos/${REPO}/tasks/t1`)?.assigneeId).toBe('u2');
     expect(store.get(`apps/gitsync/repos/${REPO}/members/u2`)?.activeIssueCount).toBe(1);
+  });
+});
+
+// ---- W3b: learnedTags write-back ------------------------------------------
+
+const USERS = (uid: string) => `apps/gitsync/users/${uid}`;
+
+describe('assignTaskFlow learnedTags write-back', () => {
+  it('merges learnedTags into the assignee users doc via set(merge)', async () => {
+    seedTask('t1', {});
+    seedMember('u1', { activeIssueCount: 1 }, { name: 'A' });
+    seedMember('u2', { activeIssueCount: 0 }, { name: 'B' });
+
+    createQueue.push(finalizeTurn('u2', 'B fits', 'tc1', ['auth', 'ml']));
+
+    const res = await assignTaskFlow({ repoId: REPO, taskId: 't1' });
+
+    expect(res.assigneeId).toBe('u2');
+    expect(store.get(USERS('u2'))?.expertiseTags).toEqual(['auth', 'ml']);
+    // Written via set(...,{merge:true}) on the users doc — preserves identity fields.
+    expect(docSetSpy).toHaveBeenCalledWith(
+      USERS('u2'),
+      { expertiseTags: ['auth', 'ml'] },
+      { merge: true },
+    );
+    expect(store.get(USERS('u2'))?.name).toBe('B');
+  });
+
+  it('caps merged tags at 8, dropping oldest first', async () => {
+    seedTask('t1', {});
+    seedMember('u1', { activeIssueCount: 1 }, { name: 'A' });
+    seedMember(
+      'u2',
+      { activeIssueCount: 0 },
+      { name: 'B', expertiseTags: ['t1', 't2', 't3', 't4', 't5', 't6', 't7'] },
+    );
+
+    // 7 existing + 2 new = 9 → cap to 8, oldest (t1) evicted.
+    createQueue.push(finalizeTurn('u2', 'B fits', 'tc1', ['new1', 'new2']));
+
+    await assignTaskFlow({ repoId: REPO, taskId: 't1' });
+
+    expect(store.get(USERS('u2'))?.expertiseTags).toEqual([
+      't2', 't3', 't4', 't5', 't6', 't7', 'new1', 'new2',
+    ]);
+  });
+
+  it('does not write tags when learnedTags is absent', async () => {
+    seedTask('t1', {});
+    seedMember('u1', { activeIssueCount: 1 }, { name: 'A' });
+    seedMember('u2', { activeIssueCount: 0 }, { name: 'B' });
+
+    createQueue.push(finalizeTurn('u2', 'B fits')); // no learnedTags arg
+
+    await assignTaskFlow({ repoId: REPO, taskId: 't1' });
+
+    expect(docSetSpy).not.toHaveBeenCalled();
+    expect(store.get(USERS('u2'))?.expertiseTags).toBeUndefined();
+  });
+
+  it('best-effort: a tags write failure still returns the assignment', async () => {
+    seedTask('t1', {});
+    seedMember('u1', { activeIssueCount: 1 }, { name: 'A' });
+    seedMember('u2', { activeIssueCount: 0 }, { name: 'B' });
+
+    docSetError = new Error('users write blew up');
+    createQueue.push(finalizeTurn('u2', 'B fits', 'tc1', ['auth']));
+
+    const res = await assignTaskFlow({ repoId: REPO, taskId: 't1' });
+
+    expect(res.assigneeId).toBe('u2');
+    // Assignment still applied despite the tags write failing.
+    expect(store.get(`apps/gitsync/repos/${REPO}/tasks/t1`)?.assigneeId).toBe('u2');
+  });
+});
+
+describe('mergeLearnedTags', () => {
+  it('dedupes + lowercases + trims; writes to users doc with set(merge)', async () => {
+    seedMember('u1', {}, { name: 'A', expertiseTags: ['auth'] });
+
+    await mergeLearnedTags(REPO, 'u1', ['Auth', ' ML ', 'ml']);
+
+    expect(store.get(USERS('u1'))?.expertiseTags).toEqual(['auth', 'ml']);
+  });
+
+  it('writes via set(merge) even when the users doc is absent', async () => {
+    // No users doc seeded for u9.
+    await mergeLearnedTags(REPO, 'u9', ['frontend']);
+
+    expect(store.get(USERS('u9'))?.expertiseTags).toEqual(['frontend']);
+    expect(docSetSpy).toHaveBeenCalledWith(
+      USERS('u9'),
+      { expertiseTags: ['frontend'] },
+      { merge: true },
+    );
+  });
+
+  it('no-ops (no write) when there are no usable tags', async () => {
+    await mergeLearnedTags(REPO, 'u1', ['  ', '']);
+    expect(docSetSpy).not.toHaveBeenCalled();
+  });
+
+  it('best-effort: a write failure does not throw', async () => {
+    docSetError = new Error('boom');
+    await expect(mergeLearnedTags(REPO, 'u1', ['auth'])).resolves.toBeUndefined();
+  });
+});
+
+// ---- W3a: brief prefix on the assign user message -------------------------
+
+describe('assignTaskFlow project-brief prefix', () => {
+  it('prepends the brief block to the user message when a brief exists', async () => {
+    seedTask('t1', {});
+    seedMember('u1', { activeIssueCount: 1 }, { name: 'A' });
+    seedMember('u2', { activeIssueCount: 0 }, { name: 'B' });
+    store.set(`apps/gitsync/repos/${REPO}/meta/projectBrief`, {
+      content: '- uses OpenAI SDK',
+      updatedAt: '__ts__',
+      version: 2,
+    });
+
+    createQueue.push(finalizeTurn('u2', 'B fits'));
+
+    await assignTaskFlow({ repoId: REPO, taskId: 't1' });
+
+    const userMsg = firstUserMessage();
+    expect(userMsg).toMatch(/^## Project memory/);
+    expect(userMsg).toContain('- uses OpenAI SDK');
+  });
+
+  it('leaves the user message unchanged (no brief block) when no brief exists', async () => {
+    seedTask('t1', {});
+    seedMember('u1', { activeIssueCount: 1 }, { name: 'A' });
+    seedMember('u2', { activeIssueCount: 0 }, { name: 'B' });
+
+    createQueue.push(finalizeTurn('u2', 'B fits'));
+
+    await assignTaskFlow({ repoId: REPO, taskId: 't1' });
+
+    const userMsg = firstUserMessage();
+    expect(userMsg).not.toContain('Project memory');
+    expect(userMsg.startsWith('repoId:')).toBe(true);
   });
 });

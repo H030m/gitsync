@@ -7,14 +7,16 @@ import '../../services/navigation.dart';
 import '../../theme/app_dimens.dart';
 import '../../view_models/members_vm.dart';
 import '../../view_models/tasks_board_vm.dart';
+import 'widgets/status_picker.dart';
 import 'widgets/task_graph_tab.dart';
 
 // TasksBoardPage — kanban (看板) + dependency-graph (關聯圖) tabs.
 // Faithful restyle of the prototype `tasks/TasksBoard.tsx`: tonal column headers,
 // count chips, rich cards (摘要 / 負責人 / 交接 / 依賴) and long-press
 // drag-and-drop between columns. Responsive: wide viewports fill the page with
-// three Expanded columns; narrow ones fall back to fixed-width horizontal
-// scrolling. See task 06-06.
+// three Expanded columns; narrow ones use a TickTick-style vertical list of
+// collapsible status sections (tap a row's circle to mark it done, tap the row
+// to open details). See tasks 06-06 and 06-13.
 
 // Layout tuning. A column needs ~200dp for the card content to breathe; the
 // board switches to fill mode once three of those + gaps + padding fit.
@@ -152,35 +154,8 @@ class _BoardTab extends StatelessWidget {
           );
         }
 
-        // Phone: fixed-width columns scrolling horizontally.
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(
-            horizontal: _kBoardHPad,
-            vertical: AppDimens.spacingSm,
-          ),
-          // Bound the columns to the viewport height so each one scrolls
-          // internally (otherwise many cards overflow vertically).
-          child: SizedBox(
-            height: constraints.maxHeight - AppDimens.spacingSm * 2,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (var i = 0; i < columns.length; i++) ...[
-                  if (i > 0) const SizedBox(width: _kColumnGap),
-                  SizedBox(
-                    width: _kMinColumnWidth,
-                    child: _BoardColumn(
-                      vm: vm,
-                      status: columns[i],
-                      tasks: _tasksFor(vm, columns[i]),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        );
+        // Phone: vertical list of collapsible status sections (TickTick-style).
+        return _SectionedBoardList(vm: vm);
       },
     );
   }
@@ -191,6 +166,262 @@ class _BoardTab extends StatelessWidget {
         TaskStatus.inProgress => vm.inProgress,
         TaskStatus.done => vm.done,
       };
+}
+
+// Narrow-layout board: the three status groups stacked vertically as
+// collapsible sections that scroll together as one list. Expansion state is
+// page-local (intentionally not persisted): todo + in-progress start expanded,
+// done starts collapsed.
+class _SectionedBoardList extends StatefulWidget {
+  const _SectionedBoardList({required this.vm});
+  final TasksBoardViewModel vm;
+
+  @override
+  State<_SectionedBoardList> createState() => _SectionedBoardListState();
+}
+
+class _SectionedBoardListState extends State<_SectionedBoardList> {
+  final Map<TaskStatus, bool> _expanded = {
+    TaskStatus.todo: true,
+    TaskStatus.inProgress: true,
+    TaskStatus.done: false,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    const sections = [TaskStatus.todo, TaskStatus.inProgress, TaskStatus.done];
+    return ListView(
+      padding: const EdgeInsets.symmetric(
+        horizontal: _kBoardHPad,
+        vertical: AppDimens.spacingSm,
+      ),
+      children: [
+        for (var i = 0; i < sections.length; i++) ...[
+          if (i > 0) const SizedBox(height: AppDimens.spacingSm),
+          _BoardSection(
+            vm: widget.vm,
+            status: sections[i],
+            tasks: _BoardTab._tasksFor(widget.vm, sections[i]),
+            expanded: _expanded[sections[i]]!,
+            onToggle: () => setState(
+              () => _expanded[sections[i]] = !_expanded[sections[i]]!,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// One collapsible status section: a tappable tonal header (label + count chip +
+// rotating chevron) over the task rows. Reuses the kanban column's status
+// tokens so light/dark stay consistent with the wide layout.
+class _BoardSection extends StatelessWidget {
+  const _BoardSection({
+    required this.vm,
+    required this.status,
+    required this.tasks,
+    required this.expanded,
+    required this.onToggle,
+  });
+
+  final TasksBoardViewModel vm;
+  final TaskStatus status;
+  final List<Task> tasks;
+  final bool expanded;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final s = context.l10n;
+    final colTheme = _ColumnTheme.of(scheme, s, status);
+
+    return Material(
+      color: scheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(AppDimens.radiusLg),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Material(
+            color: colTheme.tonal,
+            child: InkWell(
+              onTap: onToggle,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppDimens.spacingSm + AppDimens.spacingXs,
+                  vertical: AppDimens.spacingSm,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        colTheme.label,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: colTheme.accent,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    _CountChip(count: tasks.length, accent: colTheme.accent),
+                    const SizedBox(width: AppDimens.spacingSm),
+                    AnimatedRotation(
+                      turns: expanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeInOut,
+                      child: Icon(
+                        Icons.expand_more,
+                        size: 20,
+                        color: colTheme.accent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOut,
+            alignment: Alignment.topCenter,
+            child: !expanded
+                ? const SizedBox.shrink()
+                : tasks.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.all(AppDimens.spacingMd),
+                        child: Center(
+                          child: Text(
+                            '—',
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      )
+                    : Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: AppDimens.spacingXs,
+                        ),
+                        child: Column(
+                          children: [
+                            for (final task in tasks)
+                              _SectionTaskRow(
+                                vm: vm,
+                                task: task,
+                                accent: colTheme.accent,
+                              ),
+                          ],
+                        ),
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// One task row in a section: leading status circle (tap = mark done), title,
+// trailing assignee avatar. Tapping the row opens TaskDetails; long-pressing
+// it opens the shared status picker for an arbitrary transition. Done rows
+// show a filled check circle whose tap is absorbed (no-op) instead of
+// navigating.
+class _SectionTaskRow extends StatelessWidget {
+  const _SectionTaskRow({
+    required this.vm,
+    required this.task,
+    required this.accent,
+  });
+
+  final TasksBoardViewModel vm;
+  final Task task;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDone = task.status == TaskStatus.done;
+
+    return InkWell(
+      onTap: () => Provider.of<NavigationService>(
+        context,
+        listen: false,
+      ).goTaskDetails(vm.repoId, task.id),
+      onLongPress: () => _pickStatus(context),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppDimens.spacingSm + AppDimens.spacingXs,
+          vertical: AppDimens.spacingSm,
+        ),
+        child: Row(
+          children: [
+            InkResponse(
+              radius: 18,
+              // Done rows absorb the tap so the circle stays a no-op instead
+              // of falling through to the row's navigation.
+              onTap: isDone ? () {} : () => _markDone(context),
+              child: Icon(
+                isDone ? Icons.check_circle : Icons.radio_button_unchecked,
+                size: 22,
+                color: isDone ? accent : scheme.outline,
+              ),
+            ),
+            const SizedBox(width: AppDimens.spacingSm + AppDimens.spacingXs),
+            Expanded(
+              child: Text(
+                task.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: scheme.onSurface,
+                  fontWeight: FontWeight.w600,
+                  height: 1.25,
+                ),
+              ),
+            ),
+            const SizedBox(width: AppDimens.spacingSm),
+            _AssigneeCircle(assigneeId: task.assigneeId, accent: accent),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Long-press: shared three-state picker → write the chosen status. Picking
+  // the current status (or dismissing) is a no-op. Same async-gap discipline
+  // as [_markDone]: capture messenger + strings BEFORE the awaits (stateless
+  // row, no `mounted`).
+  Future<void> _pickStatus(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final s = context.l10n;
+    final picked = await showStatusPicker(context, current: task.status);
+    if (picked == null || picked == task.status) return;
+    try {
+      await vm.updateStatus(task.id, picked);
+    } catch (e) {
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(content: Text(s.updateStatusFailed(e))));
+    }
+  }
+
+  // Stateless row: capture the messenger + strings BEFORE the await so no
+  // BuildContext is used after the async gap (there is no `mounted` here).
+  Future<void> _markDone(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final s = context.l10n;
+    try {
+      await vm.updateStatus(task.id, TaskStatus.done);
+    } catch (e) {
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(content: Text(s.updateStatusFailed(e))));
+    }
+  }
 }
 
 // Centered card shown when every column is empty — mirrors the prototype copy.

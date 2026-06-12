@@ -26,6 +26,11 @@ class AppStrings {
 
   String _(String en, String zh) => locale == AppLocale.en ? en : zh;
 
+  /// English language NAME for the active locale, sent to the backend AI flows
+  /// on an explicit regenerate so the artifact comes back in the app language
+  /// (W6). Not a user-facing string — a stable backend signal.
+  String get backendLanguage => locale.backendLanguage;
+
   // ---- Common ----
   String get cancel => _('Cancel', '取消');
   String get delete => _('Delete', '刪除');
@@ -68,6 +73,7 @@ class AppStrings {
       _('Tap the + button to add tasks.', '請點擊右下角 + 號來新增任務');
   String updateStatusFailed(Object e) =>
       _('Failed to update status: $e', '更新狀態失敗:$e');
+  String get changeStatusTitle => _('Change status', '變更狀態');
 
   // ---- Add task ----
   String get addTaskTitle => _('Add task', '新增任務');
@@ -286,6 +292,21 @@ class AppStrings {
   String relatedConversations(int n) =>
       _('Related conversations ($n)', 'Related conversations ($n)');
   String get thinking => _('Thinking…', 'Thinking…');
+
+  // ---- Ask GitSync (global repo-wide chat) ----
+  String get askRepoTitle => _('Ask GitSync', '問 GitSync');
+  String get askRepoTooltip => _('Ask GitSync', '問 GitSync');
+  String get askRepoHint =>
+      _('Ask GitSync about this repo…', '問問 GitSync 關於這個 repo…');
+  String get askRepoEmptyHint => _(
+      'Ask anything about this repo — progress, people, code, commits, or team discussion.',
+      '關於這個 repo 的任何事都可以問 —— 進度、成員、程式碼、commit，或團隊討論。');
+  String get askRepoThinking => _('Thinking…', '思考中…');
+  String get askRepoNewSession => _('New session', '開啟新 session');
+  String askRepoCommitSources(int n) =>
+      _('Source commits ($n)', '來源 commit（$n）');
+  String askRepoDiscordSources(int n) =>
+      _('Related conversations ($n)', '相關對話（$n）');
 
   // ---- Stats ----
   String get statsTitle => _('Stats', '統計');

@@ -15,6 +15,14 @@ extension AppLocaleX on AppLocale {
         AppLocale.zhHant => '中文（繁體）',
       };
 
+  /// English language NAME sent to the backend AI flows (W6) so an explicit
+  /// regenerate/recompute produces the artifact in the user's app language.
+  /// A clear English name is the simplest, most reliable signal for the model.
+  String get backendLanguage => switch (this) {
+        AppLocale.en => 'English',
+        AppLocale.zhHant => 'Traditional Chinese',
+      };
+
   /// Stable key for persistence.
   String get prefValue => name;
 

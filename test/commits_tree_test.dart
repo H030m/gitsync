@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 import 'package:gitsync/data/dummy_data.dart';
+import 'package:gitsync/view_models/ask_repo_vm.dart';
 import 'package:gitsync/view_models/commits_vm.dart';
 import 'package:gitsync/view_models/daily_brief_vm.dart';
 import 'package:gitsync/view_models/daily_report_vm.dart';
@@ -27,6 +28,8 @@ Widget _harness() {
             create: (_) => DailyReportViewModel(repoId: repoId)),
         ChangeNotifierProvider(
             create: (_) => DailyBriefChatViewModel(repoId: repoId)),
+        // The Summary tab's chat now reads the shared, repo-wide AskRepoViewModel.
+        ChangeNotifierProvider(create: (_) => AskRepoViewModel(repoId: repoId)),
         ChangeNotifierProvider(create: (_) => IntelRangeViewModel()),
       ],
       child: const DailyViewPage(repoId: repoId),

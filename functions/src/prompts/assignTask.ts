@@ -10,4 +10,5 @@ Rules:
 - Prefer members with lower activeIssueCount
 - Prefer members whose expertiseTags / recent commits match the task topic
 - If two members tie, pick the one whose downstream dependents are higher (so we unblock them)
-- Always call finalizeAssignment exactly once with a concise reasoning string.`;
+- Always call finalizeAssignment exactly once with a concise reasoning string.
+- When you finalize, you MAY include learnedTags: 1-4 short lowercase skill tags justified by commit evidence you retrieved this run. Never invent tags from the task description alone; omit them if you did not search a member's commits.`;

@@ -1,6 +1,7 @@
 import 'package:cloud_functions/cloud_functions.dart';
 
 import '../config/app_config.dart';
+import '../models/ask_repo.dart';
 import '../models/commit_graph.dart';
 import '../models/daily_brief.dart';
 import '../models/discord_chat.dart';
@@ -50,16 +51,24 @@ abstract class FunctionsService {
     required String repoId,
     required String taskId,
   });
+  /// Regenerates the AI handoff doc for [taskId] (force=true). [language] is an
+  /// English language NAME (e.g. "Traditional Chinese") derived from the app
+  /// locale so the regenerated doc comes back in the user's language (W6);
+  /// omit it to keep the backend's default-language behavior.
   Future<String> generateHandoff({
     required String repoId,
     required String taskId,
+    String? language,
   });
   /// Generates the Summary tab report for the inclusive day range
   /// [startDate]..[endDate] (both YYYY-MM-DD; omit [endDate] for one day).
+  /// [language] (W6) is the English language NAME for the app locale; when set,
+  /// the narrative is regenerated in that language (counts stay neutral).
   Future<String> summarizeDay({
     required String repoId,
     required String startDate,
     String? endDate,
+    String? language,
   });
 
   /// Asks the AI a question about a period's activity (commits / completed
@@ -75,12 +84,28 @@ abstract class FunctionsService {
     List<DailyBriefTurn> history = const [],
   });
 
+  /// Asks the repo-wide AI assistant a question (the global "Ask GitSync"
+  /// chat). The backend runs an agentic loop over the full read-only tool set
+  /// and returns the answer plus the commits + Discord clusters it surfaced.
+  /// [history] is prior turns, oldest first, for follow-up context. [runId] is a
+  /// client-generated id for the agent tool-trace doc the UI streams while
+  /// waiting (omit to skip the trace).
+  Future<AskRepoReply> askRepo({
+    required String repoId,
+    required String question,
+    List<AskRepoTurn> history = const [],
+    String? runId,
+  });
+
   /// Asks the AI to explain the work behind one commit (the commit tree map's
   /// tap action). Returns markdown; the backend caches it on the commit doc.
+  /// [language] (W6) is the English language NAME for the app locale; on a
+  /// recompute ([force] = true) it makes the summary come back in that language.
   Future<String> explainCommit({
     required String repoId,
     required String sha,
     bool force = false,
+    String? language,
   });
 
   /// Asks the AI to summarize what one commit author worked on across the
@@ -249,10 +274,13 @@ class _LiveFunctionsService implements FunctionsService {
   Future<String> generateHandoff({
     required String repoId,
     required String taskId,
+    String? language,
   }) async {
     final res = await _callable('generateHandoff').call({
       'repoId': repoId,
       'taskId': taskId,
+      // Only sent on an explicit regenerate; absent → backend default language.
+      'language': ?language,
     });
     final data = Map<String, dynamic>.from(res.data as Map);
     return data['handoffMarkdown'] as String;
@@ -263,11 +291,13 @@ class _LiveFunctionsService implements FunctionsService {
     required String repoId,
     required String startDate,
     String? endDate,
+    String? language,
   }) async {
     final res = await _callable('summarizeDay').call({
       'repoId': repoId,
       'startDate': startDate,
       'endDate': endDate ?? startDate,
+      'language': ?language,
     });
     final data = Map<String, dynamic>.from(res.data as Map);
     return data['summary'] as String;
@@ -292,15 +322,35 @@ class _LiveFunctionsService implements FunctionsService {
   }
 
   @override
+  Future<AskRepoReply> askRepo({
+    required String repoId,
+    required String question,
+    List<AskRepoTurn> history = const [],
+    String? runId,
+  }) async {
+    final res = await _callable('askRepo').call({
+      'repoId': repoId,
+      'question': question,
+      'history': history.map((t) => t.toMap()).toList(),
+      // Carried in so the backend writes the trace doc the UI is streaming.
+      'runId': ?runId,
+    });
+    return AskRepoReply.fromMap(Map<String, dynamic>.from(res.data as Map));
+  }
+
+  @override
   Future<String> explainCommit({
     required String repoId,
     required String sha,
     bool force = false,
+    String? language,
   }) async {
     final res = await _callable('explainCommit').call({
       'repoId': repoId,
       'sha': sha,
       'force': force,
+      // Only sent on a recompute; absent → backend default language.
+      'language': ?language,
     });
     final data = Map<String, dynamic>.from(res.data as Map);
     return data['markdown'] as String;

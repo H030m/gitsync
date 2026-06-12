@@ -13,6 +13,8 @@ import { zodResponseFormat } from 'openai/helpers/zod';
 import { db } from '../admin';
 import { getOpenAI, MODELS } from '../config';
 import { breakdownTaskSystem, breakdownTaskUser } from '../prompts/breakdownTask';
+import { readRepoPlanningDocs } from '../tools/repoDocs';
+import { readProjectBrief, formatBriefForPrompt } from '../tools/projectBrief';
 import { BreakdownOutputSchema, BreakdownOutput } from '../types';
 
 export interface BreakdownTaskInput {
@@ -47,10 +49,26 @@ export async function breakdownTaskFlow(
     throw new HttpsError('not-found', `repo ${repoId} not found`);
   }
   const repo = repoSnap.data() ?? {};
+
+  // Best-effort: pull the repo's in-repo planning docs (.trellis / AGENTS.md /
+  // CLAUDE.md / .claude / docs) so the breakdown knows what work already exists
+  // instead of re-decomposing it. An empty result (no docs, no token) leaves the
+  // "newly imported project" framing unchanged. Never throws.
+  const repoDocs = await readRepoPlanningDocs(repoId);
+  const hasDocs = repoDocs.content.trim().length > 0;
+
+  // Best-effort: prepend the accumulated project brief as a stable, cache-friendly
+  // prefix (empty brief → '' → byte-identical prompt).
+  const briefPrefix = formatBriefForPrompt(await readProjectBrief(repoId));
+
   const projectContext = [
+    briefPrefix || undefined,
+    hasDocs ? repoDocs.content : undefined,
     `Repository: ${repo.name ?? repoId}`,
     repo.description ? `Description: ${repo.description}` : undefined,
-    'This is a newly imported project — there are no existing tasks yet.',
+    hasDocs
+      ? undefined
+      : 'This is a newly imported project — there are no existing tasks yet.',
   ]
     .filter(Boolean)
     .join('\n');
