@@ -621,3 +621,76 @@ export async function getRepoFile(
   if (typeof data.content !== 'string') return null;
   return Buffer.from(data.content, 'base64').toString('utf-8');
 }
+
+// ---- PR triage helpers (06-08 onPullRequestOpened) -------------------------
+
+export interface PullRequestFile {
+  filename: string;
+  additions: number;
+  deletions: number;
+  status: string;
+  /** A unified-diff snippet, omitted by GitHub for huge/binary files. */
+  patch: string | null;
+}
+
+/**
+ * Lists the files changed by a PR
+ * (GET /repos/{owner}/{repo}/pulls/{pull_number}/files). One page only — the
+ * triage flow caps at the top N files by additions+deletions anyway. All
+ * GitHub API access stays in this file (ARCHITECTURE.md §6.4).
+ */
+export async function listPullRequestFiles(
+  owner: string,
+  repo: string,
+  accessToken: string,
+  prNumber: number,
+  perPage = 100,
+): Promise<PullRequestFile[]> {
+  const octokit = getOctokit(accessToken);
+  const res = await octokit.pulls.listFiles({
+    owner,
+    repo,
+    pull_number: prNumber,
+    per_page: perPage,
+  });
+  return res.data.map((f) => ({
+    filename: f.filename,
+    additions: f.additions ?? 0,
+    deletions: f.deletions ?? 0,
+    status: f.status ?? '',
+    patch: f.patch ?? null,
+  }));
+}
+
+export interface PathCommitAuthor {
+  sha: string;
+  authorLogin: string;
+  committedAt: string; // ISO 8601
+}
+
+/**
+ * Lists the most recent commits that touched a path
+ * (GET /repos/{owner}/{repo}/commits?path=...). Used by the PR triage flow to
+ * rank reviewers by file-history (who has historically touched these files).
+ * All GitHub API access stays in this file (ARCHITECTURE.md §6.4).
+ */
+export async function listCommitsForPath(
+  owner: string,
+  repo: string,
+  accessToken: string,
+  path: string,
+  perPage = 10,
+): Promise<PathCommitAuthor[]> {
+  const octokit = getOctokit(accessToken);
+  const res = await octokit.repos.listCommits({
+    owner,
+    repo,
+    path,
+    per_page: perPage,
+  });
+  return res.data.map((c) => ({
+    sha: c.sha,
+    authorLogin: c.author?.login ?? '',
+    committedAt: c.commit.author?.date ?? '',
+  }));
+}
