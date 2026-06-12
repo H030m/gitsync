@@ -16,6 +16,10 @@
 
 ---
 
+## 2026-06-13
+
+- **廷煥 — Tasks 看板手機版重設計（收合式三段清單）**：手機寬度從「三條 200dp 欄橫向捲動」改為 TickTick 風格垂直收合清單（待辦/進行中/完成 header + 數量、AnimatedSize 展開收合、預設完成區收起）；任務列點擊進詳情、**圓圈勾選直接標完成**（直達 done→AI 分派→FCM 推播的 demo 鏈路）。寬螢幕 kanban 不動。順手清掉 temmie 06-12 遺留的 2 個紅測試並新增 5 個清單測試——**全套 81/81 綠**。trellis `06-13-mobile-board-sections`，分支 `feature/mobile-board-sections`。詳見 [113062340_tinghuan.md](./113062340_tinghuan.md)。
+
 ## 2026-06-12
 
 - **廷煥 — FCM live e2e 全過、PR #38 併入 main，06-03 收工**：環境補齊（flutterfire configure + SHA 登記）後在 Android emulator live mode 完整驗證：fcmToken 寫入 ✓、done→自動通知下游（前景重畫/背景推播/點擊導頁）✓、per-locale 繁中推播文案 ✓、權限拒絕 SnackBar 提示 ✓。併入 develop 零衝突、analyze/test 全綠。**經隊友同意 PR #38 直接合入 main**。⚠️ 待辦：main 需 back-merge 回 develop（目前 develop 沒有 FCM 工作，兩分支分岔 9 vs 7）；另發現後端既有 bug `summarizeDay` 回 internal（與通知無關，owner 請查 cloud log）。詳見 [113062340_tinghuan.md](./113062340_tinghuan.md)。
