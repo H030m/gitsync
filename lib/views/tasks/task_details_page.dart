@@ -270,161 +270,296 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
           final repoUrl = ctx.watch<RepoViewModel>().repo?.url;
           final hasRepoUrl = repoUrl != null && repoUrl.isNotEmpty;
 
+          final scheme = theme.colorScheme;
+
           return ListView(
             padding: const EdgeInsets.all(AppDimens.spacingMd),
             children: [
-              Text(
-                task.title,
-                style: theme.textTheme.headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: AppDimens.spacingSm),
-              _StatusChip(status: task.status),
-
-              // ---- Assignee ----
-              const SizedBox(height: AppDimens.spacingLg),
-              _SectionTitle(s.assignee),
-              const SizedBox(height: AppDimens.spacingSm),
-              _AssigneeRow(
-                assigneeId: task.assigneeId,
-                membersVm: membersVm,
-                onEdit: () => _pickAssignee(task),
+              // ---- Assignee card ----
+              _DetailCard(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+                  onTap: () => _pickAssignee(task),
+                  child: _AssigneeCardBody(
+                    assigneeId: task.assigneeId,
+                    membersVm: membersVm,
+                  ),
+                ),
               ),
 
-              // ---- Description ----
-              if (task.description.isNotEmpty) ...[
-                const SizedBox(height: AppDimens.spacingLg),
-                _SectionTitle(s.descriptionSection),
-                const SizedBox(height: AppDimens.spacingSm),
-                Text(task.description, style: theme.textTheme.bodyMedium),
-              ],
+              const SizedBox(height: AppDimens.spacingSm),
 
-              // ---- Implementation details (acceptance criteria) ----
-              if (task.acceptanceCriteria.isNotEmpty) ...[
-                const SizedBox(height: AppDimens.spacingLg),
-                _SectionTitle(s.implementationDetails),
-                const SizedBox(height: AppDimens.spacingSm),
-                for (final c in task.acceptanceCriteria)
-                  Padding(
-                    padding:
-                        const EdgeInsets.only(bottom: AppDimens.spacingXs),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+              // ---- Task content card (description + subtasks) ----
+              _DetailCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Header row: icon + title.
+                    Row(
                       children: [
-                        Icon(
-                          Icons.check_box_outline_blank,
-                          size: 18,
-                          color: theme.colorScheme.outline,
-                        ),
+                        Icon(Icons.description_outlined,
+                            size: 20, color: scheme.primary),
                         const SizedBox(width: AppDimens.spacingSm),
-                        Expanded(
-                          child: Text(c, style: theme.textTheme.bodyMedium),
+                        Text(
+                          s.descriptionSection,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: scheme.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ],
                     ),
-                  ),
-              ],
+                    const Divider(height: AppDimens.spacingLg),
 
-              // ---- Subtasks ----
-              if (subtasks.isNotEmpty) ...[
-                const SizedBox(height: AppDimens.spacingLg),
-                _SectionTitle(s.subtasks),
-                const SizedBox(height: AppDimens.spacingSm),
-                for (final t in subtasks)
-                  _TaskRefTile(repoId: widget.repoId, task: t),
-              ],
+                    // Description sub-section.
+                    Text(
+                      s.descriptionSection,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: AppDimens.spacingSm),
+                    // Blue dot + task title.
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: scheme.primary,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: AppDimens.spacingSm),
+                        Expanded(
+                          child: Text(
+                            task.title,
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Description text in a tinted rounded box.
+                    if (task.description.isNotEmpty) ...[
+                      const SizedBox(height: AppDimens.spacingSm),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(AppDimens.spacingMd),
+                        decoration: BoxDecoration(
+                          color: scheme.surfaceContainerHighest
+                              .withValues(alpha: 0.5),
+                          borderRadius:
+                              BorderRadius.circular(AppDimens.radiusSm),
+                        ),
+                        child: Text(
+                          task.description,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
 
-              // ---- Dependencies (parents) ----
-              const SizedBox(height: AppDimens.spacingLg),
-              Row(
-                children: [
-                  Expanded(child: _SectionTitle(s.dependsOn)),
-                  TextButton.icon(
-                    onPressed: () => _addPrerequisite(task),
-                    icon: const Icon(Icons.add, size: 18),
-                    label: Text(s.add),
-                  ),
-                ],
+                    // Subtasks sub-section.
+                    if (subtasks.isNotEmpty) ...[
+                      const SizedBox(height: AppDimens.spacingLg),
+                      Text(
+                        s.subtasks,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: scheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: AppDimens.spacingSm),
+                      for (final t in subtasks)
+                        Padding(
+                          padding: const EdgeInsets.only(
+                              bottom: AppDimens.spacingSm),
+                          child: InkWell(
+                            borderRadius:
+                                BorderRadius.circular(AppDimens.radiusSm),
+                            onTap: () =>
+                                Provider.of<NavigationService>(context,
+                                        listen: false)
+                                    .goTaskDetails(widget.repoId, t.id),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  t.status == TaskStatus.done
+                                      ? Icons.check_box
+                                      : Icons.check_box_outline_blank,
+                                  size: 22,
+                                  color: t.status == TaskStatus.done
+                                      ? scheme.primary
+                                      : scheme.outline,
+                                ),
+                                const SizedBox(width: AppDimens.spacingSm),
+                                Expanded(
+                                  child: Text(
+                                    t.title,
+                                    style: theme.textTheme.bodyMedium,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ],
+                ),
               ),
-              const SizedBox(height: AppDimens.spacingSm),
-              if (deps.isEmpty)
-                Text(
-                  s.noPrerequisites,
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                )
-              else
-                for (final t in deps)
-                  _TaskRefTile(
-                    repoId: widget.repoId,
-                    task: t,
-                    onRemove: () => _removePrerequisite(task, t.id),
-                  ),
 
-              // ---- GitHub links ----
+              const SizedBox(height: AppDimens.spacingSm),
+
+              // ---- Dependencies card ----
+              _DetailCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.link, size: 20, color: scheme.primary),
+                        const SizedBox(width: AppDimens.spacingSm),
+                        Expanded(
+                          child: Text(
+                            s.dependsOn,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: scheme.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => _addPrerequisite(task),
+                          icon: const Icon(Icons.add, size: 20),
+                          tooltip: s.add,
+                        ),
+                      ],
+                    ),
+                    const Divider(height: AppDimens.spacingMd),
+                    if (deps.isEmpty)
+                      Text(
+                        s.noPrerequisites,
+                        style: theme.textTheme.bodyMedium
+                            ?.copyWith(color: scheme.onSurfaceVariant),
+                      )
+                    else
+                      for (final t in deps)
+                        _TaskRefTile(
+                          repoId: widget.repoId,
+                          task: t,
+                          onRemove: () => _removePrerequisite(task, t.id),
+                        ),
+                  ],
+                ),
+              ),
+
+              // ---- GitHub links card ----
               if (task.githubIssueNumber != null ||
                   task.linkedPRNumbers.isNotEmpty) ...[
-                const SizedBox(height: AppDimens.spacingLg),
-                _SectionTitle('GitHub'),
                 const SizedBox(height: AppDimens.spacingSm),
-                Wrap(
-                  spacing: AppDimens.spacingSm,
-                  runSpacing: AppDimens.spacingSm,
-                  children: [
-                    if (task.githubIssueNumber != null)
-                      _RefChip(
-                        icon: Icons.adjust,
-                        label: 'Issue #${task.githubIssueNumber}',
-                        onTap: hasRepoUrl
-                            ? () => _openUrl(
-                                '$repoUrl/issues/${task.githubIssueNumber}')
-                            : null,
+                _DetailCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.code, size: 20, color: scheme.primary),
+                          const SizedBox(width: AppDimens.spacingSm),
+                          Text(
+                            'GitHub',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: scheme.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ),
-                    for (final pr in task.linkedPRNumbers)
-                      _RefChip(
-                        icon: Icons.merge,
-                        label: 'PR #$pr',
-                        onTap:
-                            hasRepoUrl ? () => _openUrl('$repoUrl/pull/$pr') : null,
+                      const Divider(height: AppDimens.spacingMd),
+                      Wrap(
+                        spacing: AppDimens.spacingSm,
+                        runSpacing: AppDimens.spacingSm,
+                        children: [
+                          if (task.githubIssueNumber != null)
+                            _RefChip(
+                              icon: Icons.adjust,
+                              label: 'Issue #${task.githubIssueNumber}',
+                              onTap: hasRepoUrl
+                                  ? () => _openUrl(
+                                      '$repoUrl/issues/${task.githubIssueNumber}')
+                                  : null,
+                            ),
+                          for (final pr in task.linkedPRNumbers)
+                            _RefChip(
+                              icon: Icons.merge,
+                              label: 'PR #$pr',
+                              onTap: hasRepoUrl
+                                  ? () => _openUrl('$repoUrl/pull/$pr')
+                                  : null,
+                            ),
+                        ],
                       ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
 
-              // ---- Handoff doc ----
-              const SizedBox(height: AppDimens.spacingLg),
-              Row(
-                children: [
-                  Expanded(child: _SectionTitle(s.handoff)),
-                  TextButton.icon(
-                    onPressed:
-                        _generatingHandoff ? null : () => _regenerateHandoff(task),
-                    icon: _generatingHandoff
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.auto_awesome, size: 18),
-                    label: Text(
-                      handoff == null ? s.generate : s.regenerate,
-                    ),
-                  ),
-                ],
-              ),
+              // ---- Handoff doc card ----
               const SizedBox(height: AppDimens.spacingSm),
-              Card(
-                margin: EdgeInsets.zero,
-                child: Padding(
-                  padding: const EdgeInsets.all(AppDimens.spacingMd),
-                  child: handoff == null
-                      ? Text(
-                          s.noHandoffYet,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
+              _DetailCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.auto_awesome,
+                            size: 20, color: scheme.primary),
+                        const SizedBox(width: AppDimens.spacingSm),
+                        Expanded(
+                          child: Text(
+                            s.handoff,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: scheme.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                        )
-                      : MarkdownView(data: handoff),
+                        ),
+                        TextButton(
+                          onPressed: _generatingHandoff
+                              ? null
+                              : () => _regenerateHandoff(task),
+                          child: _generatingHandoff
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2),
+                                )
+                              : Text(
+                                  handoff == null ? s.generate : s.regenerate,
+                                ),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: AppDimens.spacingMd),
+                    handoff == null
+                        ? Text(
+                            s.noHandoffYet,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          )
+                        : MarkdownView(data: handoff),
+                  ],
                 ),
               ),
             ],
@@ -473,18 +608,45 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
-// Current assignee with an avatar + label and an edit affordance that opens the
-// picker. Falls back to "Unassigned" when no one is assigned.
-class _AssigneeRow extends StatelessWidget {
-  const _AssigneeRow({
+// White rounded-rect card used to wrap each section of the detail view.
+class _DetailCard extends StatelessWidget {
+  const _DetailCard({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(AppDimens.spacingMd),
+      decoration: BoxDecoration(
+        color: theme.brightness == Brightness.light
+            ? const Color(0xFFFFFFFF)
+            : scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.shadow.withValues(alpha: 0.06),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
+// Assignee card body: large avatar + "認領者" label + name.
+class _AssigneeCardBody extends StatelessWidget {
+  const _AssigneeCardBody({
     required this.assigneeId,
     required this.membersVm,
-    required this.onEdit,
   });
 
   final String? assigneeId;
   final MembersViewModel membersVm;
-  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -497,21 +659,26 @@ class _AssigneeRow extends StatelessWidget {
 
     return Row(
       children: [
-        _Avatar(user: profile, fallbackSeed: id),
-        const SizedBox(width: AppDimens.spacingSm),
-        Expanded(
-          child: Text(
-            label,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: id == null ? scheme.onSurfaceVariant : null,
+        _Avatar(user: profile, fallbackSeed: id, radius: 24),
+        const SizedBox(width: AppDimens.spacingMd),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              s.assignee,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
             ),
-          ),
-        ),
-        TextButton.icon(
-          onPressed: onEdit,
-          icon: const Icon(Icons.person_outline, size: 18),
-          label: Text(id == null ? s.assign : s.change),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: theme.textTheme.bodyLarge?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: id == null ? scheme.onSurfaceVariant : null,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -588,9 +755,10 @@ class _AssigneePicker extends StatelessWidget {
 // Round avatar from the user's photo URL, falling back to an initial derived
 // from the label / uid.
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.user, this.fallbackSeed});
+  const _Avatar({required this.user, this.fallbackSeed, this.radius = 16});
   final AppUser? user;
   final String? fallbackSeed;
+  final double radius;
 
   @override
   Widget build(BuildContext context) {
@@ -602,7 +770,7 @@ class _Avatar extends StatelessWidget {
             ? user!.name
             : (fallbackSeed ?? '?');
     return CircleAvatar(
-      radius: 16,
+      radius: radius,
       backgroundColor: scheme.primaryContainer,
       foregroundImage:
           (url != null && url.isNotEmpty) ? NetworkImage(url) : null,
@@ -731,21 +899,3 @@ class _RefChip extends StatelessWidget {
   }
 }
 
-// Small uppercase label that heads a section of the task detail view.
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.text);
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Text(
-      text.toUpperCase(),
-      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            color: scheme.primary,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.8,
-          ),
-    );
-  }
-}
