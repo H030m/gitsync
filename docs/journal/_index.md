@@ -19,6 +19,7 @@
 
 ## 2026-06-12
 
+- **嘉駿 — Final demo 衝刺【完工】：W1–W5 全部合入 `feature/agentic-final-demo`（@`cee696c`，已 push）**：① W1 交接文件升級兩階段 agentic（gpt-4o 工具循環含**新 getCommitDiff**＋gpt-4o-mini self-review 打分迴圈、`handoffReview` 存 task doc）；② W2 語意搜尋（Discord embedding 補上、commit/Discord 搜尋向量優先＋關鍵字兜底、`backfillEmbeddings` callable）；③ W3 專案記憶（`meta/projectBrief` 滾動簡報餵所有 flow＋指派 `learnedTags` 寫回 `users/{uid}.expertiseTags`）；④ W4 `readRepoPlanningDocs`（agent 讀 repo 的 `.trellis`/AGENTS/CLAUDE，接進 breakdown）；⑤ W5 `askRepo` 統一問答 callable＋`agentRuns` 工具軌跡 side-channel＋全 tab「Ask GitSync」FAB（live 顯示 agent 工具呼叫、亮暗模式、fake 模式可跑）。整合 gate：functions jest **310/310**、typecheck/lint 0；flutter analyze 0 新增、test 85 過（1 失敗為既有環境問題）。五個 trellis task 已 archive。**Demo 前待辦（人工）**：deploy functions＋indexes、對演示 repo 跑 backfill、確認 `.trellis` 內容可投影。**develop→main 大 PR 落地後**才開 integration→develop 的 PR。
 - **嘉駿 — Final demo 衝刺開工（W1–W5 計畫定案 + 多代理分工）**：對照評分標準定案五個工作項——W1 agentic 交接文件（工具循環＋self-review）、W2 語意搜尋強化（Discord embedding 補 stub＋向量優先＋backfill）、W3 專案記憶（滾動 projectBrief＋expertiseTags 寫回）、W4 讀 repo 的 `.trellis`/`AGENTS.md` 工具、W5 統一問答入口 `askRepo`＋工具軌跡顯示。完整計畫與 3 分鐘 demo 腳本見 [`docs/FINAL_DEMO_PLAN.md`](../FINAL_DEMO_PLAN.md)。分支：`feature/agentic-final-demo`（整合）← `feat/w2-semantic-search`、`feat/w4-repo-docs`、`feat/w1-agentic-handoff`、`feat/w3-project-memory`、`feat/w5-ask-repo`，全從 develop @ `92f858a` 出。FCM 由廷煥的分支完成，本批不碰。
 
 ## 2026-06-04
