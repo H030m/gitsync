@@ -16,6 +16,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { db } from '../admin';
 import { getOpenAI, MODELS } from '../config';
 import { readTeamState } from '../tools/assignTools';
+import { readProjectBrief, formatBriefForPrompt } from '../tools/projectBrief';
 import { searchDiscordMessages } from '../tools/discordSearch';
 import {
   generateHandoffSystem,
@@ -165,6 +166,12 @@ export async function generateHandoffFlow(
     });
   }
 
+  // ---- W3a project-brief prefix (best-effort; MINIMAL — see merge note) -----
+  // Stable, cache-friendly prefix prepended to the user content. Empty brief →
+  // '' → byte-identical prompt. (If W1 rewrites this flow agentic, re-apply this
+  // 2-line prefix block to the assembled user message.)
+  const briefPrefix = formatBriefForPrompt(await readProjectBrief(repoId));
+
   // ---- One OpenAI call ------------------------------------------------------
   const completion = await getOpenAI().chat.completions.create({
     model: MODELS.fast,
@@ -172,18 +179,20 @@ export async function generateHandoffFlow(
       { role: 'system', content: generateHandoffSystem },
       {
         role: 'user',
-        content: generateHandoffContext({
-          task: {
-            title: (task.title as string | undefined) ?? '',
-            description: (task.description as string | undefined) ?? '',
-            acceptanceCriteria:
-              (task.acceptanceCriteria as string[] | undefined) ?? [],
-          },
-          prerequisites,
-          commits,
-          discord,
-          roster,
-        }),
+        content:
+          briefPrefix +
+          generateHandoffContext({
+            task: {
+              title: (task.title as string | undefined) ?? '',
+              description: (task.description as string | undefined) ?? '',
+              acceptanceCriteria:
+                (task.acceptanceCriteria as string[] | undefined) ?? [],
+            },
+            prerequisites,
+            commits,
+            discord,
+            roster,
+          }),
       },
     ],
   });

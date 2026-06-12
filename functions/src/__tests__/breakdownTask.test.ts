@@ -249,6 +249,35 @@ describe('breakdownTaskFlow', () => {
     expect(firstUserMessage()).toContain('This is a newly imported project');
   });
 
+  it('prepends the project brief at the top of the context when one exists (W3a)', async () => {
+    seedRepo('x_y', { name: 'x/y' });
+    store.set('apps/gitsync/repos/x_y/meta/projectBrief', {
+      content: '- uses OpenAI SDK, not Genkit',
+      updatedAt: '__serverTimestamp__',
+      version: 3,
+    });
+    parseQueue.push({ parsed: { subtasks: [] } });
+
+    await breakdownTaskFlow({ repoId: 'x_y', goal: 'spec', requestedBy: 'u1' });
+
+    const userMsg = firstUserMessage();
+    // Brief block sits at the very top of projectContext (stable cache prefix).
+    expect(userMsg).toContain('## Project memory');
+    expect(userMsg).toContain('- uses OpenAI SDK, not Genkit');
+    expect(userMsg.indexOf('## Project memory')).toBeLessThan(
+      userMsg.indexOf('Repository: x/y'),
+    );
+  });
+
+  it('leaves the context unchanged when no project brief exists (W3a)', async () => {
+    seedRepo('x_y', { name: 'x/y' });
+    parseQueue.push({ parsed: { subtasks: [] } });
+
+    await breakdownTaskFlow({ repoId: 'x_y', goal: 'spec', requestedBy: 'u1' });
+
+    expect(firstUserMessage()).not.toContain('Project memory');
+  });
+
   it('translates dependsOn 0-based indices into real taskIds', async () => {
     seedRepo('x_y', { name: 'x/y' });
     parseQueue.push({
