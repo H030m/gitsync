@@ -117,6 +117,10 @@ beforeEach(() => {
       { userId: 'uB', githubLogin: 'bob', discordUserId: '111' },
       { userId: 'uC', githubLogin: 'carol', discordUserId: '222' },
     ],
+    reviewerScores: [
+      { userId: 'uB', rawScore: 2, load: 0, loadPenalty: 1, finalScore: 2, slot: 1 },
+      { userId: 'uC', rawScore: 1, load: 0, loadPenalty: 1, finalScore: 1, slot: 2 },
+    ],
     riskTags: ['touches-functions'],
   });
 });
@@ -152,6 +156,10 @@ describe('onPullRequestOpened', () => {
     expect(written).toMatchObject({
       aiSummary: 'Adds login UI.',
       recommendedReviewers: ['uB', 'uC'],
+      recommendedReviewerScores: [
+        { userId: 'uB', rawScore: 2, load: 0, loadPenalty: 1, finalScore: 2, slot: 1 },
+        { userId: 'uC', rawScore: 1, load: 0, loadPenalty: 1, finalScore: 1, slot: 2 },
+      ],
       riskTags: ['touches-functions'],
       triagedAt: '__ts__',
     });
@@ -171,6 +179,9 @@ describe('onPullRequestOpened', () => {
       summary: 's',
       recommendedReviewers: [
         { userId: 'uB', githubLogin: 'bob', discordUserId: null },
+      ],
+      reviewerScores: [
+        { userId: 'uB', rawScore: 1, load: 0, loadPenalty: 1, finalScore: 1, slot: 1 },
       ],
       riskTags: [],
     });

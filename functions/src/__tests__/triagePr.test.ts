@@ -6,6 +6,7 @@
 //     return canned data per test.
 //   - ../tools/assignTools → readTeamState returns a synthetic roster.
 //   - ../config → getOpenAI with mocked chat.completions.create.
+//   - ../admin → fake Firestore for recentTriageLoad's pullRequests query.
 
 jest.mock('firebase-functions/v2', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
@@ -30,7 +31,54 @@ jest.mock('../config', () => ({
   openaiKey: { value: () => 'k' },
 }));
 
-import { computeRiskTags, triagePr } from '../flows/triagePr';
+// ---- Fake Firestore (for recentTriageLoad's pullRequests query) ----------
+// Single mutable state: the list of pullRequest docs the query should return.
+// Tests that don't care leave it empty → recentTriageLoad returns empty load,
+// matching the pre-06-13 baseline behavior. We ALSO record the args the
+// producer passes into .where()/.limit() so AC #5 (14d window AND 50-PR cap)
+// has a real contract assertion, not just "the call shape compiled".
+const fakePrDocs: { data: () => Record<string, unknown> }[] = [];
+let throwOnPrQuery = false;
+const queryCalls: {
+  collection: string | null;
+  where: Array<[string, string, unknown]>;
+  orderBy: Array<[string, string]>;
+  limit: number | null;
+} = { collection: null, where: [], orderBy: [], limit: null };
+
+const fakeQuery = {
+  where(field: string, op: string, value: unknown) {
+    queryCalls.where.push([field, op, value]);
+    return fakeQuery;
+  },
+  orderBy(field: string, dir: string) {
+    queryCalls.orderBy.push([field, dir]);
+    return fakeQuery;
+  },
+  limit(n: number) {
+    queryCalls.limit = n;
+    return fakeQuery;
+  },
+  async get() {
+    if (throwOnPrQuery) throw new Error('firestore down');
+    return { docs: fakePrDocs };
+  },
+};
+const fakeDb = {
+  collection(path: string) {
+    queryCalls.collection = path;
+    return fakeQuery;
+  },
+};
+jest.mock('../admin', () => ({ db: fakeDb, REGION: 'asia-east1' }));
+
+import {
+  computeRiskTags,
+  pickReviewers,
+  recentTriageLoad,
+  triagePr,
+  type RecentTriageLoad,
+} from '../flows/triagePr';
 
 const BASE_INPUT = {
   repoId: 'octocat_hello',
@@ -59,6 +107,12 @@ beforeEach(() => {
   mockChatCreate
     .mockReset()
     .mockResolvedValue({ choices: [{ message: { content: 'Summary line.' } }] });
+  fakePrDocs.length = 0;
+  throwOnPrQuery = false;
+  queryCalls.collection = null;
+  queryCalls.where.length = 0;
+  queryCalls.orderBy.length = 0;
+  queryCalls.limit = null;
 });
 
 describe('computeRiskTags', () => {
@@ -188,6 +242,7 @@ describe('triagePr', () => {
     expect(result).toEqual({
       summary: '',
       recommendedReviewers: [],
+      reviewerScores: [],
       riskTags: [],
     });
   });
@@ -235,5 +290,269 @@ describe('triagePr', () => {
     const result = await triagePr(BASE_INPUT);
 
     expect(result.recommendedReviewers).toEqual([]);
+    expect(result.reviewerScores).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Workload-aware (A+D) — 06-13. These exercise pickReviewers directly with
+// synthetic load. Keeping pickReviewers Firestore-free means we can pass any
+// RecentTriageLoad shape without an emulator.
+// ---------------------------------------------------------------------------
+
+const ROSTER = [
+  { userId: 'uB', name: 'Bob', githubLogin: 'bob', discordUserId: '2', activeIssueCount: 0, expertiseTags: [], lastActiveAt: null },
+  { userId: 'uC', name: 'Carol', githubLogin: 'carol', discordUserId: '3', activeIssueCount: 0, expertiseTags: [], lastActiveAt: null },
+  { userId: 'uD', name: 'Dave', githubLogin: 'dave', discordUserId: '4', activeIssueCount: 0, expertiseTags: [], lastActiveAt: null },
+];
+
+const EMPTY_LOAD: RecentTriageLoad = {
+  picksByUserId: new Map(),
+  recentReviewerSets: [],
+};
+
+describe('pickReviewers — workload-aware (A+D)', () => {
+  it('tied file-history scores: candidate with lower recent triage load wins slot 1', async () => {
+    // bob and carol both at rawScore=1 — but bob has 3 recent triage picks,
+    // carol has 0 → carol's loadPenalty is 1, bob's is 1/(1+0.3*3)=0.526 →
+    // carol gets slot 1.
+    mockReadTeamState.mockResolvedValue(ROSTER);
+    const scoreByLogin = new Map<string, number>([
+      ['bob', 1],
+      ['carol', 1],
+    ]);
+    const load: RecentTriageLoad = {
+      picksByUserId: new Map([['uB', 3]]),
+      recentReviewerSets: [],
+    };
+
+    const { reviewers, scores } = await pickReviewers(
+      'repo1',
+      'alice',
+      scoreByLogin,
+      load,
+    );
+
+    expect(reviewers.map((r) => r.userId)).toEqual(['uC', 'uB']);
+    expect(scores[0].slot).toBe(1);
+    expect(scores[0].userId).toBe('uC');
+    expect(scores[1].slot).toBe(2);
+  });
+
+  it('strong-but-busy still beats weak-but-idle when the score gap × penalty math says so', async () => {
+    // bob: rawScore=2, load=3 → penalty=1/1.9≈0.526, finalScore≈1.053
+    // carol: rawScore=0.6, load=0 → penalty=1, finalScore=0.6
+    // bob still wins.
+    mockReadTeamState.mockResolvedValue(ROSTER);
+    const scoreByLogin = new Map<string, number>([
+      ['bob', 2],
+      ['carol', 0.6],
+    ]);
+    const load: RecentTriageLoad = {
+      picksByUserId: new Map([['uB', 3]]),
+      recentReviewerSets: [],
+    };
+
+    const { reviewers, scores } = await pickReviewers(
+      'repo1',
+      'alice',
+      scoreByLogin,
+      load,
+    );
+
+    expect(reviewers[0].userId).toBe('uB');
+    // Numeric assertion: bob's finalScore > carol's finalScore.
+    expect(scores[0].finalScore).toBeGreaterThan(scores[1].finalScore);
+    expect(scores[0].finalScore).toBeCloseTo(2 * (1 / (1 + 0.3 * 3)), 5);
+    expect(scores[1].finalScore).toBeCloseTo(0.6, 5);
+  });
+
+  it('freshness on slot 2: prefers a candidate not in any of the last-5 reviewer sets', async () => {
+    // bob is the runaway expert. Both carol and dave are viable for slot 2,
+    // but carol was a reviewer on each of the synthetic recent PRs → slot 2
+    // must go to dave (fresh face), not carol (next-by-score).
+    mockReadTeamState.mockResolvedValue(ROSTER);
+    const scoreByLogin = new Map<string, number>([
+      ['bob', 3],
+      ['carol', 1],
+      ['dave', 0.8],
+    ]);
+    const load: RecentTriageLoad = {
+      picksByUserId: new Map(),
+      recentReviewerSets: [new Set(['uC']), new Set(['uC']), new Set(['uC'])],
+    };
+
+    const { reviewers } = await pickReviewers(
+      'repo1',
+      'alice',
+      scoreByLogin,
+      load,
+    );
+
+    expect(reviewers.map((r) => r.userId)).toEqual(['uB', 'uD']);
+  });
+
+  it('freshness empties pool → falls back to next-highest finalScore', async () => {
+    // Both runners-up appear in recent reviewer sets → freshness filter
+    // returns nothing → slot 2 falls back to next-by-finalScore (carol).
+    mockReadTeamState.mockResolvedValue(ROSTER);
+    const scoreByLogin = new Map<string, number>([
+      ['bob', 3],
+      ['carol', 1],
+      ['dave', 0.8],
+    ]);
+    const load: RecentTriageLoad = {
+      picksByUserId: new Map(),
+      recentReviewerSets: [new Set(['uC', 'uD'])],
+    };
+
+    const { reviewers } = await pickReviewers(
+      'repo1',
+      'alice',
+      scoreByLogin,
+      load,
+    );
+
+    expect(reviewers.map((r) => r.userId)).toEqual(['uB', 'uC']);
+  });
+
+  it('slot-2 floor: when only one above-floor candidate exists, returns 1 reviewer (no rubber stamp)', async () => {
+    // bob: rawScore=2 (clears the floor). carol: rawScore=0.3 (below 0.5 floor).
+    // → slot 2 stays empty.
+    mockReadTeamState.mockResolvedValue(ROSTER);
+    const scoreByLogin = new Map<string, number>([
+      ['bob', 2],
+      ['carol', 0.3],
+    ]);
+
+    const { reviewers, scores } = await pickReviewers(
+      'repo1',
+      'alice',
+      scoreByLogin,
+      EMPTY_LOAD,
+    );
+
+    expect(reviewers.map((r) => r.userId)).toEqual(['uB']);
+    expect(scores).toHaveLength(1);
+    expect(scores[0].slot).toBe(1);
+  });
+
+  it('empty load = old behavior (still picks top-2 when both clear the floor)', async () => {
+    mockReadTeamState.mockResolvedValue(ROSTER);
+    const scoreByLogin = new Map<string, number>([
+      ['bob', 2],
+      ['carol', 1],
+    ]);
+
+    const { reviewers } = await pickReviewers(
+      'repo1',
+      'alice',
+      scoreByLogin,
+      EMPTY_LOAD,
+    );
+
+    expect(reviewers.map((r) => r.userId)).toEqual(['uB', 'uC']);
+  });
+
+  it('active-issue count folds into load via ACTIVE_ISSUE_LOAD_WEIGHT', async () => {
+    // Both at rawScore=1, no recent picks — but bob has 4 open task
+    // assignments (load=4*0.25=1) and carol has 0. Carol wins.
+    mockReadTeamState.mockResolvedValue([
+      { ...ROSTER[0], activeIssueCount: 4 },
+      ROSTER[1],
+    ]);
+    const scoreByLogin = new Map<string, number>([
+      ['bob', 1],
+      ['carol', 1],
+    ]);
+
+    const { reviewers } = await pickReviewers(
+      'repo1',
+      'alice',
+      scoreByLogin,
+      EMPTY_LOAD,
+    );
+
+    expect(reviewers[0].userId).toBe('uC');
+  });
+});
+
+describe('recentTriageLoad — windowing', () => {
+  it('returns empty load when the Firestore query throws', async () => {
+    throwOnPrQuery = true;
+    const load = await recentTriageLoad('repo1');
+    expect(load.picksByUserId.size).toBe(0);
+    expect(load.recentReviewerSets).toEqual([]);
+  });
+
+  it('aggregates picks across the full window, slices reviewer sets to FRESHNESS_WINDOW_PRS', async () => {
+    // 7 fake "recent triaged PRs" (the fake query layer ignores the .where/
+    // .orderBy/.limit chain, so we just hand back what we put in). picksByUserId
+    // must sum across all 7; recentReviewerSets must only carry the first 5.
+    const reviewerArrays: string[][] = [
+      ['uA', 'uB'],
+      ['uA'],
+      ['uB', 'uC'],
+      ['uC'],
+      ['uA'],
+      ['uD'], // 6th — must NOT appear in recentReviewerSets
+      ['uE'], // 7th — must NOT appear in recentReviewerSets
+    ];
+    for (const arr of reviewerArrays) {
+      fakePrDocs.push({ data: () => ({ recommendedReviewers: arr }) });
+    }
+
+    const load = await recentTriageLoad('repo1');
+
+    // Picks aggregate over all 7 docs.
+    expect(load.picksByUserId.get('uA')).toBe(3);
+    expect(load.picksByUserId.get('uB')).toBe(2);
+    expect(load.picksByUserId.get('uC')).toBe(2);
+    expect(load.picksByUserId.get('uD')).toBe(1);
+    expect(load.picksByUserId.get('uE')).toBe(1);
+    // Reviewer sets are sliced to the freshness window (5).
+    expect(load.recentReviewerSets).toHaveLength(5);
+    expect(load.recentReviewerSets[0]).toEqual(new Set(['uA', 'uB']));
+    expect(load.recentReviewerSets[4]).toEqual(new Set(['uA']));
+    // uD / uE should NOT be in any of the freshness sets.
+    for (const s of load.recentReviewerSets) {
+      expect(s.has('uD')).toBe(false);
+      expect(s.has('uE')).toBe(false);
+    }
+  });
+
+  it('queries the right collection with a 14d window AND a 50-PR cap (AC #5 contract)', async () => {
+    const before = Date.now();
+    await recentTriageLoad('octocat_hello');
+
+    // Collection path mirrors the schema in ARCHITECTURE §2.1.
+    expect(queryCalls.collection).toBe(
+      'apps/gitsync/repos/octocat_hello/pullRequests',
+    );
+    // Single range filter, on `triagedAt` with `>` (NOT `!=` — Firestore
+    // can't index that; see triagePr.ts NOTE).
+    expect(queryCalls.where).toHaveLength(1);
+    const [field, op, value] = queryCalls.where[0];
+    expect(field).toBe('triagedAt');
+    expect(op).toBe('>');
+    // `since = now - 14d`. Allow a 1s wobble for the time between recording
+    // `before` and the actual query construction.
+    const since = (value as Date).getTime();
+    const expected = before - 14 * 86_400_000;
+    expect(Math.abs(since - expected)).toBeLessThan(1_000);
+    // Newest-first + capped to LOAD_RECENT_PR_CAP=50.
+    expect(queryCalls.orderBy).toEqual([['triagedAt', 'desc']]);
+    expect(queryCalls.limit).toBe(50);
+  });
+
+  it('tolerates docs with no recommendedReviewers field', async () => {
+    fakePrDocs.push({ data: () => ({}) });
+    fakePrDocs.push({
+      data: () => ({ recommendedReviewers: ['uA'] }),
+    });
+    const load = await recentTriageLoad('repo1');
+    expect(load.picksByUserId.get('uA')).toBe(1);
+    expect(load.recentReviewerSets).toHaveLength(2);
+    expect(load.recentReviewerSets[0]).toEqual(new Set());
   });
 });

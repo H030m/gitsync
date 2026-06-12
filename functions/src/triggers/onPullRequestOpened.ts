@@ -175,6 +175,10 @@ export const onPullRequestOpened = onDocumentWritten(
           aiSummary: result.summary,
           recommendedReviewers: result.recommendedReviewers.map((r) => r.userId),
           recommendedReviewerDetails: result.recommendedReviewers,
+          // Per-pick scoring breakdown (workload-aware A+D, 06-13). Pure
+          // observability for retuning LOAD_LAMBDA / floor — not consumed by
+          // the UI or any downstream flow.
+          recommendedReviewerScores: result.reviewerScores,
           riskTags: result.riskTags,
           triagedAt: FieldValue.serverTimestamp(),
         },
