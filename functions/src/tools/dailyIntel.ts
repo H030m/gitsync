@@ -16,6 +16,7 @@ import type { Timestamp } from 'firebase-admin/firestore';
 import { db } from '../admin';
 import { taipeiDayBounds } from '../flows/discordDailyDigest';
 import { readTeamState, type TeamMemberState } from './assignTools';
+import { embed } from './embedding';
 
 // Re-export the digest readers so callers get every day-intel tool from one
 // module (the chat agent reads the Discord digest for "what was discussed").
@@ -294,12 +295,15 @@ function tokenize(text: string): string[] {
 }
 
 /**
- * Keyword search over the repo's recent commit history (across days), so the
- * brief-chat agent can answer "when did we last touch X / who wrote Y". This
- * is a keyword + recency ranker over the latest {@link PAST_SCAN_LIMIT}
- * commits — it needs no vector index and runs unchanged against the fake
- * backend. Falls back to the most recent commits when nothing matches.
- * Best-effort → [].
+ * Search the repo's commit history (across days) so the brief-chat agent can
+ * answer "when did we last touch X / who wrote Y". VECTOR-FIRST: when the query
+ * has usable terms, embed it and run a `findNearest` over the `commits` vector
+ * index (prefiltered by `repoId`, COSINE) — the same `repoId + messageEmbedding`
+ * COLLECTION-scope index `searchMemberCommits` uses, minus the `author.login`
+ * predicate. Degrades to the keyword + recency ranker over the latest
+ * {@link PAST_SCAN_LIMIT} commits on an empty query, an embedding/`findNearest`
+ * failure (missing index, fake backend), or zero hits. Returns `DayCommit[]`
+ * either way. Best-effort → [].
  */
 export async function searchPastCommits(
   repoId: string,
@@ -307,6 +311,35 @@ export async function searchPastCommits(
   limit = PAST_DEFAULT,
 ): Promise<DayCommit[]> {
   const cap = Math.max(1, Math.min(limit, PAST_MAX));
+
+  // ---- Vector-first path (skip when the query has no usable terms) ---------
+  if (new Set(tokenize(query)).size > 0) {
+    try {
+      const queryVector = await embed(query);
+      const snap = await db
+        .collection(`apps/gitsync/repos/${repoId}/commits`)
+        .where('repoId', '==', repoId)
+        .findNearest({
+          vectorField: 'messageEmbedding',
+          queryVector,
+          limit: cap,
+          distanceMeasure: 'COSINE',
+        })
+        .get();
+      if (!snap.empty) {
+        return snap.docs.map((d) => toDayCommit(d.id, d.data() ?? {}));
+      }
+      // 0 hits → fall through to the keyword path below.
+    } catch (err) {
+      // Embedding or findNearest failed (missing index, fake backend, etc.).
+      logger.warn('searchPastCommits: vector path unavailable (keyword fallback)', {
+        repoId,
+        err: String(err),
+      });
+    }
+  }
+
+  // ---- Keyword + recency fallback ------------------------------------------
   try {
     const snap = await db
       .collection(`apps/gitsync/repos/${repoId}/commits`)
