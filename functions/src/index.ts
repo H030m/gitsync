@@ -23,6 +23,7 @@ export { setDiscordRange } from './handlers/setDiscordRange';
 export { discordChat } from './handlers/discordChat';
 export { editDiscordDigest } from './handlers/editDiscordDigest';
 export { setDigestLock } from './handlers/setDigestLock';
+export { backfillEmbeddings } from './handlers/backfillEmbeddings';
 
 // ---- HTTP (webhooks + Cloud Tasks workers) -------------------------------
 export { githubWebhook } from './handlers/githubWebhook';
