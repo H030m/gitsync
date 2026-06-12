@@ -167,8 +167,11 @@ export async function readRepoPlanningDocs(
  * names containing `_` stay intact — prd D3) and the OWNER's access token
  * (`repos.createdBy` → `users/{createdBy}.githubAccessToken`, prd D2). Returns
  * null when any piece is missing so the caller can degrade to an empty result.
+ *
+ * Exported (shared by `tools/handoffTools.ts`'s getCommitDiff, which needs the
+ * same owner/repo/token resolution) — keep the logic in one place (prd W1 Q2).
  */
-async function resolveRepoContext(
+export async function resolveRepoContext(
   repoId: string,
 ): Promise<{ owner: string; repo: string; token: string } | null> {
   const repoSnap = await db.doc(`apps/gitsync/repos/${repoId}`).get();

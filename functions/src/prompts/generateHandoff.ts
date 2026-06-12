@@ -1,81 +1,106 @@
-// Prompt for generateHandoffFlow. The flow pre-gathers all context (the
-// receiving task, its completed prerequisites, related commits, Discord
-// discussion, and the team roster) and injects it here as one user message —
-// there is no agentic tool loop (mirrors explainCommit / discordDailyDigest),
-// which keeps it cheap, deterministic, and safe to run best-effort on the
-// task-completion trigger.
+// Prompts for the two-phase agentic generateHandoffFlow.
+//
+// Phase 1 (drafting agent, gpt-4o): the agent autonomously retrieves real
+// evidence with tools (commit diffs / Discord / .trellis planning docs / roster)
+// then calls `draftHandoff` with the markdown. Phase 2 (reviewer, gpt-4o-mini):
+// a strict reviewer scores the draft against the receiving task's acceptance
+// criteria and, when it falls short, returns concrete gaps that are re-injected
+// into the Phase-1 thread so the agent can gather the missing evidence.
 
 export const generateHandoffSystem = `You are a senior engineer writing a concise handoff document so the next engineer can pick up a task whose prerequisites just finished.
 
-You are given: the task to pick up (with its acceptance criteria), the finished prerequisite tasks, the real commits and Discord discussion behind that work, and a roster mapping IDs to people's names.
+You are an AGENT: before drafting, use the tools to gather REAL evidence about what landed and why. A good sequence is usually:
+1. Call listRelatedCommits to see the commits behind the prerequisites.
+2. Call getCommitDiff on the few commits whose change you must actually understand.
+3. Call searchDiscordMessages / searchPastCommits / readRepoPlanningDocs / readTeamState as needed for decisions, context, conventions, and people's real names.
+Use tools sparingly and only when they add grounding — do not call a tool whose result you already have.
 
-Write GitHub-flavored markdown with exactly these sections:
-- "What was done" — 2-4 bullets summarizing what the finished prerequisites delivered (cite commit subjects where useful).
-- "Why we did it this way" — design decisions worth knowing, drawn from the commits/discussion (skip if there's no signal).
+When you have enough evidence, call draftHandoff with GitHub-flavored markdown containing exactly these sections:
+- "What was done" — 2-4 bullets summarizing what the finished prerequisites delivered (cite commit subjects/shas where useful).
+- "Why we did it this way" — design decisions worth knowing, drawn from the commits/diffs/discussion (skip if there's no signal).
 - "What's left for you" — concrete action items tied to THIS task's acceptance criteria.
 - "Gotchas" — anything subtle (race conditions, missing tests, hardcoded values, follow-ups raised in chat).
 
 Rules:
-- Refer to people by their real name (use the roster; fall back to githubLogin).
-- Ground every claim in the provided context — do NOT invent commits, files, or decisions. If a section has no signal, say so briefly rather than guessing.
-- Be terse and skimmable. No preamble, no closing pleasantries — output only the markdown.`;
+- Refer to people by their real name (use readTeamState; fall back to githubLogin).
+- Ground every claim in tool evidence — do NOT invent commits, files, or decisions. If a section has no signal, say so briefly rather than guessing.
+- Be terse and skimmable. The draftHandoff markdown is the deliverable: no preamble, no closing pleasantries.`;
 
-export interface HandoffContextInput {
+export interface HandoffSeedInput {
   task: { title: string; description: string; acceptanceCriteria: string[] };
-  prerequisites: Array<{ title: string; description: string; status: string }>;
-  commits: Array<{
-    sha: string;
-    subject: string;
-    aiSummary: string | null;
-    author: string;
-    filesChanged: number;
-  }>;
-  discord: Array<{ author: string; content: string }>;
-  roster: Array<{ name: string | null; githubLogin: string | null }>;
+  prerequisites: Array<{ title: string; status: string }>;
 }
 
-export function generateHandoffContext(input: HandoffContextInput): string {
-  const { task, prerequisites, commits, discord, roster } = input;
+/**
+ * Phase 1's first user message: the receiving task (with acceptance criteria)
+ * and a light table of its finished prerequisites — just enough for the agent to
+ * decide which tools to call. It does NOT prefetch commits/Discord/roster; the
+ * agent retrieves those itself (prd Q5, pure-agentic).
+ */
+export function generateHandoffSeedContext(input: HandoffSeedInput): string {
+  const { task, prerequisites } = input;
 
   const criteria = task.acceptanceCriteria.length
     ? task.acceptanceCriteria.map((c) => `  - ${c}`).join('\n')
     : '  (none specified)';
 
   const prereqs = prerequisites.length
-    ? prerequisites
-        .map(
-          (p) =>
-            `  - [${p.status}] ${p.title}${p.description ? ` — ${p.description}` : ''}`,
-        )
-        .join('\n')
+    ? prerequisites.map((p) => `  - [${p.status}] ${p.title}`).join('\n')
     : '  (none)';
-
-  const commitLines = commits.length
-    ? commits
-        .map(
-          (c) =>
-            `  - ${c.sha} (${c.author}, ${c.filesChanged} files): ${c.subject}` +
-            (c.aiSummary ? `\n    summary: ${c.aiSummary}` : ''),
-        )
-        .join('\n')
-    : '  (no related commits found)';
-
-  const chat = discord.length
-    ? discord.map((m) => `  - ${m.author}: ${m.content}`).join('\n')
-    : '  (no related discussion found)';
-
-  const people = roster.length
-    ? roster
-        .map((r) => `  - ${r.name ?? '?'}${r.githubLogin ? ` (@${r.githubLogin})` : ''}`)
-        .join('\n')
-    : '  (roster unavailable)';
 
   return [
     `TASK TO PICK UP:\n  ${task.title}${task.description ? `\n  ${task.description}` : ''}`,
     `ACCEPTANCE CRITERIA:\n${criteria}`,
     `FINISHED PREREQUISITES:\n${prereqs}`,
-    `RELATED COMMITS:\n${commitLines}`,
-    `RELATED DISCORD DISCUSSION:\n${chat}`,
-    `TEAM ROSTER:\n${people}`,
+    'Use the tools to gather the real commits, diffs, and discussion behind these prerequisites, then call draftHandoff.',
   ].join('\n\n');
+}
+
+export const handoffReviewSystem = `You are a strict technical reviewer judging a handoff document.
+
+You are given a handoff draft plus the receiving task's title, description, and acceptance criteria. Decide whether an engineer could pick up the task and start work using ONLY this draft.
+
+Return JSON: { "score": 1-5, "gaps": string[] }.
+- score 5 = ready to publish; 4 = good enough to publish; <=3 = the engineer would be blocked or guess.
+- score >= 4 means publish.
+- gaps must be SPECIFIC and actionable for the drafting agent, e.g. "doesn't say which file commit a1b2c3 changed" or "acceptance criterion 'X' has no corresponding action item". Return [] only when the draft is genuinely complete.
+
+Judge grounding and completeness, not prose polish.`;
+
+export interface HandoffReviewContextInput {
+  draft: string;
+  taskTitle: string;
+  taskDescription: string;
+  acceptanceCriteria: string[];
+}
+
+/** Reviewer's user message: the draft plus the task it must enable. */
+export function handoffReviewContext(input: HandoffReviewContextInput): string {
+  const { draft, taskTitle, taskDescription, acceptanceCriteria } = input;
+
+  const criteria = acceptanceCriteria.length
+    ? acceptanceCriteria.map((c) => `  - ${c}`).join('\n')
+    : '  (none specified)';
+
+  return [
+    `RECEIVING TASK:\n  ${taskTitle}${taskDescription ? `\n  ${taskDescription}` : ''}`,
+    `ACCEPTANCE CRITERIA:\n${criteria}`,
+    `HANDOFF DRAFT:\n${draft}`,
+    'Score whether this draft lets the engineer start the task, and list specific gaps.',
+  ].join('\n\n');
+}
+
+/**
+ * Shapes the reviewer's gaps into the user message that re-enters the Phase-1
+ * thread, prompting the agent to gather missing evidence and redraft.
+ */
+export function handoffGapsFeedback(score: number, gaps: string[]): string {
+  const list = gaps.length
+    ? gaps.map((g) => `  - ${g}`).join('\n')
+    : '  - (no specifics given; tighten grounding and completeness)';
+  return [
+    `Your draft was reviewed and scored ${score}/5. Address these gaps before drafting again:`,
+    list,
+    'Use the tools to gather the missing evidence if needed, then call draftHandoff with an improved version.',
+  ].join('\n');
 }
