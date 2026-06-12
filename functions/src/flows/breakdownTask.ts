@@ -14,6 +14,7 @@ import { db } from '../admin';
 import { getOpenAI, MODELS } from '../config';
 import { breakdownTaskSystem, breakdownTaskUser } from '../prompts/breakdownTask';
 import { readRepoPlanningDocs } from '../tools/repoDocs';
+import { readProjectBrief, formatBriefForPrompt } from '../tools/projectBrief';
 import { BreakdownOutputSchema, BreakdownOutput } from '../types';
 
 export interface BreakdownTaskInput {
@@ -56,7 +57,12 @@ export async function breakdownTaskFlow(
   const repoDocs = await readRepoPlanningDocs(repoId);
   const hasDocs = repoDocs.content.trim().length > 0;
 
+  // Best-effort: prepend the accumulated project brief as a stable, cache-friendly
+  // prefix (empty brief → '' → byte-identical prompt).
+  const briefPrefix = formatBriefForPrompt(await readProjectBrief(repoId));
+
   const projectContext = [
+    briefPrefix || undefined,
     hasDocs ? repoDocs.content : undefined,
     `Repository: ${repo.name ?? repoId}`,
     repo.description ? `Description: ${repo.description}` : undefined,

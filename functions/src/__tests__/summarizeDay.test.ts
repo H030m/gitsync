@@ -106,6 +106,18 @@ jest.mock('../config', () => ({
   MODELS: { reasoning: 'gpt-4o', fast: 'gpt-4o-mini', embedding: 'text-embedding-3-small' },
 }));
 
+// W3a: mock the project-brief module so existing report assertions are untouched
+// (mergeProjectBrief becomes a no-op here; the brief logic itself is covered in
+// projectBrief.test.ts). We still assert the flow invokes it with the report.
+const mockMergeProjectBrief = jest.fn(
+  async (_repoId: string, _reportText: string) => undefined,
+);
+jest.mock('../tools/projectBrief', () => ({
+  mergeProjectBrief: (repoId: string, reportText: string) =>
+    mockMergeProjectBrief(repoId, reportText),
+  renderReportForBrief: (r: { summary: string }) => `RENDERED:${r.summary}`,
+}));
+
 import { summarizeDayFlow } from '../flows/summarizeDay';
 
 // ---- Helpers --------------------------------------------------------------
@@ -173,6 +185,7 @@ beforeEach(() => {
   createQueue.length = 0;
   mockCreate.mockClear();
   setSpy.mockClear();
+  mockMergeProjectBrief.mockClear();
 });
 
 // ---- Tests ----------------------------------------------------------------
@@ -293,5 +306,30 @@ describe('summarizeDayFlow', () => {
         endDate: '2026-06-04',
       }),
     );
+  });
+
+  it('rolls the project brief (best-effort) after persisting the report', async () => {
+    seedCommit('c1', { author: { login: 'x', name: 'X' } });
+    createQueue.push(finalizeTurn(NARRATIVE));
+
+    await summarizeDayFlow({ repoId: REPO, startDate: DATE, endDate: DATE });
+
+    // Invoked once with the repoId + the rendered report text.
+    expect(mockMergeProjectBrief).toHaveBeenCalledTimes(1);
+    expect(mockMergeProjectBrief).toHaveBeenCalledWith(
+      REPO,
+      `RENDERED:${NARRATIVE.summary}`,
+    );
+  });
+
+  it('still returns the report when the brief merge throws (best-effort)', async () => {
+    seedCommit('c1', { author: { login: 'x', name: 'X' } });
+    mockMergeProjectBrief.mockRejectedValueOnce(new Error('brief blew up'));
+    createQueue.push(finalizeTurn(NARRATIVE));
+
+    const res = await summarizeDayFlow({ repoId: REPO, startDate: DATE, endDate: DATE });
+
+    expect(res.summary).toBe(NARRATIVE.summary);
+    expect(setSpy).toHaveBeenCalled(); // report persisted regardless
   });
 });

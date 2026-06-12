@@ -29,6 +29,7 @@ import {
   readRoster,
   type MemberContributions,
 } from '../tools/dailyIntel';
+import { mergeProjectBrief, renderReportForBrief } from '../tools/projectBrief';
 import type { CommitTheme, DailyReportNarrative } from '../types';
 
 export interface SummarizeDayInput {
@@ -217,6 +218,18 @@ export async function summarizeDayFlow(
     commits: commits.length,
     tasks: tasks.length,
   });
+
+  // ---- Step 4: roll the project brief (best-effort; never fails the report) ----
+  try {
+    await mergeProjectBrief(repoId, renderReportForBrief(result));
+  } catch (err) {
+    logger.warn('summarizeDayFlow: projectBrief merge failed (best-effort)', {
+      repoId,
+      docId,
+      err: String(err),
+    });
+  }
+
   return result;
 }
 

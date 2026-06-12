@@ -31,6 +31,7 @@ import { searchDiscordMessages } from '../tools/discordSearch';
 import { searchPastCommits } from '../tools/dailyIntel';
 import { readRepoPlanningDocs } from '../tools/repoDocs';
 import { listRelatedCommits, getCommitDiff } from '../tools/handoffTools';
+import { readProjectBrief, formatBriefForPrompt } from '../tools/projectBrief';
 import {
   generateHandoffSystem,
   generateHandoffSeedContext,
@@ -252,11 +253,16 @@ export async function generateHandoffFlow(
   const defaultCommitTaskIds = [...dependsOn, taskId];
 
   const openai = getOpenAI();
+
+  // ---- W3a project-brief prefix (stable, cache-friendly; empty brief → '' →
+  // byte-identical seed message, zero behavior change) -----------------------
+  const briefPrefix = formatBriefForPrompt(await readProjectBrief(repoId));
+
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: 'system', content: generateHandoffSystem },
     {
       role: 'user',
-      content: generateHandoffSeedContext({
+      content: briefPrefix + generateHandoffSeedContext({
         task: {
           title: taskTitle,
           description: taskDescription,
