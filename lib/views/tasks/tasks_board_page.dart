@@ -5,8 +5,10 @@ import '../../l10n/app_strings.dart';
 import '../../models/task.dart';
 import '../../services/navigation.dart';
 import '../../theme/app_dimens.dart';
+import '../../theme/app_motion.dart';
 import '../../view_models/members_vm.dart';
 import '../../view_models/tasks_board_vm.dart';
+import '../../widgets/staggered_entry.dart';
 import 'widgets/status_picker.dart';
 import 'widgets/task_graph_tab.dart';
 
@@ -271,8 +273,8 @@ class _BoardSection extends StatelessWidget {
                     const SizedBox(width: AppDimens.spacingSm),
                     AnimatedRotation(
                       turns: expanded ? 0.5 : 0,
-                      duration: const Duration(milliseconds: 200),
-                      curve: Curves.easeInOut,
+                      duration: AppMotion.short,
+                      curve: AppMotion.standard,
                       child: Icon(
                         Icons.expand_more,
                         size: 20,
@@ -285,8 +287,8 @@ class _BoardSection extends StatelessWidget {
             ),
           ),
           AnimatedSize(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeInOut,
+            duration: AppMotion.short,
+            curve: AppMotion.standard,
             alignment: Alignment.topCenter,
             child: !expanded
                 ? const SizedBox.shrink()
@@ -308,11 +310,19 @@ class _BoardSection extends StatelessWidget {
                         ),
                         child: Column(
                           children: [
-                            for (final task in tasks)
-                              _SectionTaskRow(
-                                vm: vm,
-                                task: task,
-                                accent: colTheme.accent,
+                            // Per-tile fade + slide-up entrance, staggered by
+                            // index (capped inside StaggeredEntry). Keyed by
+                            // taskId so a status change / re-order doesn't
+                            // replay the tween on still-mounted rows.
+                            for (var i = 0; i < tasks.length; i++)
+                              StaggeredEntry(
+                                key: ValueKey('row-${tasks[i].id}'),
+                                index: i,
+                                child: _SectionTaskRow(
+                                  vm: vm,
+                                  task: tasks[i],
+                                  accent: colTheme.accent,
+                                ),
                               ),
                           ],
                         ),
@@ -577,10 +587,16 @@ class _BoardColumnState extends State<_BoardColumn> {
                             padding: const EdgeInsets.only(
                               bottom: AppDimens.spacingSm,
                             ),
-                            child: _TaskCard(
-                              vm: widget.vm,
-                              task: widget.tasks[i],
-                              accent: colTheme.accent,
+                            // Stagger card entrance keyed by taskId so a
+                            // status-change re-order doesn't replay the tween.
+                            child: StaggeredEntry(
+                              key: ValueKey('card-${widget.tasks[i].id}'),
+                              index: i,
+                              child: _TaskCard(
+                                vm: widget.vm,
+                                task: widget.tasks[i],
+                                accent: colTheme.accent,
+                              ),
                             ),
                           ),
                         ),

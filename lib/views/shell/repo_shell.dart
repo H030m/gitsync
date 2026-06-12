@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../models/task.dart';
 import '../../services/authentication.dart';
 import '../../services/navigation.dart';
+import '../../theme/app_motion.dart';
 import '../../view_models/tasks_board_vm.dart';
 
 // Shared shell with bottom navigation for the per-repo routes
@@ -38,6 +39,11 @@ class _RepoShellState extends State<RepoShell> {
   String? _uid;
   Set<String> _assignedToMe = {};
   bool _seeded = false;
+
+  // Last tab index we routed to. Used to pick the slide direction for the
+  // AnimatedSwitcher's content swap so the page lurches in the same direction
+  // the bottom-nav indicator pill just moved.
+  int _previousIndex = 0;
 
   @override
   void didChangeDependencies() {
@@ -146,11 +152,58 @@ class _RepoShellState extends State<RepoShell> {
 
   @override
   Widget build(BuildContext context) {
+    final currentIndex = _selectedIndex(context);
+    // Direction the bottom-nav indicator just moved: forward (right) when the
+    // index grew, backward (left) when it shrank. The first build (no swap
+    // yet) defaults to "right" since _previousIndex starts at 0.
+    final goingRight = currentIndex >= _previousIndex;
+    // Schedule the index update for after this build so the next swap reads
+    // the previous tab's index (not the one we just routed to).
+    if (currentIndex != _previousIndex) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _previousIndex = currentIndex;
+      });
+    }
     return Scaffold(
-      body: widget.child,
+      body: AnimatedSwitcher(
+        duration: AppMotion.nav,
+        switchInCurve: AppMotion.emphasized,
+        switchOutCurve: AppMotion.emphasized,
+        transitionBuilder: (child, animation) {
+          // For the entering child, slide from the side the indicator just
+          // moved AWAY from (so the page slides in the same direction the
+          // indicator's pill is travelling). Fixed 6 % offset, not "by N
+          // tabs", so a jump from tab 1 → 4 doesn't read as a giant lurch.
+          //
+          // AnimatedSwitcher reuses the transition builder for both incoming
+          // and outgoing children; we detect direction by the animation's
+          // status — forward/completed = entering, reverse/dismissed = exiting.
+          final isIncoming = animation.status == AnimationStatus.forward ||
+              animation.status == AnimationStatus.completed;
+          final enterOffset = Offset(goingRight ? 0.06 : -0.06, 0);
+          final exitOffset = Offset(goingRight ? -0.06 : 0.06, 0);
+          final beginOffset = isIncoming ? enterOffset : Offset.zero;
+          final endOffset = isIncoming ? Offset.zero : exitOffset;
+          return FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween<Offset>(begin: beginOffset, end: endOffset)
+                  .animate(animation),
+              child: child,
+            ),
+          );
+        },
+        // KeyedSubtree swaps based on currentIndex, NOT on the routed Widget
+        // identity (GoRouter may rebuild the same page widget). State preserved
+        // for each route subtree is handled by GoRouter's own ShellRoute scope.
+        child: KeyedSubtree(
+          key: ValueKey<int>(currentIndex),
+          child: widget.child,
+        ),
+      ),
       bottomNavigationBar: _SlidingBottomNav(
         key: RepoShell._navKey,
-        selectedIndex: _selectedIndex(context),
+        selectedIndex: currentIndex,
         items: _items,
         onTap: (i) {
           context.go('/repos/${widget.repoId}/${_items[i].segment}');
@@ -181,7 +234,11 @@ class _SlidingBottomNavState extends State<_SlidingBottomNav>
   static const _height = 80.0;
   static const _pillHeight = 56.0;
   static const _pillWidth = 64.0;
-  static const _duration = Duration(milliseconds: 300);
+  // Indicator pill timing. AppMotion.nav matches the content swap so the pill
+  // and page slide settle together. Keep Curves.easeOut (below) — the pill's
+  // ease was deliberately tuned for the indicator, swapping to emphasized
+  // changes how it reads.
+  static const _duration = AppMotion.nav;
 
   late final AnimationController _controller;
   late int _activeIndex;

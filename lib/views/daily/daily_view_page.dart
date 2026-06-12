@@ -11,6 +11,7 @@ import '../../models/discord_digest.dart';
 import '../../l10n/app_strings.dart';
 import '../../repositories/user_repo.dart';
 import '../../theme/app_dimens.dart';
+import '../../theme/app_motion.dart';
 import '../../view_models/ask_repo_vm.dart';
 import '../../view_models/commits_vm.dart';
 import '../../view_models/daily_brief_vm.dart';
@@ -20,6 +21,7 @@ import '../../view_models/discord_messages_vm.dart';
 import '../../view_models/intel_range_vm.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/markdown_view.dart';
+import '../../widgets/staggered_entry.dart';
 import '../ask/ask_repo_chat.dart';
 
 // DailyViewPage — three tabs: Summary / Commits / Discord, all driven by ONE
@@ -248,8 +250,8 @@ class _SummaryTabState extends State<_SummaryTab> {
       if (!_scrollController.hasClients) return;
       _scrollController.animateTo(
         _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOut,
+        duration: AppMotion.medium,
+        curve: AppMotion.emphasizedDecel,
       );
     });
   }
@@ -259,14 +261,21 @@ class _SummaryTabState extends State<_SummaryTab> {
   // day, today expanded by default and the rest collapsed.
   List<Widget> _dayCards(DailyReportViewModel report) {
     final todayKey = DailyReportViewModel.dayKeyOf(DateTime.now());
+    final days = report.rangeDays;
     return [
-      for (final day in report.rangeDays) ...[
-        _DayReportCard(
-          key: ValueKey(DailyReportViewModel.dayKeyOf(day)),
-          vm: report,
-          day: day,
-          initiallyExpanded:
-              DailyReportViewModel.dayKeyOf(day) == todayKey,
+      for (var i = 0; i < days.length; i++) ...[
+        // Stagger keyed by day-key so a range change doesn't replay the
+        // entrance tween on still-mounted cards.
+        StaggeredEntry(
+          key: ValueKey('day-${DailyReportViewModel.dayKeyOf(days[i])}'),
+          index: i,
+          child: _DayReportCard(
+            key: ValueKey(DailyReportViewModel.dayKeyOf(days[i])),
+            vm: report,
+            day: days[i],
+            initiallyExpanded:
+                DailyReportViewModel.dayKeyOf(days[i]) == todayKey,
+          ),
         ),
         const SizedBox(height: AppDimens.spacingSm),
       ],
@@ -393,7 +402,7 @@ class _ReportsPanelState extends State<_ReportsPanel> {
                 const Spacer(),
                 AnimatedRotation(
                   turns: widget.expanded ? 0.5 : 0,
-                  duration: const Duration(milliseconds: 200),
+                  duration: AppMotion.short,
                   child: const Icon(Icons.expand_more),
                 ),
               ],
@@ -482,8 +491,8 @@ class _DayReportCardState extends State<_DayReportCard> {
     final generating = vm.isGeneratingDay(_dayKeyStr);
 
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOut,
+      duration: AppMotion.medium,
+      curve: AppMotion.emphasizedDecel,
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(12),
@@ -542,7 +551,7 @@ class _DayReportCardState extends State<_DayReportCard> {
                   ],
                   AnimatedRotation(
                     turns: _expanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 200),
+                    duration: AppMotion.short,
                     child: const Icon(Icons.expand_more),
                   ),
                 ],
@@ -551,8 +560,8 @@ class _DayReportCardState extends State<_DayReportCard> {
           ),
           // ---- Collapsible body ----
           AnimatedSize(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
+            duration: AppMotion.short,
+            curve: AppMotion.emphasizedDecel,
             alignment: Alignment.topCenter,
             child: _expanded
                 ? Padding(
@@ -2448,7 +2457,7 @@ class _DigestPanelState extends State<_DigestPanel> {
                 const Spacer(),
                 AnimatedRotation(
                   turns: widget.expanded ? 0.5 : 0,
-                  duration: const Duration(milliseconds: 200),
+                  duration: AppMotion.short,
                   child: const Icon(Icons.expand_more),
                 ),
               ],
@@ -2566,8 +2575,8 @@ class _DigestCardState extends State<_DigestCard> {
     final toggling = vm.isTogglingLock(digest.date);
 
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOut,
+      duration: AppMotion.medium,
+      curve: AppMotion.emphasizedDecel,
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(12),
@@ -2620,7 +2629,7 @@ class _DigestCardState extends State<_DigestCard> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 250),
+                            duration: AppMotion.medium,
                             transitionBuilder: (child, anim) => ScaleTransition(
                               scale: anim,
                               child: RotationTransition(
@@ -2638,7 +2647,7 @@ class _DigestCardState extends State<_DigestCard> {
                   // Animated collapse chevron.
                   AnimatedRotation(
                     turns: _expanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 200),
+                    duration: AppMotion.short,
                     child: const Icon(Icons.expand_more),
                   ),
                 ],
@@ -2647,8 +2656,8 @@ class _DigestCardState extends State<_DigestCard> {
           ),
           // ---- Collapsible body ----
           AnimatedSize(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
+            duration: AppMotion.short,
+            curve: AppMotion.emphasizedDecel,
             alignment: Alignment.topCenter,
             child: _expanded
                 ? Padding(
@@ -2784,8 +2793,8 @@ class _DiscordChatState extends State<_DiscordChat> {
       if (!_scrollController.hasClients) return;
       _scrollController.animateTo(
         _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOut,
+        duration: AppMotion.medium,
+        curve: AppMotion.emphasizedDecel,
       );
     });
   }

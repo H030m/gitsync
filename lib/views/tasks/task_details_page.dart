@@ -9,6 +9,7 @@ import '../../models/task.dart';
 import '../../services/functions_service.dart';
 import '../../services/navigation.dart';
 import '../../theme/app_dimens.dart';
+import '../../theme/app_motion.dart';
 import '../../view_models/graph_edit_ops.dart';
 import '../../view_models/members_vm.dart';
 import '../../view_models/repo_vm.dart';
@@ -126,6 +127,8 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
     final result = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
+      // Tune enter/exit to match the app's sheet timing (06-13).
+      sheetAnimationStyle: AppMotion.sheetStyle,
       builder: (ctx) => _AssigneePicker(
         members: membersVm.members,
         membersVm: membersVm,
@@ -197,6 +200,8 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
+      // Tune enter/exit to match the app's sheet timing (06-13).
+      sheetAnimationStyle: AppMotion.sheetStyle,
       builder: (ctx) => _PrereqPicker(candidates: candidates),
     );
     if (picked == null || !mounted) return;
@@ -225,9 +230,19 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
       }
     }
     if (task == null) return;
-    final confirmed = await showDialog<bool>(
+    // showGeneralDialog (not showDialog) so we can tune duration + curve and
+    // animate the barrier in sync with the dialog. The scrim ramps with the
+    // primary animation; the dialog itself fades + scales on emphasizedDecel.
+    final theme = Theme.of(context);
+    final confirmed = await showGeneralDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      barrierDismissible: true,
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      // Transparent barrier — the transitionBuilder paints a fading scrim so
+      // its opacity matches the dialog's curve.
+      barrierColor: Colors.transparent,
+      transitionDuration: AppMotion.medium,
+      pageBuilder: (ctx, _, _) => AlertDialog(
         title: Text(s.deleteTaskQuestion),
         content: Text(s.deleteTaskBody(task!.title)),
         actions: [
@@ -244,6 +259,33 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
           ),
         ],
       ),
+      transitionBuilder: (ctx, anim, _, child) {
+        final curved = CurvedAnimation(
+          parent: anim,
+          curve: AppMotion.emphasizedDecel,
+          reverseCurve: AppMotion.emphasizedAccel,
+        );
+        // Hand-rolled scrim so its alpha follows the same curve.
+        final scrim = theme.colorScheme.scrim;
+        return AnimatedBuilder(
+          animation: curved,
+          builder: (_, _) => ColoredBox(
+            color: Color.lerp(
+                  Colors.transparent,
+                  scrim.withValues(alpha: 0.32),
+                  curved.value,
+                ) ??
+                Colors.transparent,
+            child: Opacity(
+              opacity: curved.value,
+              child: Transform.scale(
+                scale: 0.96 + 0.04 * curved.value,
+                child: child,
+              ),
+            ),
+          ),
+        );
+      },
     );
     if (confirmed != true || !mounted) return;
     await vm.deleteTaskBridging(widget.taskId);
