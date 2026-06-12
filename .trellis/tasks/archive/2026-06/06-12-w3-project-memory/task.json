@@ -3,7 +3,7 @@
   "name": "w3-project-memory",
   "title": "W3: Project memory — rolling projectBrief (W3a) + member expertiseTags write-back learning (W3b)",
   "description": "Two-part 'project gets smarter over time' memory feature. W3a: a rolling per-repo project brief at repos/{repoId}/meta/projectBrief { content (<=~500 words/3500 chars markdown), updatedAt, version }. Written best-effort at the END of summarizeDayFlow (after the report persists) by one extra MODELS.fast merge-summarize call (old brief + today's report -> new brief, evict stale info, hard length cap, version++). Read via a new pure helper tools/projectBrief.ts (readProjectBrief + formatBriefForPrompt), prepended as a stable cache-friendly context prefix in breakdownTaskFlow, assignTaskFlow, generateHandoffFlow, dailyBriefChatFlow. Empty brief => zero behavior change. W3b: assignTaskFlow's finalizeAssignment tool gains learnedTags?: string[] (agent derives from retrieved commit evidence); on finalize, merge into users/{userId}.expertiseTags (arrayUnion via set merge, cap total at 8, best-effort). readTeamState already surfaces expertiseTags, so the next assignment reads them back.",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": "backend",
   "scope": "functions",
   "package": "functions",
@@ -11,7 +11,7 @@
   "creator": "gitsync",
   "assignee": "gitsync",
   "createdAt": "2026-06-12",
-  "completedAt": null,
+  "completedAt": "2026-06-12",
   "branch": "feat/w3-project-memory",
   "base_branch": "feature/agentic-final-demo",
   "worktree_path": "C:\\Users\\a0905\\work\\ssfinal\\gitsync-w3",
@@ -33,7 +33,7 @@
     "functions/src/__tests__/summarizeDay.test.ts",
     "functions/src/__tests__/assignTask.test.ts"
   ],
-  "notes": "PLANNING ONLY. Baseline verified in worktree: typecheck 0 errors, jest 33 suites / 250 tests. KEY REALITY-vs-SPEC discrepancy: expertiseTags live on the TOP-LEVEL users doc (apps/gitsync/users/{userId}.expertiseTags), NOT repos/{repoId}/members/{userId} as FINAL_DEMO_PLAN.md W3b states. readTeamState joins members(workload)+users(identity+expertise); the write-back MUST target users/{userId} with set+merge (the users doc may not pre-exist for a member). Awaiting Fable 5 review before any .ts is written.",
+  "notes": "Implemented per prd + Fable 5 rulings (Q1–Q6 resolved in prd.md; learnedTags write corrected to users/{userId}.expertiseTags via set+merge). Gates green: typecheck 0, jest 34 suites / 280 tests (was 33/250), lint 0. Reviewed and closed by Fable 5 (orchestrator) 2026-06-12.",
   "meta": {
     "workItem": "W3",
     "sprint": "final-demo",
