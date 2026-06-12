@@ -102,8 +102,13 @@ class FakeFunctionsService implements FunctionsService {
   Future<String> generateHandoff({
     required String repoId,
     required String taskId,
+    String? language,
   }) async {
     await Future.delayed(AppConfig.simulatedLatency * 8);
+    // W6: surface the requested language so a regenerate is visibly different.
+    final langNote = language != null && language.isNotEmpty
+        ? '\n\n> _Regenerated in $language (fake demo)._'
+        : '';
     return '''
 ## What was done
 - Implemented $taskId end-to-end with tests.
@@ -120,7 +125,7 @@ class FakeFunctionsService implements FunctionsService {
 ## Gotchas
 - The Firestore listener may emit twice on cold start — guard with `if (mounted)`.
 - This is a FAKE handoff generated in debug mode; the real one comes from the
-  `generateHandoffFlow` Cloud Function once it is implemented.
+  `generateHandoffFlow` Cloud Function once it is implemented.$langNote
 ''';
   }
 
@@ -129,9 +134,14 @@ class FakeFunctionsService implements FunctionsService {
     required String repoId,
     required String startDate,
     String? endDate,
+    String? language,
   }) async {
     await Future.delayed(AppConfig.simulatedLatency * 4);
-    return DummyData.todayReport.summary;
+    final base = DummyData.todayReport.summary;
+    // W6: a language-tagged regenerate visibly annotates the canned summary.
+    return language != null && language.isNotEmpty
+        ? '$base\n\n_(Regenerated in $language — fake demo.)_'
+        : base;
   }
 
   @override
@@ -139,16 +149,21 @@ class FakeFunctionsService implements FunctionsService {
     required String repoId,
     required String sha,
     bool force = false,
+    String? language,
   }) async {
     await Future.delayed(AppConfig.simulatedLatency * 3);
     final commit =
         DummyData.commits.where((c) => c.sha == sha).firstOrNull;
     final message = commit?.message ?? sha.substring(0, 7);
+    // W6: a language-tagged recompute visibly annotates the canned explanation.
+    final langNote = language != null && language.isNotEmpty
+        ? '\n\n_(Recomputed in $language — fake demo.)_'
+        : '';
     return '**What was done** — ${commit?.aiSummary ?? message}\n\n'
         '**Why / context** — part of the Sprint 1 push; pairs with the linked '
         'task(s) ${commit?.linkedTaskIds.join(", ") ?? ""}.\n\n'
         '**Where** — ${commit?.filesChanged.join(", ") ?? "(not recorded)"}\n\n'
-        '*(這是 fake backend 的示範回覆。)*';
+        '*(這是 fake backend 的示範回覆。)*$langNote';
   }
 
   @override

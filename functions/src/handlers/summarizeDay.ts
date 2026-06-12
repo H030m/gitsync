@@ -24,14 +24,21 @@ export const summarizeDay = onCall(
     if (!request.auth) {
       throw new HttpsError('failed-precondition', 'Please log in first.');
     }
-    const { repoId, date, startDate, endDate } = request.data as {
+    const { repoId, date, startDate, endDate, language } = request.data as {
       repoId?: string;
       date?: string;
       startDate?: string;
       endDate?: string;
+      language?: string;
     };
     if (!repoId) {
       throw new HttpsError('invalid-argument', 'repoId is required');
+    }
+    // W6: optional language (a human-readable English language NAME the client
+    // derives from the app locale) forces the regenerated narrative into that
+    // language; absent → unchanged behavior (the scheduled report omits it).
+    if (language !== undefined && typeof language !== 'string') {
+      throw new HttpsError('invalid-argument', 'language must be a string');
     }
 
     // Normalize: `date` is shorthand for a one-day range.
@@ -53,6 +60,6 @@ export const summarizeDay = onCall(
       );
     }
 
-    return summarizeDayFlow({ repoId, startDate: start, endDate: end });
+    return summarizeDayFlow({ repoId, startDate: start, endDate: end, language });
   },
 );

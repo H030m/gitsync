@@ -6,8 +6,25 @@
 // a strict reviewer scores the draft against the receiving task's acceptance
 // criteria and, when it falls short, returns concrete gaps that are re-injected
 // into the Phase-1 thread so the agent can gather the missing evidence.
+//
+// W6 (regenerate-with-locale): an OPTIONAL `language` (a human-readable English
+// language NAME like "Traditional Chinese" or "English") forces the output into
+// the user's app language on an explicit regenerate. It is appended as a single
+// conditional line to BOTH phase system prompts — Phase 1 so the draft is
+// written in that language, AND Phase 2 so the reviewer does not penalize a
+// non-English draft. When absent/empty the system prompts are byte-identical to
+// before (zero behavior change for the auto/scheduled single-language path).
 
-export const generateHandoffSystem = `You are a senior engineer writing a concise handoff document so the next engineer can pick up a task whose prerequisites just finished.
+/**
+ * Appends the W6 language directive to a system prompt when `language` is a
+ * non-empty string; otherwise returns the prompt unchanged (byte-identical).
+ */
+function withLanguage(systemPrompt: string, language?: string): string {
+  const lang = language?.trim();
+  return lang ? `${systemPrompt}\nWrite your entire response in ${lang}.` : systemPrompt;
+}
+
+const generateHandoffSystemBase = `You are a senior engineer writing a concise handoff document so the next engineer can pick up a task whose prerequisites just finished.
 
 You are an AGENT: before drafting, use the tools to gather REAL evidence about what landed and why. A good sequence is usually:
 1. Call listRelatedCommits to see the commits behind the prerequisites.
@@ -25,6 +42,14 @@ Rules:
 - Refer to people by their real name (use readTeamState; fall back to githubLogin).
 - Ground every claim in tool evidence — do NOT invent commits, files, or decisions. If a section has no signal, say so briefly rather than guessing.
 - Be terse and skimmable. The draftHandoff markdown is the deliverable: no preamble, no closing pleasantries.`;
+
+/**
+ * Phase-1 drafting system prompt. With `language` (W6) the draft is forced into
+ * that language; without it the prompt is byte-identical to the base.
+ */
+export function generateHandoffSystemPrompt(language?: string): string {
+  return withLanguage(generateHandoffSystemBase, language);
+}
 
 export interface HandoffSeedInput {
   task: { title: string; description: string; acceptanceCriteria: string[] };
@@ -56,7 +81,7 @@ export function generateHandoffSeedContext(input: HandoffSeedInput): string {
   ].join('\n\n');
 }
 
-export const handoffReviewSystem = `You are a strict technical reviewer judging a handoff document.
+const handoffReviewSystemBase = `You are a strict technical reviewer judging a handoff document.
 
 You are given a handoff draft plus the receiving task's title, description, and acceptance criteria. Decide whether an engineer could pick up the task and start work using ONLY this draft.
 
@@ -66,6 +91,16 @@ Return JSON: { "score": 1-5, "gaps": string[] }.
 - gaps must be SPECIFIC and actionable for the drafting agent, e.g. "doesn't say which file commit a1b2c3 changed" or "acceptance criterion 'X' has no corresponding action item". Return [] only when the draft is genuinely complete.
 
 Judge grounding and completeness, not prose polish.`;
+
+/**
+ * Phase-2 reviewer system prompt. With `language` (W6) the reviewer is told the
+ * draft is expected in that language so it does not penalize a non-English draft
+ * (and any gaps it emits stay in that language for the redraft). Without it the
+ * prompt is byte-identical to the base.
+ */
+export function handoffReviewSystemPrompt(language?: string): string {
+  return withLanguage(handoffReviewSystemBase, language);
+}
 
 export interface HandoffReviewContextInput {
   draft: string;

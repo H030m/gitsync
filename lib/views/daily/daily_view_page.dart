@@ -552,7 +552,10 @@ class _DayReportCardState extends State<_DayReportCard> {
                         ? _DayReportBody(vm: vm, day: widget.day, report: report)
                         : _DayReportEmpty(
                             generating: generating,
-                            onGenerate: () => vm.generateDay(widget.day),
+                            onGenerate: () => vm.generateDay(
+                              widget.day,
+                              language: context.l10n.backendLanguage,
+                            ),
                           ),
                   )
                 : const SizedBox(width: double.infinity),
@@ -589,7 +592,12 @@ class _DayReportBody extends StatelessWidget {
         Align(
           alignment: Alignment.centerLeft,
           child: FilledButton.icon(
-            onPressed: generating ? null : () => vm.generateDay(day),
+            onPressed: generating
+                ? null
+                : () => vm.generateDay(
+                      day,
+                      language: context.l10n.backendLanguage,
+                    ),
             icon: generating
                 ? const SizedBox(
                     width: 16,
@@ -2422,7 +2430,11 @@ class _CommitDetailSheet extends StatelessWidget {
                   if (explanation != null && !explaining)
                     IconButton(
                       tooltip: s.regenerate,
-                      onPressed: () => vm.explain(c.sha, force: true),
+                      onPressed: () => vm.explain(
+                        c.sha,
+                        force: true,
+                        language: s.backendLanguage,
+                      ),
                       icon: const Icon(Icons.refresh, size: 18),
                     ),
                 ],

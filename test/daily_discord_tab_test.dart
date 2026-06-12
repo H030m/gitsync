@@ -83,14 +83,22 @@ class _SpyFunctions implements FunctionsService {
       _fake.assignTask(repoId: repoId, taskId: taskId);
   @override
   Future<String> generateHandoff(
-          {required String repoId, required String taskId}) =>
-      _fake.generateHandoff(repoId: repoId, taskId: taskId);
+          {required String repoId,
+          required String taskId,
+          String? language}) =>
+      _fake.generateHandoff(
+          repoId: repoId, taskId: taskId, language: language);
   @override
   Future<String> summarizeDay(
           {required String repoId,
           required String startDate,
-          String? endDate}) =>
-      _fake.summarizeDay(repoId: repoId, startDate: startDate, endDate: endDate);
+          String? endDate,
+          String? language}) =>
+      _fake.summarizeDay(
+          repoId: repoId,
+          startDate: startDate,
+          endDate: endDate,
+          language: language);
   @override
   Future<DailyBriefReply> dailyBrief(
           {required String repoId,
@@ -106,8 +114,12 @@ class _SpyFunctions implements FunctionsService {
           history: history);
   @override
   Future<String> explainCommit(
-          {required String repoId, required String sha, bool force = false}) =>
-      _fake.explainCommit(repoId: repoId, sha: sha, force: force);
+          {required String repoId,
+          required String sha,
+          bool force = false,
+          String? language}) =>
+      _fake.explainCommit(
+          repoId: repoId, sha: sha, force: force, language: language);
   @override
   Future<void> setDiscordWebhook(
           {required String repoId,

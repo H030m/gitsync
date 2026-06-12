@@ -133,8 +133,10 @@ class DailyReportViewModel with ChangeNotifier {
     setRange(now, now);
   }
 
-  // Manual trigger for the AI-generated period report.
-  Future<void> regenerate() async {
+  // Manual trigger for the AI-generated period report. [language] (W6) is the
+  // English language NAME for the app locale; passed so the regenerated
+  // narrative comes back in the user's language.
+  Future<void> regenerate({String? language}) async {
     if (_regenerating) return;
     _regenerating = true;
     notifyListeners();
@@ -143,6 +145,7 @@ class DailyReportViewModel with ChangeNotifier {
         repoId: _repoId,
         startDate: startKey,
         endDate: endKey,
+        language: language,
       );
     } finally {
       _regenerating = false;
@@ -152,7 +155,8 @@ class DailyReportViewModel with ChangeNotifier {
 
   /// Generates (or regenerates) the report for a single [day] — used by the
   /// per-day cards' "產生日報" button. Calls `summarizeDay` with start == end.
-  Future<void> generateDay(DateTime day) async {
+  /// [language] (W6) is the English language NAME for the app locale.
+  Future<void> generateDay(DateTime day, {String? language}) async {
     final key = _dayKey(day);
     if (_generatingDays.contains(key)) return;
     _generatingDays.add(key);
@@ -162,6 +166,7 @@ class DailyReportViewModel with ChangeNotifier {
         repoId: _repoId,
         startDate: key,
         endDate: key,
+        language: language,
       );
     } finally {
       _generatingDays.remove(key);

@@ -332,4 +332,50 @@ describe('summarizeDayFlow', () => {
     expect(res.summary).toBe(NARRATIVE.summary);
     expect(setSpy).toHaveBeenCalled(); // report persisted regardless
   });
+
+  // ---- W6: regenerate the narrative in the app language ---------------------
+  // The system message of the narrative agent is read off the scripted create().
+  const narrativeSystem = (callIdx = 0): string =>
+    (
+      mockCreate.mock.calls[callIdx] as unknown as [
+        { messages: Array<{ role: string; content: string }> },
+      ]
+    )[0].messages.find((m) => m.role === 'system')?.content ?? '';
+
+  it('language present → the narrative system prompt carries the directive', async () => {
+    seedCommit('c1', { author: { login: 'x', name: 'X' } });
+    createQueue.push(finalizeTurn(NARRATIVE));
+
+    await summarizeDayFlow({
+      repoId: REPO,
+      startDate: DATE,
+      endDate: DATE,
+      language: 'Traditional Chinese',
+    });
+
+    expect(narrativeSystem()).toContain(
+      'Write your entire response in Traditional Chinese.',
+    );
+  });
+
+  it('language absent → narrative system prompt is byte-identical to base', async () => {
+    seedCommit('c1', { author: { login: 'x', name: 'X' } });
+    createQueue.push(finalizeTurn(NARRATIVE));
+    await summarizeDayFlow({ repoId: REPO, startDate: DATE, endDate: DATE });
+    const base = narrativeSystem();
+    expect(base).not.toContain('Write your entire response in');
+
+    // A WITH-language run appends exactly one line to that same base.
+    mockCreate.mockClear();
+    createQueue.push(finalizeTurn(NARRATIVE));
+    await summarizeDayFlow({
+      repoId: REPO,
+      startDate: DATE,
+      endDate: DATE,
+      language: 'English',
+    });
+    expect(narrativeSystem()).toBe(
+      `${base}\nWrite your entire response in English.`,
+    );
+  });
 });

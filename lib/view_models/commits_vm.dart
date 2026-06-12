@@ -265,7 +265,9 @@ class CommitsViewModel with ChangeNotifier {
 
   /// Fetches (or re-fetches with [force]) the AI work summary for [sha]. The
   /// backend additionally caches on the commit doc, so repeat calls are cheap.
-  Future<void> explain(String sha, {bool force = false}) async {
+  /// [language] (W6) is the English language NAME for the app locale; sent on a
+  /// recompute ([force] = true) so the summary returns in the user's language.
+  Future<void> explain(String sha, {bool force = false, String? language}) async {
     if (_explaining.contains(sha)) return;
     if (!force && _explanations.containsKey(sha)) return;
     _explaining.add(sha);
@@ -276,6 +278,7 @@ class CommitsViewModel with ChangeNotifier {
         repoId: _repoId,
         sha: sha,
         force: force,
+        language: language,
       );
       _explanations[sha] = markdown;
     } catch (e) {
