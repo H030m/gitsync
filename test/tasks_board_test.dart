@@ -57,11 +57,24 @@ class _StubTaskRepo implements TaskRepository {
       throw UnimplementedError('${invocation.memberName} not stubbed');
 }
 
-Widget _harness(_StubTaskRepo repo) {
+// Records goTaskDetails calls so tests can assert row-tap navigation without a
+// real router pumping.
+class _StubNav extends NavigationService {
+  String? detailsRepoId;
+  String? detailsTaskId;
+
+  @override
+  void goTaskDetails(String repoId, String taskId) {
+    detailsRepoId = repoId;
+    detailsTaskId = taskId;
+  }
+}
+
+Widget _harness(_StubTaskRepo repo, {NavigationService? nav}) {
   return MaterialApp(
     home: MultiProvider(
       providers: [
-        Provider<NavigationService>(create: (_) => NavigationService()),
+        Provider<NavigationService>(create: (_) => nav ?? NavigationService()),
         ChangeNotifierProvider<TasksBoardViewModel>(
           create: (_) =>
               TasksBoardViewModel(repoId: 'r1', taskRepository: repo),
@@ -80,18 +93,12 @@ Task _task(
   String title,
   TaskStatus status, {
   String? assignee,
-  String description = '',
-  List<String> dependsOn = const [],
-  String? handoffDoc,
 }) =>
     Task(
       id: id,
       title: title,
       status: status,
       assigneeId: assignee,
-      description: description,
-      dependsOn: dependsOn,
-      handoffDoc: handoffDoc,
       createdBy: 'u1',
     );
 
@@ -172,34 +179,6 @@ void main() {
     expect(find.text('待辦'), findsNothing);
   });
 
-  testWidgets('card renders its description snippet (工作摘要)', (tester) async {
-    final repo = _StubTaskRepo([
-      _task('t1', 'Alpha', TaskStatus.todo,
-          description: 'wire up the login flow'),
-    ]);
-    await tester.pumpWidget(_harness(repo));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Alpha'), findsOneWidget);
-    expect(find.text('wire up the login flow'), findsOneWidget);
-  });
-
-  testWidgets('deps + handoff indicators appear when the task has them',
-      (tester) async {
-    final repo = _StubTaskRepo([
-      _task('t1', 'Alpha', TaskStatus.todo,
-          dependsOn: ['t2', 't3'], handoffDoc: '# handoff'),
-      _task('t2', 'Bare', TaskStatus.inProgress),
-    ]);
-    await tester.pumpWidget(_harness(repo));
-    await tester.pumpAndSettle();
-
-    // 依賴: link icon + the dependency count (2). 交接: doc icon.
-    expect(find.byIcon(Icons.link), findsOneWidget);
-    expect(find.text('2'), findsOneWidget);
-    expect(find.byIcon(Icons.description_outlined), findsOneWidget);
-  });
-
   testWidgets('wide surface uses fill mode (no horizontal scroll)',
       (tester) async {
     final repo = _StubTaskRepo([
@@ -217,17 +196,86 @@ void main() {
     expect(horizontalScrollables, findsNothing);
   });
 
-  testWidgets('narrow surface uses horizontal-scroll mode', (tester) async {
+  // ---- Narrow layout: TickTick-style collapsible sections (task 06-13) ----
+
+  testWidgets('narrow surface shows three section headers, no horizontal scroll',
+      (tester) async {
     final repo = _StubTaskRepo([
       _task('t1', 'Alpha', TaskStatus.todo),
       _task('t2', 'Gamma', TaskStatus.inProgress),
+      _task('t3', 'Omega', TaskStatus.done),
     ]);
     await _pumpAt(tester, _harness(repo), const Size(500, 800));
 
+    // All three section headers render with their count chips (1 each).
     expect(find.text('待辦'), findsOneWidget);
+    expect(find.text('進行中'), findsOneWidget);
+    expect(find.text('完成'), findsOneWidget);
+    expect(find.text('1'), findsNWidgets(3));
+
+    // The horizontal-scrolling kanban is gone on narrow surfaces.
     final horizontalScrollables = find.byWidgetPredicate(
       (w) => w is SingleChildScrollView && w.scrollDirection == Axis.horizontal,
     );
-    expect(horizontalScrollables, findsOneWidget);
+    expect(horizontalScrollables, findsNothing);
+  });
+
+  testWidgets('default expansion: todo + inProgress rows visible, done hidden',
+      (tester) async {
+    final repo = _StubTaskRepo([
+      _task('t1', 'Alpha', TaskStatus.todo),
+      _task('t2', 'Gamma', TaskStatus.inProgress),
+      _task('t3', 'Omega', TaskStatus.done),
+    ]);
+    await _pumpAt(tester, _harness(repo), const Size(500, 800));
+
+    expect(find.text('Alpha'), findsOneWidget);
+    expect(find.text('Gamma'), findsOneWidget);
+    expect(find.text('Omega'), findsNothing);
+  });
+
+  testWidgets('tapping the done header expands then collapses its rows',
+      (tester) async {
+    final repo = _StubTaskRepo([
+      _task('t1', 'Alpha', TaskStatus.todo),
+      _task('t3', 'Omega', TaskStatus.done),
+    ]);
+    await _pumpAt(tester, _harness(repo), const Size(500, 800));
+    expect(find.text('Omega'), findsNothing);
+
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    expect(find.text('Omega'), findsOneWidget);
+
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    expect(find.text('Omega'), findsNothing);
+  });
+
+  testWidgets("tapping a row's circle marks the task done", (tester) async {
+    final repo = _StubTaskRepo([
+      _task('t1', 'Alpha', TaskStatus.todo),
+    ]);
+    await _pumpAt(tester, _harness(repo), const Size(500, 800));
+
+    await tester.tap(find.byIcon(Icons.radio_button_unchecked));
+    await tester.pumpAndSettle();
+
+    expect(repo.lastUpdatedId, 't1');
+    expect(repo.lastUpdatedStatus, TaskStatus.done);
+  });
+
+  testWidgets('tapping a row navigates to task details', (tester) async {
+    final repo = _StubTaskRepo([
+      _task('t1', 'Alpha', TaskStatus.todo),
+    ]);
+    final nav = _StubNav();
+    await _pumpAt(tester, _harness(repo, nav: nav), const Size(500, 800));
+
+    await tester.tap(find.text('Alpha'));
+    await tester.pumpAndSettle();
+
+    expect(nav.detailsRepoId, 'r1');
+    expect(nav.detailsTaskId, 't1');
   });
 }
