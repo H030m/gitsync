@@ -18,6 +18,7 @@
 
 ## 2026-06-13
 
+- **廷煥 — 任務狀態編輯雙入口**：收合清單驗收時發現詳情頁狀態 chip 從來都是唯讀、手機只能「→完成」。新增共用 `showStatusPicker` bottom sheet，雙入口：詳情頁主任務 chip 可點、清單列長按；相關任務 chip 維持唯讀、既有行為不變。測試 85/85（新建 task_details 測試 harness）。trellis `06-13-task-status-editor`，同分支 `feature/mobile-board-sections`。
 - **廷煥 — Tasks 看板手機版重設計（收合式三段清單）**：手機寬度從「三條 200dp 欄橫向捲動」改為 TickTick 風格垂直收合清單（待辦/進行中/完成 header + 數量、AnimatedSize 展開收合、預設完成區收起）；任務列點擊進詳情、**圓圈勾選直接標完成**（直達 done→AI 分派→FCM 推播的 demo 鏈路）。寬螢幕 kanban 不動。順手清掉 temmie 06-12 遺留的 2 個紅測試並新增 5 個清單測試——**全套 81/81 綠**。trellis `06-13-mobile-board-sections`，分支 `feature/mobile-board-sections`。詳見 [113062340_tinghuan.md](./113062340_tinghuan.md)。
 
 ## 2026-06-12
