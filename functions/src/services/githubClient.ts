@@ -80,6 +80,85 @@ export async function getCommit(
   };
 }
 
+export interface CommitDiffFile {
+  filename: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  /** Unified diff for this file; null for binary files or once truncated. */
+  patch: string | null;
+}
+
+export interface CommitDiff {
+  sha: string;
+  message: string;
+  files: CommitDiffFile[];
+  /** True when later files' patches were dropped to stay under the char cap. */
+  truncated: boolean;
+}
+
+/**
+ * Fetches a single commit's unified diff (GET /repos/{owner}/{repo}/commits/{sha})
+ * keeping the per-file `patch` text that {@link getCommit} deliberately strips.
+ * Files are walked in order, accumulating patch characters; once the running
+ * total would exceed `maxPatchChars` the remaining files keep their metadata but
+ * get `patch: null` and `truncated` is set — this bounds one commit's diff to a
+ * predictable budget (the handoff agent's getCommitDiff tool). Binary files
+ * (no patch from GitHub) also surface as `patch: null`. All GitHub API access
+ * stays in this file (ARCHITECTURE.md §6.4).
+ */
+export async function getCommitDiff(
+  owner: string,
+  repo: string,
+  accessToken: string,
+  sha: string,
+  maxPatchChars: number,
+): Promise<CommitDiff> {
+  const octokit = getOctokit(accessToken);
+  const res = await octokit.repos.getCommit({ owner, repo, ref: sha });
+  const data = res.data;
+
+  let used = 0;
+  let truncated = false;
+  const files: CommitDiffFile[] = (data.files ?? []).map((f) => {
+    const patch = typeof f.patch === 'string' ? f.patch : null;
+    if (patch === null) {
+      return {
+        filename: f.filename,
+        status: f.status ?? '',
+        additions: f.additions ?? 0,
+        deletions: f.deletions ?? 0,
+        patch: null,
+      };
+    }
+    if (truncated || used + patch.length > maxPatchChars) {
+      truncated = true;
+      return {
+        filename: f.filename,
+        status: f.status ?? '',
+        additions: f.additions ?? 0,
+        deletions: f.deletions ?? 0,
+        patch: null,
+      };
+    }
+    used += patch.length;
+    return {
+      filename: f.filename,
+      status: f.status ?? '',
+      additions: f.additions ?? 0,
+      deletions: f.deletions ?? 0,
+      patch,
+    };
+  });
+
+  return {
+    sha: data.sha,
+    message: data.commit.message,
+    files,
+    truncated,
+  };
+}
+
 // ---- Commit graph (branch topology) ----------------------------------------
 
 export interface GraphCommitRaw {

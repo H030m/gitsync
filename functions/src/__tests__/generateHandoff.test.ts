@@ -1,8 +1,11 @@
-// Unit tests for generateHandoffFlow (AI handoff doc for a now-ready task).
+// Unit tests for the two-phase agentic generateHandoffFlow.
 //
-// Same boundary-mock style as explainCommit.test.ts: fake Firestore (equality
-// clauses honored; array-contains is treated as a pass-through so all seeded
-// commits are returned), scripted OpenAI, mocked tool helpers, no-op logger.
+// Boundary-mock style (like assignTask.test.ts / breakdownTask.test.ts): fake
+// Firestore (equality clauses honored; array-contains is a pass-through), a
+// scripted OpenAI exposing BOTH chat.completions.create (Phase 1 tool loop) and
+// beta.chat.completions.parse (Phase 2 reviewer), and mocked tool helpers. The
+// tools/* helpers are mocked so the flow never imports githubClient →
+// @octokit/rest (ESM, jest can't parse it).
 
 class FakeHttpsError extends Error {
   constructor(public code: string, message: string) {
@@ -22,51 +25,6 @@ jest.mock('firebase-admin/firestore', () => ({
 const store = new Map<string, Record<string, unknown>>();
 const updateSpy = jest.fn();
 
-function childDocsOf(colPath: string): Array<[string, Record<string, unknown>]> {
-  return [...store.entries()].filter(
-    ([p]) =>
-      p.startsWith(`${colPath}/`) &&
-      p.slice(colPath.length + 1).indexOf('/') === -1,
-  );
-}
-
-function getField(d: Record<string, unknown>, field: string): unknown {
-  return field.split('.').reduce<unknown>((acc, k) => {
-    if (acc && typeof acc === 'object') return (acc as Record<string, unknown>)[k];
-    return undefined;
-  }, d);
-}
-
-function makeQuery(
-  colPath: string,
-  clauses: Array<{ field: string; op: string; value: unknown }>,
-) {
-  const matches = () =>
-    childDocsOf(colPath).filter(([, d]) =>
-      clauses.every((c) => (c.op === '==' ? getField(d, c.field) === c.value : true)),
-    );
-  const q = {
-    where(field: string, op: string, value: unknown) {
-      return makeQuery(colPath, [...clauses, { field, op, value }]);
-    },
-    orderBy() {
-      return q;
-    },
-    limit() {
-      return q;
-    },
-    async get() {
-      return {
-        docs: matches().map(([p, d]) => ({
-          id: p.split('/').pop() as string,
-          data: () => d,
-        })),
-      };
-    },
-  };
-  return q;
-}
-
 const fakeDb = {
   doc: (path: string) => ({
     path,
@@ -79,51 +37,129 @@ const fakeDb = {
       updateSpy(path, patch);
     },
   }),
-  collection: (path: string) => makeQuery(path, []),
 };
 
 jest.mock('../admin', () => ({ db: fakeDb, REGION: 'asia-east1' }));
 
-let nextContent: string | null = '## What was done\n- Shipped the API.';
-const mockCreate = jest.fn(async () => ({
-  choices: [{ message: { role: 'assistant', content: nextContent } }],
-}));
+// ---- Scripted OpenAI -------------------------------------------------------
+// Phase 1: each create() call returns the next scripted assistant message
+// (tool_calls). Phase 2: each parse() call returns the next scripted review.
+type ToolCall = { id: string; name: string; args: unknown };
+const createQueue: Array<{ toolCalls: ToolCall[] } | { content: string }> = [];
+const parseQueue: Array<HandoffReviewLike | null> = [];
+
+interface HandoffReviewLike {
+  score: number;
+  gaps: string[];
+}
+
+const mockCreate = jest.fn(async () => {
+  const next = createQueue.shift() ?? { content: null };
+  if ('toolCalls' in next) {
+    return {
+      choices: [
+        {
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: next.toolCalls.map((t) => ({
+              id: t.id,
+              type: 'function',
+              function: { name: t.name, arguments: JSON.stringify(t.args) },
+            })),
+          },
+        },
+      ],
+    };
+  }
+  return {
+    choices: [{ message: { role: 'assistant', content: next.content } }],
+  };
+});
+
+const mockParse = jest.fn(async () => {
+  const next = parseQueue.shift();
+  return { choices: [{ message: { parsed: next ?? null } }] };
+});
 
 jest.mock('../config', () => ({
-  getOpenAI: () => ({ chat: { completions: { create: mockCreate } } }),
+  getOpenAI: () => ({
+    chat: { completions: { create: mockCreate } },
+    beta: { chat: { completions: { parse: mockParse } } },
+  }),
   MODELS: { reasoning: 'gpt-4o', fast: 'gpt-4o-mini', embedding: 'text-embedding-3-small' },
 }));
 
+// ---- Mocked tool helpers (keep @octokit/rest out of the test) --------------
+const mockListRelatedCommits = jest.fn(async (..._a: unknown[]) => [
+  {
+    sha: 'c1c1c1c',
+    subject: 'feat: add API endpoint',
+    aiSummary: 'Adds the callable.',
+    author: 'Bob',
+    filesChanged: 1,
+  },
+]);
+const mockGetCommitDiff = jest.fn(async (..._a: unknown[]) => ({
+  sha: 'c1c1c1c',
+  message: 'feat: add API endpoint',
+  files: [
+    {
+      filename: 'functions/src/handlers/api.ts',
+      status: 'added',
+      additions: 10,
+      deletions: 0,
+      patch: '@@ -0,0 +1,10 @@',
+    },
+  ],
+  truncated: false,
+}));
+jest.mock('../tools/handoffTools', () => ({
+  listRelatedCommits: (...a: unknown[]) => mockListRelatedCommits(...a),
+  getCommitDiff: (...a: unknown[]) => mockGetCommitDiff(...a),
+}));
+
+jest.mock('../tools/dailyIntel', () => ({
+  searchPastCommits: jest.fn(async () => []),
+}));
+jest.mock('../tools/repoDocs', () => ({
+  readRepoPlanningDocs: jest.fn(async () => ({ content: '', summary: '', source: 'none', cached: false })),
+}));
 jest.mock('../tools/discordSearch', () => ({
   searchDiscordMessages: jest.fn(async () => []),
 }));
 jest.mock('../tools/assignTools', () => ({
   readTeamState: jest.fn(async () => [
-    {
-      userId: 'u1',
-      name: 'Alice',
-      githubLogin: 'alice-dev',
-      discordUserId: null,
-      activeIssueCount: 0,
-      expertiseTags: [],
-      lastActiveAt: null,
-    },
+    { userId: 'u1', name: 'Alice', githubLogin: 'alice-dev' },
   ]),
 }));
 
 import { generateHandoffFlow } from '../flows/generateHandoff';
 
 const REPO = 'team17_gitsync';
+const TASK = `apps/gitsync/repos/${REPO}/tasks/t-ui`;
+
+// Convenience builders for the scripted queue.
+const draftCall = (markdown: string): { toolCalls: ToolCall[] } => ({
+  toolCalls: [{ id: 'd1', name: 'draftHandoff', args: { markdown } }],
+});
+const toolThenNothing = (name: string, args: unknown): { toolCalls: ToolCall[] } => ({
+  toolCalls: [{ id: `t-${name}`, name, args }],
+});
 
 beforeEach(() => {
   store.clear();
   updateSpy.mockClear();
   mockCreate.mockClear();
-  nextContent = '## What was done\n- Shipped the API.';
+  mockParse.mockClear();
+  mockListRelatedCommits.mockClear();
+  mockGetCommitDiff.mockClear();
+  createQueue.length = 0;
+  parseQueue.length = 0;
 });
 
 function seedTasks() {
-  store.set(`apps/gitsync/repos/${REPO}/tasks/t-ui`, {
+  store.set(TASK, {
     title: 'Build the task UI',
     description: 'Render the detail page.',
     dependsOn: ['t-api'],
@@ -134,13 +170,6 @@ function seedTasks() {
     description: 'Add the callable.',
     status: 'done',
   });
-  store.set(`apps/gitsync/repos/${REPO}/commits/c1`, {
-    message: 'feat: add API endpoint\n\nbody text',
-    linkedTaskIds: ['t-api'],
-    author: { name: 'Bob', login: 'bob-dev' },
-    filesChanged: ['functions/src/handlers/api.ts'],
-    committedAt: '2026-06-06T00:00:00Z',
-  });
 }
 
 describe('generateHandoffFlow', () => {
@@ -149,52 +178,25 @@ describe('generateHandoffFlow', () => {
       generateHandoffFlow({ repoId: REPO, taskId: 'nope' }),
     ).rejects.toMatchObject({ code: 'not-found' });
     expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockParse).not.toHaveBeenCalled();
   });
 
   it('returns the cached handoffDoc without calling OpenAI (force=false)', async () => {
-    store.set(`apps/gitsync/repos/${REPO}/tasks/t-ui`, {
-      title: 'Build the task UI',
-      handoffDoc: 'cached handoff',
-    });
+    store.set(TASK, { title: 'Build the task UI', handoffDoc: 'cached handoff' });
 
     const res = await generateHandoffFlow({ repoId: REPO, taskId: 't-ui' });
 
     expect(res).toEqual({ handoffMarkdown: 'cached handoff', cached: true });
     expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockParse).not.toHaveBeenCalled();
     expect(updateSpy).not.toHaveBeenCalled();
-  });
-
-  it('generates from prerequisites + commits and writes the handoff back', async () => {
-    seedTasks();
-
-    const res = await generateHandoffFlow({ repoId: REPO, taskId: 't-ui' });
-
-    expect(res.cached).toBe(false);
-    expect(res.handoffMarkdown).toContain('What was done');
-    expect(mockCreate).toHaveBeenCalledTimes(1);
-    expect(updateSpy).toHaveBeenCalledWith(
-      `apps/gitsync/repos/${REPO}/tasks/t-ui`,
-      expect.objectContaining({
-        handoffDoc: res.handoffMarkdown,
-        handoffGeneratedAt: '__ts__',
-      }),
-    );
-    // Grounding: the prompt carries the prerequisite title + the commit subject.
-    const userMsg = (mockCreate.mock.calls[0] as unknown as [
-      { messages: Array<{ role: string; content: string }> },
-    ])[0].messages.find((m) => m.role === 'user');
-    expect(userMsg?.content).toContain('Build the API endpoint');
-    expect(userMsg?.content).toContain('add API endpoint');
-    expect(userMsg?.content).toContain('Renders the list');
   });
 
   it('force=true regenerates even when a handoffDoc exists', async () => {
     seedTasks();
-    store.set(`apps/gitsync/repos/${REPO}/tasks/t-ui`, {
-      ...(store.get(`apps/gitsync/repos/${REPO}/tasks/t-ui`) ?? {}),
-      handoffDoc: 'stale handoff',
-    });
-    nextContent = '## What was done\n- Fresh handoff.';
+    store.set(TASK, { ...(store.get(TASK) ?? {}), handoffDoc: 'stale handoff' });
+    createQueue.push(draftCall('## What was done\n- Fresh handoff.'));
+    parseQueue.push({ score: 5, gaps: [] });
 
     const res = await generateHandoffFlow({
       repoId: REPO,
@@ -204,12 +206,148 @@ describe('generateHandoffFlow', () => {
 
     expect(res.cached).toBe(false);
     expect(res.handoffMarkdown).toContain('Fresh handoff');
+  });
+
+  it('happy path: first-turn draft → review pass → persists doc + handoffReview', async () => {
+    seedTasks();
+    createQueue.push(draftCall('## What was done\n- Shipped the API.'));
+    parseQueue.push({ score: 5, gaps: [] });
+
+    const res = await generateHandoffFlow({ repoId: REPO, taskId: 't-ui' });
+
+    expect(res.cached).toBe(false);
+    expect(res.handoffMarkdown).toContain('What was done');
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect(mockParse).toHaveBeenCalledTimes(1);
+    expect(updateSpy).toHaveBeenCalledWith(
+      TASK,
+      expect.objectContaining({
+        handoffDoc: res.handoffMarkdown,
+        handoffGeneratedAt: '__ts__',
+        handoffReview: { score: 5, rounds: 1, generatedAt: '__ts__' },
+      }),
+    );
+  });
+
+  it('tool-then-draft: agent calls listRelatedCommits + getCommitDiff, then drafts', async () => {
+    seedTasks();
+    createQueue.push({
+      toolCalls: [
+        { id: 'lc', name: 'listRelatedCommits', args: {} },
+        { id: 'gd', name: 'getCommitDiff', args: { sha: 'c1c1c1c' } },
+      ],
+    });
+    createQueue.push(draftCall('## What was done\n- Shipped the API (diff read).'));
+    parseQueue.push({ score: 5, gaps: [] });
+
+    const res = await generateHandoffFlow({ repoId: REPO, taskId: 't-ui' });
+
+    expect(res.cached).toBe(false);
+    expect(mockListRelatedCommits).toHaveBeenCalledWith(REPO, ['t-api', 't-ui']);
+    expect(mockGetCommitDiff).toHaveBeenCalledWith(REPO, 'c1c1c1c');
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it('review-retry: low score injects gaps, agent redrafts, second review passes', async () => {
+    seedTasks();
+    createQueue.push(draftCall('## What was done\n- thin draft'));
+    createQueue.push(draftCall('## What was done\n- improved draft'));
+    parseQueue.push({ score: 3, gaps: ['no mention of which file changed'] });
+    parseQueue.push({ score: 4, gaps: [] });
+
+    const res = await generateHandoffFlow({ repoId: REPO, taskId: 't-ui' });
+
+    expect(res.handoffMarkdown).toContain('improved draft');
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+    expect(mockParse).toHaveBeenCalledTimes(2);
+
+    // The gaps were re-injected into the Phase-1 thread as a user message.
+    const secondCallMessages = (
+      mockCreate.mock.calls[1] as unknown as [
+        { messages: Array<{ role: string; content: string }> },
+      ]
+    )[0].messages;
+    const injected = secondCallMessages.find(
+      (m) => m.role === 'user' && m.content.includes('scored 3/5'),
+    );
+    expect(injected?.content).toContain('no mention of which file changed');
+
+    // retries >= 1 is reflected in the persisted review rounds (2 model turns).
+    expect(updateSpy).toHaveBeenCalledWith(
+      TASK,
+      expect.objectContaining({
+        handoffReview: { score: 4, rounds: 2, generatedAt: '__ts__' },
+      }),
+    );
+  });
+
+  it('forced-stop: read tools every round until the cap forces a draftHandoff', async () => {
+    seedTasks();
+    // Rounds 0-3: keep calling a read tool (never draft). Round 4 (the cap-1
+    // round) is forced to draftHandoff by tool_choice — script a draft for it.
+    for (let i = 0; i < 4; i++) {
+      createQueue.push(toolThenNothing('readTeamState', {}));
+    }
+    createQueue.push(draftCall('## What was done\n- forced draft'));
+    // Even a failing review (score 2) finalizes once the cap is reached.
+    parseQueue.push({ score: 2, gaps: ['still thin'] });
+
+    const res = await generateHandoffFlow({ repoId: REPO, taskId: 't-ui' });
+
+    expect(res.handoffMarkdown).toContain('forced draft');
+    expect(mockCreate).toHaveBeenCalledTimes(5);
+    // The 5th (final) create was forced to draftHandoff via tool_choice.
+    const lastCall = mockCreate.mock.calls[4] as unknown as [
+      { tool_choice?: { function?: { name?: string } } },
+    ];
+    expect(lastCall[0].tool_choice?.function?.name).toBe('draftHandoff');
+    // Finalized despite score < 4.
+    expect(updateSpy).toHaveBeenCalledWith(
+      TASK,
+      expect.objectContaining({
+        handoffReview: { score: 2, rounds: 5, generatedAt: '__ts__' },
+      }),
+    );
+  });
+
+  it('reviewer failure (null parse) is treated as a pass (Q3)', async () => {
+    seedTasks();
+    createQueue.push(draftCall('## What was done\n- draft'));
+    parseQueue.push(null); // reviewer refuses / empty → pass
+
+    const res = await generateHandoffFlow({ repoId: REPO, taskId: 't-ui' });
+
+    expect(res.cached).toBe(false);
+    expect(res.handoffMarkdown).toContain('draft');
+    expect(updateSpy).toHaveBeenCalledWith(
+      TASK,
+      expect.objectContaining({
+        handoffReview: { score: 4, rounds: 1, generatedAt: '__ts__' },
+      }),
+    );
+  });
+
+  it('draftHandoff precedence: a draft + read tool in one turn finalizes the draft (Q6)', async () => {
+    seedTasks();
+    createQueue.push({
+      toolCalls: [
+        { id: 'lc', name: 'listRelatedCommits', args: {} },
+        { id: 'd1', name: 'draftHandoff', args: { markdown: '## What was done\n- both' } },
+      ],
+    });
+    parseQueue.push({ score: 5, gaps: [] });
+
+    const res = await generateHandoffFlow({ repoId: REPO, taskId: 't-ui' });
+
+    expect(res.handoffMarkdown).toContain('both');
+    // draftHandoff won → the read tool was NOT executed this turn.
+    expect(mockListRelatedCommits).not.toHaveBeenCalled();
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
-  it('throws internal when OpenAI returns nothing', async () => {
+  it('throws internal when the draft markdown is empty', async () => {
     seedTasks();
-    nextContent = null;
+    createQueue.push(draftCall(''));
 
     await expect(
       generateHandoffFlow({ repoId: REPO, taskId: 't-ui' }),
