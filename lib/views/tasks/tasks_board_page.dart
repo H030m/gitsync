@@ -7,6 +7,7 @@ import '../../services/navigation.dart';
 import '../../theme/app_dimens.dart';
 import '../../view_models/members_vm.dart';
 import '../../view_models/tasks_board_vm.dart';
+import 'widgets/status_picker.dart';
 import 'widgets/task_graph_tab.dart';
 
 // TasksBoardPage — kanban (看板) + dependency-graph (關聯圖) tabs.
@@ -324,8 +325,10 @@ class _BoardSection extends StatelessWidget {
 }
 
 // One task row in a section: leading status circle (tap = mark done), title,
-// trailing assignee avatar. Tapping the row opens TaskDetails. Done rows show a
-// filled check circle whose tap is absorbed (no-op) instead of navigating.
+// trailing assignee avatar. Tapping the row opens TaskDetails; long-pressing
+// it opens the shared status picker for an arbitrary transition. Done rows
+// show a filled check circle whose tap is absorbed (no-op) instead of
+// navigating.
 class _SectionTaskRow extends StatelessWidget {
   const _SectionTaskRow({
     required this.vm,
@@ -348,6 +351,7 @@ class _SectionTaskRow extends StatelessWidget {
         context,
         listen: false,
       ).goTaskDetails(vm.repoId, task.id),
+      onLongPress: () => _pickStatus(context),
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: AppDimens.spacingSm + AppDimens.spacingXs,
@@ -385,6 +389,24 @@ class _SectionTaskRow extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  // Long-press: shared three-state picker → write the chosen status. Picking
+  // the current status (or dismissing) is a no-op. Same async-gap discipline
+  // as [_markDone]: capture messenger + strings BEFORE the awaits (stateless
+  // row, no `mounted`).
+  Future<void> _pickStatus(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final s = context.l10n;
+    final picked = await showStatusPicker(context, current: task.status);
+    if (picked == null || picked == task.status) return;
+    try {
+      await vm.updateStatus(task.id, picked);
+    } catch (e) {
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(content: Text(s.updateStatusFailed(e))));
+    }
   }
 
   // Stateless row: capture the messenger + strings BEFORE the await so no

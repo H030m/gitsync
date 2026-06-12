@@ -14,6 +14,7 @@ import '../../view_models/members_vm.dart';
 import '../../view_models/repo_vm.dart';
 import '../../view_models/tasks_board_vm.dart';
 import '../../widgets/markdown_view.dart';
+import 'widgets/status_picker.dart';
 
 // Sentinels returned by the assignee picker: clear the assignee, or trigger a
 // GitHub-collaborator import (vs. `null` = dismissed, or a uid = pick that user).
@@ -146,6 +147,25 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
         ..showSnackBar(
           SnackBar(content: Text(s.couldNotUpdateAssignee)),
         );
+    }
+  }
+
+  // Open the shared three-state picker for the main task's status chip and
+  // write the chosen status through the board ViewModel (stream refreshes the
+  // chip). Picking the current status (or dismissing) is a no-op.
+  Future<void> _changeStatus(Task task) async {
+    final s = context.l10n;
+    final tasksVm = context.read<TasksBoardViewModel>();
+    final messenger = ScaffoldMessenger.of(context);
+    final picked = await showStatusPicker(context, current: task.status);
+    if (picked == null || picked == task.status) return;
+    try {
+      await tasksVm.updateStatus(task.id, picked);
+    } catch (e) {
+      if (!mounted) return;
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(content: Text(s.updateStatusFailed(e))));
     }
   }
 
@@ -289,7 +309,10 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
                         ),
                       ),
                       const SizedBox(width: AppDimens.spacingSm),
-                      _StatusChip(status: task.status),
+                      _StatusChip(
+                        status: task.status,
+                        onTap: () => _changeStatus(task),
+                      ),
                       const SizedBox(width: AppDimens.spacingXs),
                       Icon(Icons.chevron_right,
                           color: scheme.onSurfaceVariant, size: 20),
@@ -587,10 +610,13 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
   }
 }
 
-// Status pill, shared by the header + task-reference tiles.
+// Status pill, shared by the header + task-reference tiles. When [onTap] is
+// set (only the main task's chip) it becomes a tappable status editor with a
+// dropdown affordance; related-task tiles leave it null (read-only).
 class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.status});
+  const _StatusChip({required this.status, this.onTap});
   final TaskStatus status;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -607,20 +633,28 @@ class _StatusChip extends StatelessWidget {
           scheme.onSecondaryContainer,
         ),
     };
-    return Container(
+    final content = Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppDimens.spacingMd,
         vertical: AppDimens.spacingSm - 2,
       ),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(AppDimens.radiusLg),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            status.wire,
+            style: theme.textTheme.labelMedium
+                ?.copyWith(color: fg, fontWeight: FontWeight.w700),
+          ),
+          if (onTap != null) Icon(Icons.arrow_drop_down, size: 18, color: fg),
+        ],
       ),
-      child: Text(
-        status.wire,
-        style: theme.textTheme.labelMedium
-            ?.copyWith(color: fg, fontWeight: FontWeight.w700),
-      ),
+    );
+    return Material(
+      color: bg,
+      borderRadius: BorderRadius.circular(AppDimens.radiusLg),
+      clipBehavior: Clip.antiAlias,
+      child: onTap == null ? content : InkWell(onTap: onTap, child: content),
     );
   }
 }

@@ -68,6 +68,7 @@ class AppStrings {
       _('Tap the + button to add tasks.', '請點擊右下角 + 號來新增任務');
   String updateStatusFailed(Object e) =>
       _('Failed to update status: $e', '更新狀態失敗:$e');
+  String get changeStatusTitle => _('Change status', '變更狀態');
 
   // ---- Add task ----
   String get addTaskTitle => _('Add task', '新增任務');

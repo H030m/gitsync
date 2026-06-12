@@ -265,6 +265,51 @@ void main() {
     expect(repo.lastUpdatedStatus, TaskStatus.done);
   });
 
+  testWidgets(
+      'long-pressing a row opens the status picker and choosing a status '
+      'updates it', (tester) async {
+    final repo = _StubTaskRepo([
+      _task('t1', 'Alpha', TaskStatus.todo),
+    ]);
+    await _pumpAt(tester, _harness(repo), const Size(500, 800));
+
+    await tester.longPress(find.text('Alpha'));
+    await tester.pumpAndSettle();
+
+    // The sheet shows its title plus all three options (the section headers
+    // already display 待辦/進行中/完成 once each, hence two of each now).
+    expect(find.text('變更狀態'), findsOneWidget);
+    expect(find.text('待辦'), findsNWidgets(2));
+    expect(find.text('進行中'), findsNWidgets(2));
+    expect(find.text('完成'), findsNWidgets(2));
+
+    // Pick 進行中 (not just done — arbitrary transitions are the point).
+    await tester.tap(find.text('進行中').last);
+    await tester.pumpAndSettle();
+
+    expect(repo.lastUpdatedId, 't1');
+    expect(repo.lastUpdatedStatus, TaskStatus.inProgress);
+    // Sheet is gone and the row moved to the 進行中 section.
+    expect(find.text('變更狀態'), findsNothing);
+    expect(find.text('Alpha'), findsOneWidget);
+  });
+
+  testWidgets('picking the current status from the picker writes nothing',
+      (tester) async {
+    final repo = _StubTaskRepo([
+      _task('t1', 'Alpha', TaskStatus.todo),
+    ]);
+    await _pumpAt(tester, _harness(repo), const Size(500, 800));
+
+    await tester.longPress(find.text('Alpha'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('待辦').last);
+    await tester.pumpAndSettle();
+
+    expect(repo.lastUpdatedId, isNull);
+    expect(repo.lastUpdatedStatus, isNull);
+  });
+
   testWidgets('tapping a row navigates to task details', (tester) async {
     final repo = _StubTaskRepo([
       _task('t1', 'Alpha', TaskStatus.todo),
