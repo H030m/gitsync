@@ -1,5 +1,6 @@
 import '../../config/app_config.dart';
 import '../../data/dummy_data.dart';
+import '../../models/ask_repo.dart';
 import '../../models/commit_graph.dart';
 import '../../models/daily_brief.dart';
 import '../../models/discord_chat.dart';
@@ -262,6 +263,89 @@ class FakeFunctionsService implements FunctionsService {
             '*(這是 fake backend 的示範回覆。)*';
 
     return DailyBriefReply(answer: answer, sources: sources);
+  }
+
+  @override
+  Future<AskRepoReply> askRepo({
+    required String repoId,
+    required String question,
+    List<AskRepoTurn> history = const [],
+    String? runId,
+  }) async {
+    // Outlast the FakeAgentRunRepository's 4-step canned trace (one step per
+    // simulatedLatency) so the sheet shows the trace appear live BEFORE the
+    // answer resolves.
+    await Future.delayed(AppConfig.simulatedLatency * 5);
+
+    final terms = question
+        .toLowerCase()
+        .split(RegExp(r'[^a-z0-9一-鿿]+'))
+        .where((t) => t.length >= 2)
+        .toSet();
+
+    // Commit sources — keyword-match the demo commits (mirrors the backend).
+    final commits = DummyData.commits;
+    final matchedCommits = commits.where((c) {
+      final hay = '${c.message} ${c.aiSummary ?? ''}'.toLowerCase();
+      return terms.any(hay.contains);
+    }).toList();
+    final commitHits = matchedCommits.isNotEmpty ? matchedCommits : commits;
+    final commitSources = commitHits
+        .map((c) => DailyBriefSource(
+              sha: c.sha,
+              message: c.message.split('\n').first,
+              authorName: c.author.name,
+              authorLogin: c.author.login,
+              aiSummary: c.aiSummary,
+              linkedTaskIds: c.linkedTaskIds,
+            ))
+        .toList();
+
+    // Discord sources — keyword-match the demo messages, grouped with one
+    // neighbor before/after each match for context (mirrors discordChat fake).
+    final all = DummyData.discordMessages;
+    final matchIdxs = <int>[];
+    for (var i = 0; i < all.length; i++) {
+      if (terms.any(all[i].content.toLowerCase().contains)) matchIdxs.add(i);
+    }
+    DiscordChatSource src(int i, {required bool isMatch}) {
+      final m = all[i];
+      return DiscordChatSource(
+        messageId: m.id,
+        channelId: m.channelId,
+        authorName: m.authorName,
+        content: m.content,
+        timestamp: m.timestamp.toDate().toIso8601String(),
+        isMatch: isMatch,
+      );
+    }
+
+    final snippets = <DiscordChatSnippet>[];
+    for (final i in matchIdxs.take(2)) {
+      final idxs = <int>{
+        if (i - 1 >= 0) i - 1,
+        i,
+        if (i + 1 < all.length) i + 1,
+      }.toList()
+        ..sort();
+      snippets.add(DiscordChatSnippet(
+        channelId: all[i].channelId,
+        messages: [for (final j in idxs) src(j, isMatch: j == i)],
+      ));
+    }
+
+    final answer = matchedCommits.isNotEmpty || matchIdxs.isNotEmpty
+        ? '根據這個 repo 的活動與討論，我找到 ${matchedCommits.length} 個相關 commit'
+            '${matchIdxs.isNotEmpty ? '、以及相關的 Discord 對話' : ''}（見下方來源）。\n\n'
+            '*(這是 fake backend 的示範回覆。)*'
+        : '我在這個 repo 裡找不到和你問題直接相關的內容；以下列出最近的提交作為參考。\n\n'
+            '*(這是 fake backend 的示範回覆。)*';
+
+    return AskRepoReply(
+      answer: answer,
+      commits: commitSources,
+      snippets: snippets,
+    );
   }
 
   // ---- Discord -----------------------------------------------------------

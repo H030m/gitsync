@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../models/task.dart';
 import '../../services/authentication.dart';
 import '../../services/navigation.dart';
+import '../../view_models/ask_repo_vm.dart';
 import '../../view_models/tasks_board_vm.dart';
+import '../ask/ask_repo_sheet.dart';
 
 // Shared shell with bottom navigation for the per-repo routes
 // (tasks / daily / stats / settings). Wraps the ShellRoute child from
@@ -146,8 +149,18 @@ class _RepoShellState extends State<RepoShell> {
 
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     return Scaffold(
       body: widget.child,
+      // Global "Ask GitSync" entry — present on every tab (one input replaces
+      // the per-tab search/filter/classify pages). Reads the ShellRoute-scoped
+      // AskRepoViewModel so the FAB and sheet share one transcript.
+      floatingActionButton: FloatingActionButton(
+        tooltip: s.askRepoTooltip,
+        onPressed: () =>
+            AskRepoSheet.show(context, context.read<AskRepoViewModel>()),
+        child: const Icon(Icons.auto_awesome),
+      ),
       bottomNavigationBar: _SlidingBottomNav(
         key: RepoShell._navKey,
         selectedIndex: _selectedIndex(context),

@@ -1,6 +1,7 @@
 import 'package:cloud_functions/cloud_functions.dart';
 
 import '../config/app_config.dart';
+import '../models/ask_repo.dart';
 import '../models/commit_graph.dart';
 import '../models/daily_brief.dart';
 import '../models/discord_chat.dart';
@@ -73,6 +74,19 @@ abstract class FunctionsService {
     String? endDate,
     required String question,
     List<DailyBriefTurn> history = const [],
+  });
+
+  /// Asks the repo-wide AI assistant a question (the global "Ask GitSync"
+  /// chat). The backend runs an agentic loop over the full read-only tool set
+  /// and returns the answer plus the commits + Discord clusters it surfaced.
+  /// [history] is prior turns, oldest first, for follow-up context. [runId] is a
+  /// client-generated id for the agent tool-trace doc the UI streams while
+  /// waiting (omit to skip the trace).
+  Future<AskRepoReply> askRepo({
+    required String repoId,
+    required String question,
+    List<AskRepoTurn> history = const [],
+    String? runId,
   });
 
   /// Asks the AI to explain the work behind one commit (the commit tree map's
@@ -289,6 +303,23 @@ class _LiveFunctionsService implements FunctionsService {
       'history': history.map((t) => t.toMap()).toList(),
     });
     return DailyBriefReply.fromMap(Map<String, dynamic>.from(res.data as Map));
+  }
+
+  @override
+  Future<AskRepoReply> askRepo({
+    required String repoId,
+    required String question,
+    List<AskRepoTurn> history = const [],
+    String? runId,
+  }) async {
+    final res = await _callable('askRepo').call({
+      'repoId': repoId,
+      'question': question,
+      'history': history.map((t) => t.toMap()).toList(),
+      // Carried in so the backend writes the trace doc the UI is streaming.
+      'runId': ?runId,
+    });
+    return AskRepoReply.fromMap(Map<String, dynamic>.from(res.data as Map));
   }
 
   @override
