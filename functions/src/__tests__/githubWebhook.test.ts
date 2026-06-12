@@ -394,4 +394,126 @@ describe('githubWebhook', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body).toMatchObject({ ok: true });
   });
+
+  // ---- PR opened / ready_for_review (triage agent) ------------------------
+
+  function prOpenedBody(extra?: Partial<Record<string, unknown>>) {
+    return {
+      action: 'opened',
+      repository: { name: REPO, owner: { login: OWNER } },
+      pull_request: {
+        number: 9,
+        title: 'Add login UI',
+        body: 'Hooks up the login flow.',
+        draft: false,
+        html_url: 'https://github.com/octocat/hello/pull/9',
+        created_at: '2026-06-08T00:00:00Z',
+        user: { login: 'alice' },
+        head: { ref: 'feature/login', sha: 'sha-head' },
+        base: { ref: 'develop' },
+      },
+      ...extra,
+    };
+  }
+
+  it('PR opened (non-draft) → state=open pullRequests doc with author + head sha', async () => {
+    const req = makeReq({ body: prOpenedBody(), event: 'pull_request' });
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const pr = store.get(`apps/gitsync/repos/${REPO_ID}/pullRequests/9`);
+    expect(pr).toMatchObject({
+      repoId: REPO_ID,
+      number: 9,
+      state: 'open',
+      title: 'Add login UI',
+      authorLogin: 'alice',
+      headBranch: 'feature/login',
+      headSha: 'sha-head',
+      baseBranch: 'develop',
+      htmlUrl: 'https://github.com/octocat/hello/pull/9',
+      openedAt: '2026-06-08T00:00:00Z',
+    });
+    expect(pr).not.toHaveProperty('triagedAt');
+  });
+
+  it('PR opened as draft → no write (avoid noise; ready_for_review will re-fire)', async () => {
+    const body = prOpenedBody();
+    (body.pull_request as Record<string, unknown>).draft = true;
+    const req = makeReq({ body, event: 'pull_request' });
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(store.get(`apps/gitsync/repos/${REPO_ID}/pullRequests/9`)).toBeUndefined();
+  });
+
+  it('PR ready_for_review (draft → ready) → state=open doc written', async () => {
+    const body = prOpenedBody({ action: 'ready_for_review' });
+    const req = makeReq({ body, event: 'pull_request' });
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const pr = store.get(`apps/gitsync/repos/${REPO_ID}/pullRequests/9`);
+    expect(pr).toMatchObject({ state: 'open', authorLogin: 'alice' });
+  });
+
+  it('PR reopened / synchronize → no write (we do not re-triage)', async () => {
+    for (const action of ['reopened', 'synchronize']) {
+      const body = prOpenedBody({ action });
+      const req = makeReq({
+        body,
+        event: 'pull_request',
+        delivery: `d-${action}`,
+      });
+      const res = makeRes();
+      await handler(req, res);
+      expect(res.statusCode).toBe(200);
+      expect(store.get(`apps/gitsync/repos/${REPO_ID}/pullRequests/9`)).toBeUndefined();
+    }
+  });
+
+  it('PR opened then merged → triagedAt + open metadata preserved alongside merge fields', async () => {
+    // Open it.
+    await handler(
+      makeReq({ body: prOpenedBody(), event: 'pull_request', delivery: 'd-open' }),
+      makeRes(),
+    );
+    // Simulate the trigger having written triage results.
+    const path = `apps/gitsync/repos/${REPO_ID}/pullRequests/9`;
+    store.set(path, {
+      ...(store.get(path) ?? {}),
+      aiSummary: 'Adds login.',
+      triagedAt: '__earlier__',
+    });
+    // Now the same PR merges. handlePR uses merge:true so triage fields survive.
+    const merged = {
+      action: 'closed',
+      repository: { name: REPO, owner: { login: OWNER } },
+      pull_request: {
+        number: 9,
+        title: 'Add login UI',
+        body: 'closes #3',
+        merged: true,
+        merged_at: '2026-06-08T01:00:00Z',
+        head: { ref: 'feature/login' },
+        base: { ref: 'develop' },
+      },
+    };
+    await handler(
+      makeReq({ body: merged, event: 'pull_request', delivery: 'd-merge' }),
+      makeRes(),
+    );
+
+    const pr = store.get(path);
+    expect(pr).toMatchObject({
+      state: 'merged',
+      mergedAt: '2026-06-08T01:00:00Z',
+      // Triage fields from earlier are preserved by the merge:true write.
+      aiSummary: 'Adds login.',
+      triagedAt: '__earlier__',
+    });
+  });
 });

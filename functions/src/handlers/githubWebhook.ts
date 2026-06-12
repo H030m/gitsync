@@ -125,36 +125,72 @@ async function handlePush(repoId: string, body: Record<string, unknown>): Promis
 }
 
 /**
- * Writes a raw pullRequests doc, but ONLY for merged PRs (action closed +
- * merged true). `title`/`body` are persisted because `onPRMerged` (Layer 2)
- * parses closing keywords (`closes/fixes/resolves #N`) out of them. No task
- * status changes here.
+ * Writes a raw pullRequests doc. Two paths today:
+ *   * action=closed && merged=true → state=`merged`. `onPRMerged` parses
+ *     closing keywords (`closes/fixes/resolves #N`) and marks tasks done.
+ *   * action=opened OR action=ready_for_review → state=`open`.
+ *     `onPullRequestOpened` runs the triage flow (summary + reviewers + risk
+ *     tags). Drafts (PRs with `draft===true`) are skipped — they re-fire as
+ *     `ready_for_review` when the author marks them ready.
+ *
+ * `reopened` and `synchronize` are deliberately ignored to avoid re-triaging
+ * on every push. No task status changes here either way.
  */
 async function handlePR(repoId: string, body: Record<string, unknown>): Promise<void> {
   const action = body.action as string | undefined;
   const pr = body.pull_request as Record<string, unknown> | undefined;
-  if (action !== 'closed' || !pr || pr.merged !== true) return;
+  if (!pr) return;
 
   const number = pr.number as number | undefined;
   if (number === undefined) return;
 
   const head = (pr.head as Record<string, unknown> | undefined) ?? {};
   const base = (pr.base as Record<string, unknown> | undefined) ?? {};
+  const user = (pr.user as Record<string, unknown> | undefined) ?? {};
 
-  await db.doc(`apps/gitsync/repos/${repoId}/pullRequests/${number}`).set({
-    repoId,
-    number,
-    title: (pr.title as string | undefined) ?? '',
-    body: (pr.body as string | undefined) ?? '',
-    state: 'merged',
-    // GitHub's pull_request webhook payload does not include the commit SHA
-    // list; Layer 2 (onPRMerged) can fetch them via the API if needed.
-    commitShas: [],
-    headBranch: (head.ref as string | undefined) ?? '',
-    baseBranch: (base.ref as string | undefined) ?? '',
-    mergedAt: (pr.merged_at as string | undefined) ?? null,
-    createdAt: FieldValue.serverTimestamp(),
-  });
+  if (action === 'closed' && pr.merged === true) {
+    await db.doc(`apps/gitsync/repos/${repoId}/pullRequests/${number}`).set({
+      repoId,
+      number,
+      title: (pr.title as string | undefined) ?? '',
+      body: (pr.body as string | undefined) ?? '',
+      state: 'merged',
+      // GitHub's pull_request webhook payload does not include the commit SHA
+      // list; Layer 2 (onPRMerged) can fetch them via the API if needed.
+      commitShas: [],
+      headBranch: (head.ref as string | undefined) ?? '',
+      baseBranch: (base.ref as string | undefined) ?? '',
+      mergedAt: (pr.merged_at as string | undefined) ?? null,
+      createdAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return;
+  }
+
+  // PR newly visible to humans: real `opened` (non-draft) or draft→ready.
+  const isOpenedEvent =
+    (action === 'opened' && pr.draft !== true) ||
+    action === 'ready_for_review';
+  if (!isOpenedEvent) return;
+
+  await db.doc(`apps/gitsync/repos/${repoId}/pullRequests/${number}`).set(
+    {
+      repoId,
+      number,
+      title: (pr.title as string | undefined) ?? '',
+      body: (pr.body as string | undefined) ?? '',
+      state: 'open',
+      authorLogin: (user.login as string | undefined) ?? '',
+      headBranch: (head.ref as string | undefined) ?? '',
+      headSha: (head.sha as string | undefined) ?? '',
+      baseBranch: (base.ref as string | undefined) ?? '',
+      htmlUrl: (pr.html_url as string | undefined) ?? '',
+      openedAt: (pr.created_at as string | undefined) ?? null,
+      // `triagedAt` left unset on purpose — onPullRequestOpened guards on this
+      // to keep itself idempotent across re-deliveries / re-fires.
+      createdAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
 }
 
 /**
