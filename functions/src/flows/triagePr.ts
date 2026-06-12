@@ -13,6 +13,7 @@
 // over commit messages by a *given* author — the wrong direction).
 import { logger } from 'firebase-functions/v2';
 
+import { db } from '../admin';
 import { getOpenAI, MODELS } from '../config';
 import { readTeamState } from '../tools/assignTools';
 import {
@@ -38,9 +39,29 @@ export interface RecommendedReviewer {
   discordUserId: string | null;
 }
 
+/**
+ * Per-pick scoring breakdown — persisted on the pullRequests doc alongside
+ * the existing triage fields so future-you can retune the load weights from
+ * real data without rerunning. Pure observability; not consumed by the UI.
+ */
+export interface ReviewerScoreBreakdown {
+  userId: string;
+  /** Raw file-history score (sum of 1/(rank+1) over the top changed files). */
+  rawScore: number;
+  /** Blended load = recentPicks + ACTIVE_ISSUE_LOAD_WEIGHT × activeIssueCount. */
+  load: number;
+  /** Multiplicative penalty = 1 / (1 + LOAD_LAMBDA × load). */
+  loadPenalty: number;
+  /** rawScore × loadPenalty — the value used for ranking. */
+  finalScore: number;
+  /** Which slot this candidate filled (1 = expert, 2 = apprentice). */
+  slot: 1 | 2;
+}
+
 export interface TriagePrResult {
   summary: string;
   recommendedReviewers: RecommendedReviewer[];
+  reviewerScores: ReviewerScoreBreakdown[];
   riskTags: string[];
 }
 
@@ -54,6 +75,23 @@ const TOP_FILES_FOR_REVIEWERS = 10;
 const REVIEWER_PICK_COUNT = 2;
 /** Patch chars sent to the LLM per file (keeps prompt under ~2K tokens). */
 const PATCH_PREVIEW_CHARS = 600;
+
+// --- Workload-aware tuning knobs (A+D — 06-13) -----------------------------
+// All in one place so retuning is a one-line edit. λ controls how aggressively
+// load suppresses an otherwise-strong candidate; the active-issue weight folds
+// task-assignment workload into the same "load" signal as triage picks.
+/** Multiplicative penalty steepness: penalty = 1 / (1 + λ × load). */
+const LOAD_LAMBDA = 0.3;
+/** How much an open task assignment counts vs. one recent triage pick. */
+const ACTIVE_ISSUE_LOAD_WEIGHT = 0.25;
+/** How far back "recent triage picks" looks (days). */
+const LOAD_WINDOW_DAYS = 14;
+/** Hard cap on the per-repo PR scan (newest first). */
+const LOAD_RECENT_PR_CAP = 50;
+/** Slot-2 freshness filter looks at the most recent N triaged PRs. */
+const FRESHNESS_WINDOW_PRS = 5;
+/** Slot 2 only fills if the candidate's raw file-history score clears this. */
+const SLOT_2_SCORE_FLOOR = 0.5;
 
 /**
  * Deterministic risk tags. Cheap, no LLM cost; high-signal hints for
@@ -135,17 +173,101 @@ async function tallyCommittersByPath(
 }
 
 /**
- * Maps tallied GitHub logins → roster members. Anyone whose login isn't in
- * the repo's members list is dropped (we can't @ a non-member on Discord
- * and won't recommend an outside contributor anyway). Sorted by score desc,
- * ties broken by lower `activeIssueCount` (don't pile work on the busiest).
+ * Result of {@link recentTriageLoad} — read once per triage, passed in to
+ * {@link pickReviewers} so that function stays pure (testable without
+ * Firestore mocks).
  */
-async function pickReviewers(
+export interface RecentTriageLoad {
+  /** userId → number of times they were a recommended reviewer in the window. */
+  picksByUserId: Map<string, number>;
+  /**
+   * `recommendedReviewers` arrays of the most recent {@link FRESHNESS_WINDOW_PRS}
+   * triaged PRs (each as a Set<userId>). The slot-2 picker avoids candidates
+   * present in ANY of these sets to rotate reviewers.
+   */
+  recentReviewerSets: Set<string>[];
+}
+
+/**
+ * Reads recent triage outcomes on this repo to feed the workload-aware picker.
+ * One Firestore query (~50 docs, cheap) — best-effort: returns empty load on
+ * any failure so a new repo (no PRs yet) or a transient outage doesn't break
+ * triage.
+ *
+ * NOTE: we filter on `triagedAt > <14d ago>` rather than `triagedAt != null`
+ * because Firestore's `!=` requires composite indexes the project doesn't
+ * carry. Range filter + ordered limit gives the same selection cheaper.
+ */
+export async function recentTriageLoad(
+  repoId: string,
+): Promise<RecentTriageLoad> {
+  const since = new Date(Date.now() - LOAD_WINDOW_DAYS * 86_400_000);
+  let docs;
+  try {
+    const snap = await db
+      .collection(`apps/gitsync/repos/${repoId}/pullRequests`)
+      .where('triagedAt', '>', since)
+      .orderBy('triagedAt', 'desc')
+      .limit(LOAD_RECENT_PR_CAP)
+      .get();
+    docs = snap.docs;
+  } catch (err) {
+    logger.warn('triagePr: recentTriageLoad failed (empty load)', {
+      repoId,
+      err: String(err),
+    });
+    return { picksByUserId: new Map(), recentReviewerSets: [] };
+  }
+
+  const picksByUserId = new Map<string, number>();
+  const recentReviewerSets: Set<string>[] = [];
+
+  docs.forEach((d, idx) => {
+    const data = d.data() ?? {};
+    const reviewers = Array.isArray(data.recommendedReviewers)
+      ? (data.recommendedReviewers as unknown[]).filter(
+          (x): x is string => typeof x === 'string',
+        )
+      : [];
+    for (const uid of reviewers) {
+      picksByUserId.set(uid, (picksByUserId.get(uid) ?? 0) + 1);
+    }
+    if (idx < FRESHNESS_WINDOW_PRS) {
+      recentReviewerSets.push(new Set(reviewers));
+    }
+  });
+
+  return { picksByUserId, recentReviewerSets };
+}
+
+/**
+ * Maps tallied GitHub logins → roster members and ranks them with a
+ * workload-aware multiplicative penalty (A+D design, 06-13):
+ *
+ *   finalScore = fileHistoryScore × 1 / (1 + λ × load)
+ *   load       = recentPicks(14d) + ACTIVE_ISSUE_LOAD_WEIGHT × activeIssueCount
+ *
+ * Slot 1 ("expert") is the head of the sorted candidates. Slot 2
+ * ("apprentice") prefers a candidate not present in any of the last
+ * {@link FRESHNESS_WINDOW_PRS} reviewer sets — falling back to the next-highest
+ * `finalScore` candidate if the freshness filter empties the pool. Slot 2 is
+ * skipped entirely if its raw `fileHistoryScore` is below
+ * {@link SLOT_2_SCORE_FLOOR} (better one correct pick than a rubber stamp).
+ *
+ * Pure function — Firestore reads happen ONCE in the caller via
+ * {@link recentTriageLoad}, so the existing test suite continues to work
+ * without DB mocks.
+ */
+export async function pickReviewers(
   repoId: string,
   prAuthorLogin: string,
   scoreByLogin: Map<string, number>,
-): Promise<RecommendedReviewer[]> {
-  if (scoreByLogin.size === 0) return [];
+  load: RecentTriageLoad,
+): Promise<{
+  reviewers: RecommendedReviewer[];
+  scores: ReviewerScoreBreakdown[];
+}> {
+  if (scoreByLogin.size === 0) return { reviewers: [], scores: [] };
 
   let roster;
   try {
@@ -155,29 +277,76 @@ async function pickReviewers(
       repoId,
       err: String(err),
     });
-    return [];
+    return { reviewers: [], scores: [] };
   }
 
   const lowerAuthor = prAuthorLogin.toLowerCase();
   const candidates = roster
     .filter((m) => m.githubLogin)
     .filter((m) => m.githubLogin!.toLowerCase() !== lowerAuthor)
-    .map((m) => ({
-      member: m,
-      score: scoreByLogin.get(m.githubLogin!.toLowerCase()) ?? 0,
-    }))
-    .filter((c) => c.score > 0);
+    .map((m) => {
+      const rawScore = scoreByLogin.get(m.githubLogin!.toLowerCase()) ?? 0;
+      const recentPicks = load.picksByUserId.get(m.userId) ?? 0;
+      const memberLoad =
+        recentPicks + ACTIVE_ISSUE_LOAD_WEIGHT * m.activeIssueCount;
+      const loadPenalty = 1 / (1 + LOAD_LAMBDA * memberLoad);
+      const finalScore = rawScore * loadPenalty;
+      return { member: m, rawScore, load: memberLoad, loadPenalty, finalScore };
+    })
+    .filter((c) => c.rawScore > 0);
 
-  candidates.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    return a.member.activeIssueCount - b.member.activeIssueCount;
+  // Sort by finalScore desc — load is already folded in, so no secondary key.
+  // (Ties on finalScore are vanishingly rare with the float blend; any ordering
+  // among them is fine.)
+  candidates.sort((a, b) => b.finalScore - a.finalScore);
+
+  if (candidates.length === 0) return { reviewers: [], scores: [] };
+
+  const picked: typeof candidates = [];
+  const scores: ReviewerScoreBreakdown[] = [];
+
+  // Slot 1: the head.
+  const slot1 = candidates[0];
+  picked.push(slot1);
+  scores.push({
+    userId: slot1.member.userId,
+    rawScore: slot1.rawScore,
+    load: slot1.load,
+    loadPenalty: slot1.loadPenalty,
+    finalScore: slot1.finalScore,
+    slot: 1,
   });
 
-  return candidates.slice(0, REVIEWER_PICK_COUNT).map((c) => ({
+  if (REVIEWER_PICK_COUNT >= 2 && candidates.length >= 2) {
+    const recentUnion = new Set<string>();
+    for (const s of load.recentReviewerSets) for (const u of s) recentUnion.add(u);
+
+    // Skip the slot-1 pick; among the rest, prefer freshness then fall back
+    // to next-highest finalScore.
+    const remaining = candidates.slice(1);
+    const fresh = remaining.find((c) => !recentUnion.has(c.member.userId));
+    const slot2 = fresh ?? remaining[0];
+
+    // Quality floor: better to return 1 reviewer than rubber-stamp slot 2.
+    if (slot2 && slot2.rawScore >= SLOT_2_SCORE_FLOOR) {
+      picked.push(slot2);
+      scores.push({
+        userId: slot2.member.userId,
+        rawScore: slot2.rawScore,
+        load: slot2.load,
+        loadPenalty: slot2.loadPenalty,
+        finalScore: slot2.finalScore,
+        slot: 2,
+      });
+    }
+  }
+
+  const reviewers = picked.map((c) => ({
     userId: c.member.userId,
     githubLogin: c.member.githubLogin,
     discordUserId: c.member.discordUserId,
   }));
+  return { reviewers, scores };
 }
 
 /**
@@ -255,7 +424,12 @@ export async function triagePr(input: TriagePrInput): Promise<TriagePrResult> {
       prNumber: input.prNumber,
       err: String(err),
     });
-    return { summary: '', recommendedReviewers: [], riskTags: [] };
+    return {
+      summary: '',
+      recommendedReviewers: [],
+      reviewerScores: [],
+      riskTags: [],
+    };
   }
 
   const riskTags = computeRiskTags(files);
@@ -269,16 +443,21 @@ export async function triagePr(input: TriagePrInput): Promise<TriagePrResult> {
     )
     .slice(0, TOP_FILES_FOR_REVIEWERS);
 
-  const [scoreByLogin, summary] = await Promise.all([
+  // Workload signal — one Firestore read per triage, run in parallel with the
+  // GitHub history + OpenAI calls.
+  const [scoreByLogin, summary, load] = await Promise.all([
     tallyCommittersByPath(input, topByChurn),
     summarizeDiff(input, files),
+    recentTriageLoad(input.repoId),
   ]);
 
-  const recommendedReviewers = await pickReviewers(
-    input.repoId,
-    input.prAuthorLogin,
-    scoreByLogin,
-  );
+  const { reviewers: recommendedReviewers, scores: reviewerScores } =
+    await pickReviewers(
+      input.repoId,
+      input.prAuthorLogin,
+      scoreByLogin,
+      load,
+    );
 
-  return { summary, recommendedReviewers, riskTags };
+  return { summary, recommendedReviewers, reviewerScores, riskTags };
 }
