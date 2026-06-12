@@ -11,11 +11,14 @@
 | 隊員 | 在做什麼 | 預計動的檔案 |
 |---|---|---|
 | 嘉駿 | Discord 整合（模組 B）| `discord-bot/`、`functions/src/handlers/discordMessageIngest.ts` |
-| 廷煥 | FCM 通知收尾（接手 06-03，分支 `feature/foreground-notifications`）| `lib/services/local_notifications.dart`、`lib/services/push_messaging.dart`、`lib/views/settings/settings_page.dart` |
 
 > 嘉駿剛把骨架鋪完（Sprint 1）。**接下來各模組隊員就 [`ARCHITECTURE.md §9`](../ARCHITECTURE.md#9-模組職責--隊員分工建議) 開工**，避免動到別人的層；如要跨層改動先在這列出。
 
 ---
+
+## 2026-06-12
+
+- **廷煥 — FCM live e2e 全過、PR #38 併入 main，06-03 收工**：環境補齊（flutterfire configure + SHA 登記）後在 Android emulator live mode 完整驗證：fcmToken 寫入 ✓、done→自動通知下游（前景重畫/背景推播/點擊導頁）✓、per-locale 繁中推播文案 ✓、權限拒絕 SnackBar 提示 ✓。併入 develop 零衝突、analyze/test 全綠。**經隊友同意 PR #38 直接合入 main**。⚠️ 待辦：main 需 back-merge 回 develop（目前 develop 沒有 FCM 工作，兩分支分岔 9 vs 7）；另發現後端既有 bug `summarizeDay` 回 internal（與通知無關，owner 請查 cloud log）。詳見 [113062340_tinghuan.md](./113062340_tinghuan.md)。
 
 ## 2026-06-10
 

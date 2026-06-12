@@ -99,7 +99,17 @@
 
 * [x] Settings「傳送測試通知」在 Android 裝置/模擬器上確實彈出系統通知（2026-06-10 廷煥實測）
 * [x] 權限被拒時按測試通知有明確回饋（SnackBar 提示開啟通知；2026-06-10 廷煥實測）
-* [ ] 後端 `notifyAssignee` 真發的 FCM：app 前景會重畫為可見通知、背景會收到系統推播
-* [ ] 點擊通知導向正確頁面（現行為 `/notify`，沿用既有 deep link 邏輯）
-* [ ] `flutter analyze` 0 error/0 warning、`flutter test` 全綠
-* [ ] 與最新 develop 合併乾淨（Settings 頁衝突解掉）後可開 PR
+* [x] 後端 `notifyAssignee` 真發的 FCM：app 前景重畫為可見通知 ✓、背景收到系統推播 ✓
+  （2026-06-12 廷煥 live e2e：done→auto-notify 下游 assignee，繁中標題「有新任務可以開始了」
+  證實 per-locale push 也生效；log 證據 `[FCM foreground]` / `[FCM background]`）
+* [x] 點擊通知導向正確頁面（2026-06-12 實測）
+* [x] `flutter analyze` 0 error/0 warning、`flutter test` 79/79（2026-06-10）
+* [x] 與 develop 合併乾淨（實際無衝突）→ PR #38 開出後**經隊友同意直接併入 main**
+  （2026-06-12；偏離 git-workflow 的 develop-first 慣例，屬團隊當下決定）
+  ⚠️ 後續：develop 尚未包含本工作，main/develop 已分岔（9 vs 7 commits）——
+  待 owner（嘉駿）把 main back-merge 回 develop
+
+> e2e 環境備註：模擬器 DNS 兩度抽風（`Failed to resolve name` 連發、Firestore 斷流）——
+> 冷重啟 emulator（`-no-snapshot-load -dns-server 8.8.8.8`）可解；FCM 走 GMS 通道不受影響。
+> 另記：Daily 頁 `summarizeDay` callable 回 `[firebase_functions/internal]`（後端既有問題，
+> 與本 task 無關，待轉告 owner）。
