@@ -2575,6 +2575,9 @@ class _DigestSourceMessages extends StatelessWidget {
       child: ExpansionTile(
         tilePadding: EdgeInsets.zero,
         childrenPadding: const EdgeInsets.only(bottom: AppDimens.spacingSm),
+        // ExpansionTile centers its children by default — left-align them.
+        expandedCrossAxisAlignment: CrossAxisAlignment.start,
+        expandedAlignment: Alignment.centerLeft,
         dense: true,
         leading: Icon(Icons.forum_outlined, size: 16, color: scheme.secondary),
         title: Text(
