@@ -178,12 +178,22 @@ class _RepoShellState extends State<RepoShell> {
           // AnimatedSwitcher reuses the transition builder for both incoming
           // and outgoing children; we detect direction by the animation's
           // status — forward/completed = entering, reverse/dismissed = exiting.
+          //
+          // The outgoing child's animation runs in REVERSE (value 1 → 0), so
+          // both children's Tween must be authored as:
+          //   value=1 → on center (just visible / still visible)
+          //   value=0 → at the off-screen offset (about to enter / fully gone)
+          // That means both children share the same `end` (center) and pick
+          // their `begin` by direction. Authoring the outgoing Tween as
+          // `begin: zero, end: exitOffset` would snap it sideways at value=1
+          // and slide it back toward center as it fades — the bug we just
+          // fixed.
           final isIncoming = animation.status == AnimationStatus.forward ||
               animation.status == AnimationStatus.completed;
           final enterOffset = Offset(goingRight ? 0.06 : -0.06, 0);
           final exitOffset = Offset(goingRight ? -0.06 : 0.06, 0);
-          final beginOffset = isIncoming ? enterOffset : Offset.zero;
-          final endOffset = isIncoming ? Offset.zero : exitOffset;
+          final beginOffset = isIncoming ? enterOffset : exitOffset;
+          const endOffset = Offset.zero;
           return FadeTransition(
             opacity: animation,
             child: SlideTransition(
