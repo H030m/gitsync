@@ -2523,6 +2523,69 @@ class _DigestPanelState extends State<_DigestPanel> {
 
 // Collapsible Discord digest card with a lock toggle (frozen when locked) and
 // an "ask AI to adjust this summary" field. The header is tappable to
+// Collapsible "referenced messages" list under a digest: the messages the
+// summary was built from, each with its send time, so the user can see what was
+// discussed and WHEN (not just the outline). Collapsed by default.
+class _DigestSourceMessages extends StatelessWidget {
+  const _DigestSourceMessages({required this.sources});
+  final List<DiscordDigestSource> sources;
+
+  static String _stamp(DateTime? dt) {
+    if (dt == null) return '';
+    final d = dt.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}/${two(d.month)}/${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.l10n;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Theme(
+      // Strip the default ExpansionTile dividers so it sits flush in the card.
+      data: theme.copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(bottom: AppDimens.spacingSm),
+        dense: true,
+        leading: Icon(Icons.forum_outlined, size: 16, color: scheme.secondary),
+        title: Text(
+          s.digestSourceMessages(sources.length),
+          style: theme.textTheme.labelMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        children: [
+          for (final m in sources)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: RichText(
+                text: TextSpan(
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                  children: [
+                    if (_stamp(m.timestamp).isNotEmpty)
+                      TextSpan(
+                        text: '${_stamp(m.timestamp)}  ',
+                        style: theme.textTheme.labelSmall
+                            ?.copyWith(color: scheme.onSurfaceVariant),
+                      ),
+                    TextSpan(
+                      text: '${m.authorName}: ',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    TextSpan(text: m.content),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 // collapse/expand; the lock button animates; the card border animates to a
 // "frozen" tint when locked.
 class _DigestCard extends StatefulWidget {
@@ -2675,6 +2738,12 @@ class _DigestCardState extends State<_DigestCard> {
                           width: double.infinity,
                           child: MarkdownView(data: digest.markdown),
                         ),
+                        if (digest.sourceMessages.isNotEmpty) ...[
+                          const SizedBox(height: AppDimens.spacingSm),
+                          _DigestSourceMessages(
+                            sources: digest.sourceMessages,
+                          ),
+                        ],
                         const SizedBox(height: AppDimens.spacingSm),
                         const Divider(height: 1),
                         const SizedBox(height: AppDimens.spacingSm),

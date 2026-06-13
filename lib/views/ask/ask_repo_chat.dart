@@ -12,6 +12,16 @@ import '../../widgets/markdown_view.dart';
 // and the Daily page's Summary tab (`daily_view_page.dart`) reuse these so the
 // transcript rendering stays identical across both entry points.
 
+/// `yyyy/MM/dd HH:mm` in local time for a source timestamp (commit time /
+/// Discord message time). Empty string when [dt] is null. Shared by the commit
+/// and Discord source panels so every cited source reads the same way.
+String formatStamp(DateTime? dt) {
+  if (dt == null) return '';
+  final d = dt.toLocal();
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${d.year}/${two(d.month)}/${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
+}
+
 /// One turn: a right-aligned user bubble, or an AI markdown answer with optional
 /// commit + Discord source panels.
 class AskRepoTurnView extends StatelessWidget {
@@ -263,12 +273,8 @@ class _CommitSourcesPanel extends StatelessWidget {
   const _CommitSourcesPanel({required this.group});
   final AskRepoCommitGroup group;
 
-  /// `MM-dd HH:00` in local time (precise to the hour). Empty when absent.
-  static String _hourStamp(DateTime? dt) {
-    if (dt == null) return '';
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${two(dt.month)}-${two(dt.day)} ${two(dt.hour)}:00';
-  }
+  /// `yyyy/MM/dd HH:mm` in local time. Empty when absent.
+  static String _stamp(DateTime? dt) => formatStamp(dt);
 
   @override
   Widget build(BuildContext context) {
@@ -325,7 +331,7 @@ class _CommitSourcesPanel extends StatelessWidget {
               separatorBuilder: (_, _) => const Divider(height: 12),
               itemBuilder: (_, i) {
                 final src = sources[i];
-                final stamp = _hourStamp(src.committedAt);
+                final stamp = _stamp(src.committedAt);
                 final meta = [
                   src.authorName.isEmpty ? src.authorLogin : src.authorName,
                   if (stamp.isNotEmpty) stamp,
@@ -434,6 +440,17 @@ class _DiscordSourcesPanel extends StatelessWidget {
                                   m.isMatch ? FontWeight.w600 : FontWeight.w400,
                             ),
                             children: [
+                              if (formatStamp(
+                                      DateTime.tryParse(m.timestamp ?? ''))
+                                  .isNotEmpty)
+                                TextSpan(
+                                  text:
+                                      '${formatStamp(DateTime.tryParse(m.timestamp!))}  ',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: scheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                ),
                               TextSpan(
                                 text: '${m.authorName}: ',
                                 style: const TextStyle(

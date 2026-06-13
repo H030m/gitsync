@@ -268,6 +268,8 @@ class AppStrings {
   String get discordDigest => _('Discord digest', 'Discord digest');
   String discordDigestForDate(String date) =>
       _('Discord digest · $date', 'Discord digest · $date');
+  String digestSourceMessages(int n) =>
+      _('Referenced messages ($n)', '參考訊息（$n）');
   String get noDigestInRange => _(
       'No digest in this range. Use "Refresh current range" above to pull messages.',
       '這個範圍還沒有摘要。用上方的「重新整理目前範圍」拉取訊息。');
