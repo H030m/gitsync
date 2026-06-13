@@ -2521,8 +2521,35 @@ class _DigestPanelState extends State<_DigestPanel> {
   }
 }
 
-// Collapsible Discord digest card with a lock toggle (frozen when locked) and
-// an "ask AI to adjust this summary" field. The header is tappable to
+/// The messages a digest references, with timestamps. Prefers the set the
+/// backend persisted on the digest doc (`sourceMessages`); for older digests
+/// written before that field existed, falls back to the day's streamed messages
+/// (filtered to the digest's Asia/Taipei day) so the panel still appears. Capped
+/// to keep the list bounded.
+List<DiscordDigestSource> _digestSources(
+  DiscordDigest digest,
+  DiscordMessagesViewModel vm,
+) {
+  if (digest.sourceMessages.isNotEmpty) return digest.sourceMessages;
+  String taipeiKey(DateTime ts) {
+    final t = ts.toUtc().add(const Duration(hours: 8));
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${t.year}-${two(t.month)}-${two(t.day)}';
+  }
+  final sameDay = vm.messages
+      .where((m) => taipeiKey(m.timestamp.toDate()) == digest.date)
+      .toList()
+    ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+  return sameDay
+      .take(50)
+      .map((m) => DiscordDigestSource(
+            authorName: m.authorName,
+            content: m.content,
+            timestamp: m.timestamp.toDate().toLocal(),
+          ))
+      .toList();
+}
+
 // Collapsible "referenced messages" list under a digest: the messages the
 // summary was built from, each with its send time, so the user can see what was
 // discussed and WHEN (not just the outline). Collapsed by default.
@@ -2738,10 +2765,14 @@ class _DigestCardState extends State<_DigestCard> {
                           width: double.infinity,
                           child: MarkdownView(data: digest.markdown),
                         ),
-                        if (digest.sourceMessages.isNotEmpty) ...[
+                        // The messages this digest references. Prefer the set
+                        // the backend persisted with the digest; for older
+                        // digests written before that existed, fall back to the
+                        // day's streamed messages so the panel still shows.
+                        if (_digestSources(digest, vm).isNotEmpty) ...[
                           const SizedBox(height: AppDimens.spacingSm),
                           _DigestSourceMessages(
-                            sources: digest.sourceMessages,
+                            sources: _digestSources(digest, vm),
                           ),
                         ],
                         const SizedBox(height: AppDimens.spacingSm),
