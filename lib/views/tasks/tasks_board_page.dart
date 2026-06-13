@@ -10,7 +10,6 @@ import '../../widgets/section_card.dart';
 import '../../view_models/members_vm.dart';
 import '../../view_models/tasks_board_vm.dart';
 import '../../widgets/staggered_entry.dart';
-import 'add_todo_page.dart';
 import 'widgets/status_picker.dart';
 import 'widgets/task_graph_tab.dart';
 
@@ -58,14 +57,10 @@ class TasksBoardPage extends StatelessWidget {
         floatingActionButton: FloatingActionButton(
           heroTag: 'tasks-board-add-fab',
           tooltip: s.addTaskTitle,
-          onPressed: () async {
-            final added = await showAddTaskSheet(context, repoId);
-            if (added == true && context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(s.taskAdded)),
-              );
-            }
-          },
+          onPressed: () => Provider.of<NavigationService>(
+            context,
+            listen: false,
+          ).goAddTodo(repoId),
           child: const Icon(Icons.add),
         ),
         body: Consumer<TasksBoardViewModel>(

@@ -202,7 +202,7 @@ class AddTodoPage extends StatefulWidget {
 }
 
 class _AddTodoPageState extends State<AddTodoPage> {
-  _AddMode _mode = _AddMode.manual;
+  _AddMode _mode = _AddMode.ai;
 
   // Manual mode.
   final _titleCtrl = TextEditingController();
@@ -296,14 +296,14 @@ class _AddTodoPageState extends State<AddTodoPage> {
                   child: SegmentedButton<_AddMode>(
                     segments: [
                       ButtonSegment(
-                        value: _AddMode.manual,
-                        icon: const Icon(Icons.edit_outlined),
-                        label: Text(s.manual),
-                      ),
-                      ButtonSegment(
                         value: _AddMode.ai,
                         icon: const Icon(Icons.auto_awesome),
                         label: Text(s.aiBreakdown),
+                      ),
+                      ButtonSegment(
+                        value: _AddMode.manual,
+                        icon: const Icon(Icons.edit_outlined),
+                        label: Text(s.manual),
                       ),
                     ],
                     selected: {_mode},
