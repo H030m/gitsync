@@ -55,6 +55,7 @@ class TasksBoardPage extends StatelessWidget {
           ),
         ),
         floatingActionButton: FloatingActionButton(
+          heroTag: 'tasks-board-add-fab',
           onPressed: () => Provider.of<NavigationService>(
             context,
             listen: false,
