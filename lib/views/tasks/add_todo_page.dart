@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../l10n/app_strings.dart';
@@ -95,13 +94,7 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
         AppDimens.spacingMd,
         MediaQuery.of(context).viewInsets.bottom + AppDimens.spacingMd,
       ),
-      child: CallbackShortcuts(
-        bindings: {
-          const SingleActivator(LogicalKeyboardKey.enter, meta: true): _submit,
-          const SingleActivator(LogicalKeyboardKey.enter, control: true):
-              _submit,
-        },
-        child: Column(
+      child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -192,7 +185,6 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
             ],
           ],
         ),
-      ),
     );
   }
 }
@@ -296,14 +288,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
       appBar: AppBar(title: Text(s.addTaskTitle)),
       body: Padding(
         padding: const EdgeInsets.all(AppDimens.spacingMd),
-        child: CallbackShortcuts(
-          bindings: {
-            const SingleActivator(LogicalKeyboardKey.enter, meta: true):
-                _addManual,
-            const SingleActivator(LogicalKeyboardKey.enter, control: true):
-                _addManual,
-          },
-          child: Column(
+        child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (!(_mode == _AddMode.ai && _step == 1)) ...[
@@ -341,7 +326,6 @@ class _AddTodoPageState extends State<AddTodoPage> {
             ],
           ),
         ),
-      ),
     );
   }
 
