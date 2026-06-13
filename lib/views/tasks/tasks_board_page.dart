@@ -6,6 +6,7 @@ import '../../models/task.dart';
 import '../../services/navigation.dart';
 import '../../theme/app_dimens.dart';
 import '../../theme/app_motion.dart';
+import '../../widgets/section_card.dart';
 import '../../view_models/members_vm.dart';
 import '../../view_models/tasks_board_vm.dart';
 import '../../widgets/staggered_entry.dart';
@@ -446,43 +447,41 @@ class _EmptyBoard extends StatelessWidget {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(AppDimens.spacingLg),
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(AppDimens.spacingLg),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHighest,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.add,
-                    size: 32,
-                    color: scheme.onSurfaceVariant,
-                  ),
+        child: SectionCard(
+          padding: const EdgeInsets.all(AppDimens.spacingLg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  shape: BoxShape.circle,
                 ),
-                const SizedBox(height: AppDimens.spacingMd),
-                Text(
-                  s.emptyBoardTitle,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    color: scheme.onSurface,
-                  ),
+                child: Icon(
+                  Icons.add,
+                  size: 32,
+                  color: scheme.onSurfaceVariant,
                 ),
-                const SizedBox(height: AppDimens.spacingXs),
-                Text(
-                  s.emptyBoardMsg,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
+              ),
+              const SizedBox(height: AppDimens.spacingMd),
+              Text(
+                s.emptyBoardTitle,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  color: scheme.onSurface,
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: AppDimens.spacingXs),
+              Text(
+                s.emptyBoardMsg,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -716,13 +715,15 @@ class _CardBody extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppDimens.spacingSm + 2),
       decoration: BoxDecoration(
-        color: scheme.surface,
+        color: theme.brightness == Brightness.light
+            ? const Color(0xFFFFFFFF)
+            : scheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
         boxShadow: [
           BoxShadow(
-            color: scheme.shadow.withValues(alpha: elevated ? 0.22 : 0.08),
-            blurRadius: elevated ? 10 : 4,
+            color: scheme.shadow.withValues(alpha: elevated ? 0.22 : 0.06),
+            blurRadius: elevated ? 10 : 6,
             offset: const Offset(0, 2),
           ),
         ],

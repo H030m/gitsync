@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../l10n/app_strings.dart';
 import '../../theme/app_dimens.dart';
 import '../../view_models/members_vm.dart';
+import '../../widgets/section_card.dart';
 import '../../view_models/stats_vm.dart';
 import '../../view_models/tasks_board_vm.dart';
 import '../../widgets/markdown_view.dart';
@@ -148,75 +149,71 @@ class _ContributionTabState extends State<_ContributionTab> {
       padding: const EdgeInsets.all(AppDimens.spacingMd),
       children: [
         toggle,
-        Card(
-          margin: EdgeInsets.zero,
-          child: Padding(
-            padding: const EdgeInsets.all(AppDimens.spacingMd),
-            child: Column(
-              children: [
-                SizedBox(
-                  height: 240,
-                  width: 240,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      PieChart(
-                        PieChartData(
-                          sectionsSpace: 2,
-                          centerSpaceRadius: 28,
-                          sections: [
-                            for (final c in colored)
-                              PieChartSectionData(
-                                value: c.item.doneCount.toDouble(),
-                                color: c.color,
-                                radius: 90,
-                                // D2: no in-slice titles — the legend below
-                                // carries every author name + share.
-                                showTitle: false,
-                              ),
-                          ],
-                        ),
-                      ),
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            s.contributionTab,
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelMedium
-                                ?.copyWith(
-                                  color: scheme.onSurface,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                          ),
-                          Text(
-                            s.pieChart,
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelSmall
-                                ?.copyWith(color: scheme.onSurfaceVariant),
-                          ),
+        SectionCard(
+          child: Column(
+            children: [
+              SizedBox(
+                height: 240,
+                width: 240,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    PieChart(
+                      PieChartData(
+                        sectionsSpace: 2,
+                        centerSpaceRadius: 28,
+                        sections: [
+                          for (final c in colored)
+                            PieChartSectionData(
+                              value: c.item.doneCount.toDouble(),
+                              color: c.color,
+                              radius: 90,
+                              // D2: no in-slice titles — the legend below
+                              // carries every author name + share.
+                              showTitle: false,
+                            ),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: AppDimens.spacingMd),
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: AppDimens.spacingMd,
-                  runSpacing: AppDimens.spacingXs,
-                  children: [
-                    for (final c in colored)
-                      _LegendDot(
-                        color: c.color,
-                        label: '${c.item.label} — ${c.item.pct}%',
-                      ),
+                    ),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          s.contributionTab,
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelMedium
+                              ?.copyWith(
+                                color: scheme.onSurface,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                        Text(
+                          s.pieChart,
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: scheme.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: AppDimens.spacingMd),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: AppDimens.spacingMd,
+                runSpacing: AppDimens.spacingXs,
+                children: [
+                  for (final c in colored)
+                    _LegendDot(
+                      color: c.color,
+                      label: '${c.item.label} — ${c.item.pct}%',
+                    ),
+                ],
+              ),
+            ],
           ),
         ),
         const SizedBox(height: AppDimens.spacingMd),
@@ -256,22 +253,18 @@ class _ProgressTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(AppDimens.spacingMd),
       children: [
-        Card(
-          margin: EdgeInsets.zero,
-          child: Padding(
-            padding: const EdgeInsets.all(AppDimens.spacingMd),
-            child: Column(
-              children: [
-                for (var i = 0; i < authors.length; i++) ...[
-                  if (i > 0) const SizedBox(height: AppDimens.spacingMd),
-                  _AuthorSummaryRow(
-                    vm: vm,
-                    author: authors[i],
-                    color: palette[i % palette.length],
-                  ),
-                ],
+        SectionCard(
+          child: Column(
+            children: [
+              for (var i = 0; i < authors.length; i++) ...[
+                if (i > 0) const SizedBox(height: AppDimens.spacingMd),
+                _AuthorSummaryRow(
+                  vm: vm,
+                  author: authors[i],
+                  color: palette[i % palette.length],
+                ),
               ],
-            ),
+            ],
           ),
         ),
         const SizedBox(height: AppDimens.spacingMd),
@@ -504,9 +497,18 @@ class _CaptionCard extends StatelessWidget {
         vertical: AppDimens.spacingSm + AppDimens.spacingXs,
       ),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
+        color: theme.brightness == Brightness.light
+            ? const Color(0xFFFFFFFF)
+            : scheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.shadow.withValues(alpha: 0.06),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Text(
         text,
