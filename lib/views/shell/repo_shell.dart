@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/task.dart';
+import '../../router/shell_transitions.dart';
 import '../../services/authentication.dart';
 import '../../services/navigation.dart';
 import '../../theme/app_motion.dart';
@@ -148,8 +149,10 @@ class _RepoShellState extends State<RepoShell> {
   @override
   Widget build(BuildContext context) {
     final currentIndex = _selectedIndex(context);
-    // Page-swap animation was moved to the route level — see task
-    // 06-13-...custom-transition-page-at-gorouter-level.
+    // Page-swap animation lives at the route level via CustomTransitionPage +
+    // sharedAxisSlide (see lib/router/shell_transitions.dart). ShellNavSignal
+    // is updated below before navigating so the transition reads the
+    // right direction.
     return Scaffold(
       body: widget.child,
       bottomNavigationBar: _SlidingBottomNav(
@@ -157,6 +160,8 @@ class _RepoShellState extends State<RepoShell> {
         selectedIndex: currentIndex,
         items: _items,
         onTap: (i) {
+          ShellNavSignal.goingRight = i >= ShellNavSignal.previousIndex;
+          ShellNavSignal.previousIndex = i;
           context.go('/repos/${widget.repoId}/${_items[i].segment}');
         },
       ),

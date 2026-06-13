@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../config/app_config.dart';
+import '../theme/app_motion.dart';
 import '../view_models/commits_vm.dart';
 import '../view_models/daily_brief_vm.dart';
 import '../view_models/daily_report_vm.dart';
@@ -24,6 +25,7 @@ import '../views/stats/stats_view_page.dart';
 import '../views/tasks/add_todo_page.dart';
 import '../views/tasks/task_details_page.dart';
 import '../views/tasks/tasks_board_page.dart';
+import 'shell_transitions.dart';
 
 // Top-level GoRouter configuration. Matches ARCHITECTURE.md §3.
 //
@@ -113,8 +115,14 @@ final GoRouter appRouter = GoRouter(
       routes: [
         GoRoute(
           path: '/repos/:repoId/tasks',
-          builder: (_, state) => TasksBoardPage(
-            repoId: state.pathParameters['repoId']!,
+          pageBuilder: (ctx, state) => CustomTransitionPage<void>(
+            key: state.pageKey,
+            transitionDuration: AppMotion.nav,
+            reverseTransitionDuration: AppMotion.nav,
+            transitionsBuilder: sharedAxisSlide,
+            child: TasksBoardPage(
+              repoId: state.pathParameters['repoId']!,
+            ),
           ),
           routes: [
             GoRoute(
@@ -134,20 +142,38 @@ final GoRouter appRouter = GoRouter(
         ),
         GoRoute(
           path: '/repos/:repoId/daily',
-          builder: (_, state) => DailyViewPage(
-            repoId: state.pathParameters['repoId']!,
+          pageBuilder: (ctx, state) => CustomTransitionPage<void>(
+            key: state.pageKey,
+            transitionDuration: AppMotion.nav,
+            reverseTransitionDuration: AppMotion.nav,
+            transitionsBuilder: sharedAxisSlide,
+            child: DailyViewPage(
+              repoId: state.pathParameters['repoId']!,
+            ),
           ),
         ),
         GoRoute(
           path: '/repos/:repoId/stats',
-          builder: (_, state) => StatsViewPage(
-            repoId: state.pathParameters['repoId']!,
+          pageBuilder: (ctx, state) => CustomTransitionPage<void>(
+            key: state.pageKey,
+            transitionDuration: AppMotion.nav,
+            reverseTransitionDuration: AppMotion.nav,
+            transitionsBuilder: sharedAxisSlide,
+            child: StatsViewPage(
+              repoId: state.pathParameters['repoId']!,
+            ),
           ),
         ),
         GoRoute(
           path: '/repos/:repoId/settings',
-          builder: (_, state) => SettingsPage(
-            repoId: state.pathParameters['repoId']!,
+          pageBuilder: (ctx, state) => CustomTransitionPage<void>(
+            key: state.pageKey,
+            transitionDuration: AppMotion.nav,
+            reverseTransitionDuration: AppMotion.nav,
+            transitionsBuilder: sharedAxisSlide,
+            child: SettingsPage(
+              repoId: state.pathParameters['repoId']!,
+            ),
           ),
         ),
       ],

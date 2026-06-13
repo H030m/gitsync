@@ -1,85 +1,145 @@
 # Replace shell page-swap with CustomTransitionPage at GoRouter level
 
-## Status
-
-**Queued / planning-only**. Triggered manually when you're ready to
-re-introduce the directional slide between bottom-nav tabs. The previous
-shell-level `AnimatedSwitcher` attempt was reverted in task
-`06-13-revert-animatedswitcher-bottom-nav-swap-globalkey-duplication-crash`
-because keeping both routed subtrees alive simultaneously caused
-`Duplicate GlobalKey` crashes.
-
 ## Goal
 
-Re-introduce the bottom-nav directional slide animation the *correct* way:
-per-route transitions at the GoRouter layer (`CustomTransitionPage`), so
-each route owns its own widget tree and there are no overlapping GlobalKeys.
+Re-introduce the bottom-nav directional slide between tabs the *correct*
+way — per-route at the GoRouter layer (`CustomTransitionPage`) — so each
+route owns its own widget tree and there are no overlapping `GlobalKey`s
+like the shell-level `AnimatedSwitcher` attempt caused.
 
-## Why this architecture (the why behind the rewrite)
+## Repo state (auto-context, 2026-06-13)
 
-GoRouter's `ShellRoute` shares a shell widget but mounts each child route
-as a separate `Page`. If each tab's route declares a `pageBuilder` that
-returns a `CustomTransitionPage` with our directional slide, GoRouter's
-navigator handles the in/out animation between routes. The outgoing route
-is a different Navigator entry, not a sibling KeyedSubtree in the shell —
-so a `GlobalObjectKey` inside one route's tree never collides with the
-same key in the next route.
+* Router: `lib/router/app_router.dart`. `GoRouter` with a top-level
+  `ShellRoute` mounting four child routes by exact path:
+  * `/repos/:repoId/tasks` → `TasksBoardPage` (index 0)
+  * `/repos/:repoId/daily` → `DailyViewPage` (index 1)
+  * `/repos/:repoId/stats` → `StatsViewPage` (index 2)
+  * `/repos/:repoId/settings` → `SettingsPage` (index 3)
+* All four currently use `builder:` (not `pageBuilder:`) — these are the
+  ones we switch. Sub-routes (`tasks/add`, `tasks/:taskId`) stay on
+  `builder:` — they're not shell tabs.
+* Bottom-nav onTap: `context.go('/repos/${widget.repoId}/${_items[i].segment}');`
+  in `lib/views/shell/repo_shell.dart`. Tab order matches the index list above.
 
-## Design (sketch — to be locked in brainstorm)
+## Decisions (locked 2026-06-13)
 
-* Refactor `lib/router/app_router.dart` route definitions for the four
-  shell-mounted tabs (whatever the four `_NavItem` segments resolve to —
-  inspect `repo_shell.dart`: probably `tasks`, `daily`, `stats`, `settings`).
-* Replace each `GoRoute(builder: ...)` with `GoRoute(pageBuilder: (ctx,
-  state) => CustomTransitionPage(child: <Page>(), transitionsBuilder: ...))`.
-* Centralize the transition builder so all four routes share it — e.g.
-  `lib/router/shell_transitions.dart` exporting a `sharedAxisSlide`
-  function that returns the `(child, animation, secondaryAnimation, child)`
-  builder.
-* Animation: same shared-axis horizontal slide + fade design as the
-  reverted attempt — `Offset(±0.06, 0)` enter/exit, `AppMotion.nav`
-  duration, `AppMotion.emphasized` curve. **Use `secondaryAnimation` for
-  the outgoing direction** — GoRouter/Navigator gives us both, so we
-  don't have to detect direction from `animation.status` (which was the
-  source of the original off-center bug in this iteration's history).
-* Direction: GoRouter doesn't expose "previous index" directly. Easiest:
-  derive direction from the route order (compare the new route's nav
-  index against the old route's nav index via a `RouteObserver`, OR
-  read `state.extra` set by the bottom-nav onTap). The bottom-nav onTap
-  approach is cleaner — store the *intended* direction in
-  `Routemaster`-style extra data when calling `context.go(...)` and
-  the transition builder reads it via `state.extra`.
+* **Transition style**: shared-axis horizontal slide + cross-fade.
+  Mirrors the bottom-nav indicator's horizontal motion. Material 3's
+  standard pattern for tab-like navigation. Same visual goal as the
+  reverted shell-level attempt.
+* **Animation values**: enter from `Offset(±0.06, 0)`, exit to
+  `Offset(∓0.06, 0)`. Duration = `AppMotion.nav` (300 ms). Curve =
+  `AppMotion.emphasized` on both `CurvedAnimation`s. Fade via
+  `FadeTransition(opacity: animation)` parented inside the slide.
+* **Direction signal**: a tiny module-level `_ShellNavSignal` singleton
+  in `lib/router/shell_transitions.dart` exposing two static fields:
+  ```dart
+  static int previousIndex = 0;
+  static bool goingRight = true;
+  ```
+  Bottom-nav `onTap` updates them atomically BEFORE calling `context.go`:
+  ```dart
+  void _onTap(int i) {
+    _ShellNavSignal.goingRight = i >= _ShellNavSignal.previousIndex;
+    _ShellNavSignal.previousIndex = i;
+    context.go('/repos/${widget.repoId}/${_items[i].segment}');
+  }
+  ```
+  The `transitionsBuilder` on each route reads `_ShellNavSignal.goingRight`
+  every frame, so BOTH the outgoing page's exit slide and the incoming
+  page's enter slide use the same direction value for the same
+  navigation event. (Capturing at `pageBuilder` time would mis-direct the
+  outgoing page's exit on direction-reversing taps — verified by reasoning
+  through the lifecycle.)
+* **Shared transition builder**: lives in
+  `lib/router/shell_transitions.dart` as
+  `Widget sharedAxisSlide(BuildContext ctx, Animation<double> anim,
+  Animation<double> secAnim, Widget child)`. All four shell routes
+  reference this one function so the design is single-sourced and
+  retunable.
+* **Page key**: each `CustomTransitionPage` uses `state.pageKey` so
+  GoRouter can distinguish pages correctly (default behavior; just being
+  explicit).
+* **Sub-routes** (`tasks/add`, `tasks/:taskId`) keep `builder:` and use
+  GoRouter's default Material/Cupertino transition (push-from-the-side).
+  Out of scope for this task — only the four shell tabs change.
+* **GlobalKey risk**: gone by construction. Each shell route is a separate
+  `Page` in the Navigator stack; their trees never co-exist as siblings
+  of a common parent like the shell-level `AnimatedSwitcher` did.
 
-## Open questions (for brainstorm)
+## Files to touch
 
-* Should the slide be horizontal only (matches the indicator's motion) or
-  shared-axis (horizontal slide + cross-fade) per Material 3 navigation
-  pattern? — Recommend shared-axis (matches what we reverted).
-* Direction signal — `state.extra` carrying an intent, or a `RouteObserver`
-  tracking the previous index? — Recommend `state.extra` for simplicity.
-* What about back-gesture / browser-back? `secondaryAnimation` handles
-  reverse direction automatically once we wire it up.
-* Are there other GoRouter routes (non-shell, e.g. task-detail push) that
-  should also get a CustomTransitionPage, or is this scoped to the four
-  shell tabs only? — Recommend shell tabs only; task-detail keeps
-  platform default until a separate task asks.
+1. **NEW** `lib/router/shell_transitions.dart` — `_ShellNavSignal` class +
+   `sharedAxisSlide` builder.
+2. `lib/router/app_router.dart` — four shell routes switched from
+   `builder:` to `pageBuilder:` returning `CustomTransitionPage` with the
+   shared transition.
+3. `lib/views/shell/repo_shell.dart` — `_onTap` updates `_ShellNavSignal`
+   before `context.go`. (Two-line change.)
 
-## Out of scope
+## Requirements
 
-* Hero transitions (e.g. kanban card → task detail). Separate task.
-* The non-shell routes' transitions.
-* Re-introducing any shell-level `AnimatedSwitcher` — that pattern is
-  forbidden here. The route-level approach is the only architecture that
-  avoids the GlobalKey crash.
+* Single transition function shared across all four routes (single
+  source of truth, no copy-paste).
+* `AppMotion.nav` + `AppMotion.emphasized` consistent with the rest of
+  the polish task — no new hard-coded literals.
+* No widget in the routed subtree is wrapped or modified — the fix is
+  purely at the route / shell-nav level.
+* No new pubspec entries.
 
-## Pickup notes
+## Acceptance Criteria
 
-When you're ready to run this task:
+* [ ] Tapping each of the four bottom-nav tabs (in both directions, and
+      jumping non-adjacent tabs) plays a horizontal slide + fade. The
+      slide direction matches the direction the indicator pill just
+      moved.
+* [ ] No `Duplicate GlobalKey detected` exception in the console at any
+      point during normal tab cycling, including rapid mid-flight tab
+      taps.
+* [ ] The outgoing page slides toward the side it's leaving from, and
+      the incoming page slides in from the side it's entering — i.e. the
+      pages move *together*, not in opposite-then-same directions like
+      the reverted attempt's last-known bug.
+* [ ] Pushing a sub-route (e.g. tapping a task card → task details) still
+      uses the default push animation (we didn't touch sub-routes).
+* [ ] Browser back / Android back gesture reverses the animation direction
+      automatically via `secondaryAnimation` — no extra wiring needed.
+* [ ] `flutter test` — 98/98 green.
+* [ ] `flutter build web` — green.
 
-```bash
-python ./.trellis/scripts/task.py start \
-  .trellis/tasks/06-13-replace-shell-page-swap-with-customtransitionpage-at-gorouter-level
-```
+## Definition of Done
 
-…then load `trellis-brainstorm` to converge the open questions, curate
-jsonl, and dispatch `trellis-implement`.
+* All AC items pass.
+* `flutter analyze` skipped per project memory (CJK-path bug).
+* No widget tests added for animations themselves (not unit-testable),
+  but any refactor to `app_router.dart` must not break existing tests
+  that instantiate the router.
+
+## Out of Scope
+
+* Animating sub-routes (`tasks/add`, `tasks/:taskId`).
+* Hero transitions (e.g. kanban card → task detail).
+* Animating non-shell routes (`/`, `/repos`, `/notify`).
+* Adding the `animations` Flutter community package — implementing the
+  shared-axis pattern manually keeps the no-new-packages rule from the
+  polish task.
+
+## Technical Notes
+
+* Reading `_ShellNavSignal.goingRight` inside `transitionsBuilder`
+  (not capturing it in `pageBuilder`) is deliberate — every frame of
+  the active transition reads the latest module-level value, so both
+  the outgoing and incoming pages of the same navigation event agree on
+  direction. Capturing at `pageBuilder` time would store the previous
+  navigation's direction on the outgoing page, breaking direction
+  reversals.
+* `state.pageKey` is GoRouter's stable per-route key; we pass it
+  explicitly to make the intent clear and to avoid any future
+  duplicate-key warnings.
+* The `_ShellNavSignal` singleton is allowed even though it's mutable
+  global state because (a) the state is two ints, (b) it's read/written
+  only on the main isolate during navigation, and (c) the alternative
+  (a `RouteObserver` or a `Notifier` plumbed through `ChangeNotifierProvider`)
+  is meaningfully more code for the same result. Documented inline.
+* No widget-test exists for the shell's swap animation; AC is verified
+  by manual smoke per the team's standing Chrome / Path B workflow.
