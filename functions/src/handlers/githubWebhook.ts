@@ -56,6 +56,10 @@ async function handlePush(repoId: string, body: Record<string, unknown>): Promis
   const ref = body.ref as string | undefined;
   const branch = ref ? ref.replace('refs/heads/', '') : '';
 
+  const repository = body.repository as { default_branch?: string } | undefined;
+  const defaultBranch = repository?.default_branch;
+  const isDefaultBranch = !!defaultBranch && branch === defaultBranch;
+
   const commits = (body.commits as Array<Record<string, unknown>> | undefined) ?? [];
   if (commits.length === 0) return;
 
@@ -120,6 +124,32 @@ async function handlePush(repoId: string, body: Record<string, unknown>): Promis
         branch,
         err: String(r.reason),
       });
+    }
+  }
+
+  // Auto-complete signal (06-14): only commits pushed to the DEFAULT branch are
+  // eligible to auto-mark a linked task done. A commit first seen on a feature
+  // branch already exists by the time it merges to main, so the `.create()`
+  // above is skipped (ALREADY_EXISTS) and no onDocumentCreated re-fires. A
+  // `set(merge)` of `onDefaultBranch: true` fires a WRITE even on a pre-existing
+  // doc, which the dedicated `onCommitCompletesTask` (onDocumentWritten) trigger
+  // guards on (transition false→true). Non-default branches leave the flag absent.
+  if (isDefaultBranch) {
+    const marks = commits.map(async (c) => {
+      const sha = c.id as string | undefined;
+      if (!sha) return;
+      const docRef = db.doc(`apps/gitsync/repos/${repoId}/commits/${sha}`);
+      await docRef.set({ onDefaultBranch: true }, { merge: true });
+    });
+    const markResults = await Promise.allSettled(marks);
+    for (const r of markResults) {
+      if (r.status === 'rejected') {
+        logger.error('handlePush: onDefaultBranch mark failed', {
+          repoId,
+          branch,
+          err: String(r.reason),
+        });
+      }
     }
   }
 }
