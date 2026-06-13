@@ -188,6 +188,14 @@ class _BackendBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: isFake ? scheme.tertiaryContainer : scheme.primaryContainer,
         borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.shadow.withValues(alpha: 0.06),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

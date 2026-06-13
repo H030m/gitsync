@@ -12,6 +12,7 @@ import '../../l10n/app_strings.dart';
 import '../../repositories/user_repo.dart';
 import '../../theme/app_dimens.dart';
 import '../../theme/app_motion.dart';
+import '../../widgets/section_card.dart';
 import '../../view_models/ask_repo_vm.dart';
 import '../../view_models/commits_vm.dart';
 import '../../view_models/daily_brief_vm.dart';
@@ -494,9 +495,18 @@ class _DayReportCardState extends State<_DayReportCard> {
       duration: AppMotion.medium,
       curve: AppMotion.emphasizedDecel,
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: scheme.outlineVariant),
+        color: theme.brightness == Brightness.light
+            ? const Color(0xFFFFFFFF)
+            : scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.shadow.withValues(alpha: 0.06),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -504,7 +514,7 @@ class _DayReportCardState extends State<_DayReportCard> {
           // ---- Header (tap to collapse/expand) ----
           InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppDimens.radiusMd),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(
                 AppDimens.spacingMd,
@@ -687,33 +697,28 @@ class _HighlightsCard extends StatelessWidget {
     if (report.highlights.isEmpty && report.blockers.isEmpty) {
       return const SizedBox.shrink();
     }
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(top: AppDimens.spacingMd),
-      child: Card(
-        margin: EdgeInsets.zero,
-        child: Padding(
-          padding: const EdgeInsets.all(AppDimens.spacingMd),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (final h in report.highlights)
-                _BulletRow(
-                  icon: Icons.check_circle_outline,
-                  color: scheme.primary,
-                  text: h,
-                ),
-              if (report.highlights.isNotEmpty && report.blockers.isNotEmpty)
-                const SizedBox(height: AppDimens.spacingSm),
-              for (final b in report.blockers)
-                _BulletRow(
-                  icon: Icons.report_problem_outlined,
-                  color: scheme.error,
-                  text: b,
-                ),
-            ],
-          ),
+      child: SectionCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final h in report.highlights)
+              _BulletRow(
+                icon: Icons.check_circle_outline,
+                color: scheme.primary,
+                text: h,
+              ),
+            if (report.highlights.isNotEmpty && report.blockers.isNotEmpty)
+              const SizedBox(height: AppDimens.spacingSm),
+            for (final b in report.blockers)
+              _BulletRow(
+                icon: Icons.report_problem_outlined,
+                color: scheme.error,
+                text: b,
+              ),
+          ],
         ),
       ),
     );
@@ -733,68 +738,64 @@ class _CommitRollupCard extends StatelessWidget {
     final scheme = theme.colorScheme;
     return Padding(
       padding: const EdgeInsets.only(top: AppDimens.spacingMd),
-      child: Card(
-        margin: EdgeInsets.zero,
-        child: Padding(
-          padding: const EdgeInsets.all(AppDimens.spacingMd),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.merge_type_outlined,
-                    size: 20,
-                    color: scheme.tertiary,
-                  ),
-                  const SizedBox(width: AppDimens.spacingSm),
-                  Text(
-                    s.commitRollup,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppDimens.spacingSm),
-              for (final t in report.commitThemes)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: AppDimens.spacingSm),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              t.theme,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            if (t.summary.isNotEmpty)
-                              Text(
-                                t.summary,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: scheme.onSurfaceVariant,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      if (t.commitCount > 0) ...[
-                        const SizedBox(width: AppDimens.spacingSm),
-                        _CountChip(
-                          icon: Icons.commit_outlined,
-                          label: '${t.commitCount}',
-                        ),
-                      ],
-                    ],
+      child: SectionCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.merge_type_outlined,
+                  size: 20,
+                  color: scheme.tertiary,
+                ),
+                const SizedBox(width: AppDimens.spacingSm),
+                Text(
+                  s.commitRollup,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-            ],
-          ),
+              ],
+            ),
+            const SizedBox(height: AppDimens.spacingSm),
+            for (final t in report.commitThemes)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppDimens.spacingSm),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            t.theme,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          if (t.summary.isNotEmpty)
+                            Text(
+                              t.summary,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (t.commitCount > 0) ...[
+                      const SizedBox(width: AppDimens.spacingSm),
+                      _CountChip(
+                        icon: Icons.commit_outlined,
+                        label: '${t.commitCount}',
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -879,30 +880,27 @@ class _ContributionsCardState extends State<_ContributionsCard> {
     final scheme = theme.colorScheme;
     return Padding(
       padding: const EdgeInsets.only(top: AppDimens.spacingMd),
-      child: Card(
-        margin: EdgeInsets.zero,
-        child: Padding(
-          padding: const EdgeInsets.all(AppDimens.spacingMd),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.groups_outlined,
-                    size: 20,
-                    color: scheme.secondary,
+      child: SectionCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.groups_outlined,
+                  size: 20,
+                  color: scheme.secondary,
+                ),
+                const SizedBox(width: AppDimens.spacingSm),
+                Text(
+                  s.contributions,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
-                  const SizedBox(width: AppDimens.spacingSm),
-                  Text(
-                    s.contributions,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppDimens.spacingSm),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppDimens.spacingSm),
               Wrap(
                 spacing: AppDimens.spacingSm,
                 runSpacing: AppDimens.spacingSm,
@@ -958,10 +956,8 @@ class _ContributionsCardState extends State<_ContributionsCard> {
             ],
           ),
         ),
-      ),
-    );
+      );
   }
-
 }
 
 class _BulletRow extends StatelessWidget {
@@ -2578,12 +2574,23 @@ class _DigestCardState extends State<_DigestCard> {
       duration: AppMotion.medium,
       curve: AppMotion.emphasizedDecel,
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
+        color: theme.brightness == Brightness.light
+            ? const Color(0xFFFFFFFF)
+            : scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(AppDimens.radiusMd),
         border: Border.all(
-          color: locked ? scheme.primary : scheme.outlineVariant,
+          color: locked
+              ? scheme.primary
+              : scheme.outlineVariant.withValues(alpha: 0.4),
           width: locked ? 1.6 : 1,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.shadow.withValues(alpha: 0.06),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2591,7 +2598,7 @@ class _DigestCardState extends State<_DigestCard> {
           // ---- Header (tap to collapse/expand) ----
           InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppDimens.radiusMd),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(
                 AppDimens.spacingMd,
