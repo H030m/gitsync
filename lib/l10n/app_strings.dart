@@ -216,8 +216,11 @@ class AppStrings {
   String get dayNoReportHint => _(
       'No report for this day yet. Tap "Generate report" to let the AI summarize the day\'s commits, tasks and chat.',
       '這天還沒有日報。點「產生日報」讓 AI 整理當天的 commits、任務與聊天。');
+  String get highlights => _('Highlights', '重點');
   String get commitRollup => _('Commit rollup', '提交彙總');
   String get contributions => _('Contributions', '貢獻');
+  String generatingDayProgress(int done, int total) =>
+      _('Generating ($done/$total)', '產生中（$done/$total）');
   String get askAiAboutToday => _('Ask AI about today', '問 AI 今天的事');
   String get askAiAboutTodayHint => _('Ask AI about today…', '問 AI 今天的事…');
   String get briefHint => _(
@@ -293,11 +296,17 @@ class AppStrings {
       _('Related conversations ($n)', '相關對話（$n）');
   String get thinking => _('Thinking…', '思考中…');
 
+  String get askDiscordScope =>
+      _('Based on Discord messages', '基於 Discord 訊息');
+
   // ---- Ask GitSync (global repo-wide chat) ----
   String get askRepoTitle => _('Ask GitSync', '問 GitSync');
   String get askRepoTooltip => _('Ask GitSync', '問 GitSync');
   String get askRepoHint =>
       _('Ask GitSync about this repo…', '問問 GitSync 關於這個 repo…');
+  String get askRepoScope =>
+      _('Based on commits, tasks, and team discussion',
+        '基於 commit、任務與團隊討論');
   String get askRepoEmptyHint => _(
       'Ask anything about this repo — progress, people, code, commits, or team discussion.',
       '關於這個 repo 的任何事都可以問 —— 進度、成員、程式碼、commit，或團隊討論。');

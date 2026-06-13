@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/commit.dart';
 import '../models/commit_graph.dart';
@@ -24,9 +25,12 @@ class CommitsViewModel with ChangeNotifier {
        _repo = commitRepository ?? CommitRepository(),
        _functions = functionsService ?? FunctionsService() {
     _subscribe();
+    _loadViewModePref();
     // The branch view is the default visualization — fetch its data up front.
     loadGraph();
   }
+
+  static const _viewModePrefKey = 'commits_view_mode';
 
   final String _repoId;
   final CommitRepository _repo;
@@ -195,6 +199,26 @@ class CommitsViewModel with ChangeNotifier {
   CommitsViewMode _viewMode = CommitsViewMode.branch;
   CommitsViewMode get viewMode => _viewMode;
 
+  Future<void> _loadViewModePref() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final v = prefs.getString(_viewModePrefKey);
+      if (v != null) {
+        final mode = CommitsViewMode.values.where((e) => e.name == v);
+        if (mode.isNotEmpty) setViewMode(mode.first);
+      }
+    } catch (_) {
+      // No persistence available — keep the default.
+    }
+  }
+
+  Future<void> _saveViewModePref(CommitsViewMode mode) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_viewModePrefKey, mode.name);
+    } catch (_) {}
+  }
+
   CommitGraph? _graph;
   CommitGraph? get graph => _graph;
 
@@ -210,6 +234,7 @@ class CommitsViewModel with ChangeNotifier {
     if (mode == CommitsViewMode.branch && _graph == null && !_graphLoading) {
       loadGraph();
     }
+    _saveViewModePref(mode);
     notifyListeners();
   }
 
