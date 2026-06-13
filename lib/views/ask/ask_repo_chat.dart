@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/agent_run.dart';
 import '../../models/ask_repo.dart';
-import '../../models/daily_brief.dart';
 import '../../models/discord_chat.dart';
 import '../../theme/app_dimens.dart';
 import '../../widgets/markdown_view.dart';
@@ -70,9 +69,9 @@ class AskRepoTurnView extends StatelessWidget {
           ),
           const SizedBox(height: AppDimens.spacingSm),
           MarkdownView(data: turn.content),
-          if (turn.commitSources.isNotEmpty) ...[
+          for (final group in turn.commitGroups) ...[
             const SizedBox(height: AppDimens.spacingSm),
-            _CommitSourcesPanel(sources: turn.commitSources),
+            _CommitSourcesPanel(group: group),
           ],
           if (turn.discordSources.isNotEmpty) ...[
             const SizedBox(height: AppDimens.spacingSm),
@@ -255,16 +254,30 @@ class AskRepoInputBar extends StatelessWidget {
   }
 }
 
-// Scrollable panel of the commits the AI cited.
+// Scrollable panel of one commit window the AI cited. The header is the
+// window's label (a person / task / search); an unlabeled window falls back to
+// the localized "source commits" header. Each card shows the commit time to the
+// hour.
 class _CommitSourcesPanel extends StatelessWidget {
-  const _CommitSourcesPanel({required this.sources});
-  final List<DailyBriefSource> sources;
+  const _CommitSourcesPanel({required this.group});
+  final AskRepoCommitGroup group;
+
+  /// `MM-dd HH:00` in local time (precise to the hour). Empty when absent.
+  static String _hourStamp(DateTime? dt) {
+    if (dt == null) return '';
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(dt.month)}-${two(dt.day)} ${two(dt.hour)}:00';
+  }
 
   @override
   Widget build(BuildContext context) {
     final s = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final sources = group.commits;
+    final header = group.label.isNotEmpty
+        ? group.label
+        : s.askRepoCommitSources(sources.length);
     return Container(
       constraints: const BoxConstraints(maxHeight: 220),
       decoration: BoxDecoration(
@@ -287,10 +300,12 @@ class _CommitSourcesPanel extends StatelessWidget {
               children: [
                 Icon(Icons.commit_outlined, size: 16, color: scheme.tertiary),
                 const SizedBox(width: AppDimens.spacingXs),
-                Text(
-                  s.askRepoCommitSources(sources.length),
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                Expanded(
+                  child: Text(
+                    header,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
@@ -309,6 +324,12 @@ class _CommitSourcesPanel extends StatelessWidget {
               separatorBuilder: (_, _) => const Divider(height: 12),
               itemBuilder: (_, i) {
                 final src = sources[i];
+                final stamp = _hourStamp(src.committedAt);
+                final meta = [
+                  src.authorName.isEmpty ? src.authorLogin : src.authorName,
+                  if (stamp.isNotEmpty) stamp,
+                  src.shortSha,
+                ].join(' · ');
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -326,8 +347,7 @@ class _CommitSourcesPanel extends StatelessWidget {
                         ),
                       ),
                     Text(
-                      '${src.authorName.isEmpty ? src.authorLogin : src.authorName}'
-                      ' · ${src.shortSha}',
+                      meta,
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),

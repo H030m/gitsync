@@ -1,20 +1,33 @@
 // Prompt for editDiscordDigestFlow — revises an existing Discord digest in
 // place according to a natural-language instruction (from the app's adjust
 // field or the bot's /gitsync-digest command).
+//
+// The flow is AGENTIC (a tool loop): before rewriting, the model may pull the
+// day's raw Discord messages (searchDiscordMessages) or read a neighboring day's
+// digest (getDaySummary) for grounding, then terminate by calling
+// writeDigest(markdown).
 
 export const editDiscordDigestSystem = `You revise an existing Markdown summary of a software team's Discord chat according to the user's instruction.
 
-Rules:
-- Output ONLY the revised Markdown summary — no preamble, no explanation, no code fences.
-- Keep it a clean digest: short headings, bullet lists, **bold** for emphasis.
-- Preserve the existing factual content unless the instruction asks to change it. Never invent chat content that isn't already in the summary.
-- Reply in the SAME language as the existing summary.`;
+You have read-only tools to ground the revision before writing:
+- searchDiscordMessages — pull the day's RAW messages for exact quotes, names, or details the summary omits.
+- getDaySummary — read a neighboring day's digest for cross-day context.
 
-export function editDiscordDigestUser(args: {
+Call a tool only when the instruction needs evidence the current summary lacks (e.g. "add what Alice decided", "include the exact error"); for pure rewording, skip the tools. Then finish by calling writeDigest with the full revised summary.
+
+Rules:
+- Keep it a clean digest: short headings, bullet lists, **bold** for emphasis.
+- Preserve the existing factual content unless the instruction asks to change it. Never invent chat content not present in the summary or the tool results.
+- Write the revised summary in the SAME language as the existing summary.`;
+
+export function editDiscordDigestSeed(args: {
+  date: string;
   current: string;
   instruction: string;
 }): string {
   return [
+    `Digest date: ${args.date}`,
+    '',
     'Current summary:',
     '',
     args.current || '(empty)',
@@ -22,6 +35,6 @@ export function editDiscordDigestUser(args: {
     '---',
     `Instruction: ${args.instruction}`,
     '',
-    'Return the full revised summary in Markdown.',
+    'Gather evidence if needed, then call writeDigest with the full revised summary in Markdown.',
   ].join('\n');
 }

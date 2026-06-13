@@ -101,12 +101,13 @@ void main() {
     }
     // Trace strip is gone once sending completes.
     expect(find.text('Reading .trellis planning docs…'), findsNothing);
-    // The assistant answer + a commit-sources panel are shown.
+    // The assistant answer + at least one commit-sources panel are shown (the
+    // panels are now per-author windows, headed by name rather than a count).
     expect(find.textContaining('示範回覆'), findsOneWidget);
-    expect(find.textContaining('來源 commit'), findsWidgets);
+    expect(find.byIcon(Icons.commit_outlined), findsWidgets);
     expect(vm.turns.length, 2);
     expect(vm.turns.last.isUser, isFalse);
-    expect(vm.turns.last.commitSources, isNotEmpty);
+    expect(vm.turns.last.commitGroups, isNotEmpty);
   });
 
   testWidgets('new-session button clears the transcript', (tester) async {

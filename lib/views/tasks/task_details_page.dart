@@ -1,11 +1,16 @@
+import 'dart:async';
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../l10n/app_strings.dart';
+import '../../models/agent_run.dart';
 import '../../models/app_user.dart';
 import '../../models/member.dart';
 import '../../models/task.dart';
+import '../../repositories/agent_run_repo.dart';
 import '../../services/functions_service.dart';
 import '../../services/navigation.dart';
 import '../../theme/app_dimens.dart';
@@ -14,6 +19,7 @@ import '../../view_models/members_vm.dart';
 import '../../view_models/repo_vm.dart';
 import '../../view_models/tasks_board_vm.dart';
 import '../../widgets/markdown_view.dart';
+import '../ask/ask_repo_chat.dart' show AskRepoLiveTraceStrip;
 import 'widgets/status_picker.dart';
 
 // Sentinels returned by the assignee picker: clear the assignee, or trigger a
@@ -45,18 +51,49 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
   // the backend doesn't persist it back into the task stream (fake mode).
   String? _localHandoff;
 
+  // Live agent tool-trace for the in-flight handoff regenerate: the backend
+  // streams its "thinking" steps (reading commits, searching Discord, drafting,
+  // self-reviewing…) into an agentRuns doc while the callable runs, so the user
+  // sees progress instead of a bare spinner. Mirrors [AskRepoViewModel].
+  final AgentRunRepository _agentRuns = AgentRunRepository();
+  List<AgentStep> _handoffSteps = const [];
+  StreamSubscription<AgentRun?>? _handoffTraceSub;
+  static final _rng = Random();
+
+  /// A unique, path-safe trace doc id, generated BEFORE the callable so the UI
+  /// can subscribe immediately (the callable carries it in). The `handoff-`
+  /// prefix lets the fake trace repo pick handoff-flavored demo steps.
+  static String _newHandoffRunId() {
+    final ts = DateTime.now().microsecondsSinceEpoch;
+    // 30 bits (web-safe; 1<<32 overflows to 0 on JS) + microsecond ts ≈ unique.
+    final nonce = _rng.nextInt(1 << 30).toRadixString(16);
+    return 'handoff-$ts-$nonce';
+  }
+
   Future<void> _regenerateHandoff(Task task) async {
     if (_generatingHandoff) return;
     final s = context.l10n;
     final functions = context.read<FunctionsService>();
     final messenger = ScaffoldMessenger.of(context);
-    setState(() => _generatingHandoff = true);
+    final runId = _newHandoffRunId();
+    setState(() {
+      _generatingHandoff = true;
+      _handoffSteps = const [];
+    });
+
+    // Subscribe to the trace doc so steps appear live while the callable runs.
+    _handoffTraceSub = _agentRuns.watch(widget.repoId, runId).listen((run) {
+      if (run == null || !mounted) return;
+      setState(() => _handoffSteps = run.steps);
+    });
+
     try {
       final markdown = await functions.generateHandoff(
         repoId: widget.repoId,
         taskId: task.id,
         // W6: regenerate in the app's current language.
         language: s.backendLanguage,
+        runId: runId,
       );
       if (!mounted) return;
       setState(() => _localHandoff = markdown);
@@ -68,8 +105,23 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
           SnackBar(content: Text(s.couldNotGenerateHandoff)),
         );
     } finally {
-      if (mounted) setState(() => _generatingHandoff = false);
+      // Fire-and-forget cancel: never block completion on tearing down the
+      // trace stream (a closed stream's cancel can stay pending).
+      unawaited(_handoffTraceSub?.cancel() ?? Future<void>.value());
+      _handoffTraceSub = null;
+      if (mounted) {
+        setState(() {
+          _generatingHandoff = false;
+          _handoffSteps = const [];
+        });
+      }
     }
+  }
+
+  @override
+  void dispose() {
+    _handoffTraceSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _importCollaborators() async {
@@ -593,14 +645,20 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
                       ],
                     ),
                     const Divider(height: AppDimens.spacingMd),
-                    handoff == null
-                        ? Text(
-                            s.noHandoffYet,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          )
-                        : MarkdownView(data: handoff),
+                    // While regenerating, stream the agent's live "thinking"
+                    // steps (Claude-Code-style) above the existing doc; the
+                    // finished markdown replaces them once the callable returns.
+                    if (_generatingHandoff)
+                      AskRepoLiveTraceStrip(steps: _handoffSteps)
+                    else if (handoff == null)
+                      Text(
+                        s.noHandoffYet,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      )
+                    else
+                      MarkdownView(data: handoff),
                   ],
                 ),
               ),

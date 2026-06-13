@@ -1,7 +1,9 @@
-// Unit tests for explainCommitFlow (tap-a-commit AI work summary).
+// Unit tests for the AGENTIC explainCommitFlow (tap-a-commit AI work summary).
 //
-// Same boundary-mock style as summarizeDay.test.ts: fake Firestore (equality
-// clauses honored), scripted OpenAI, no-op logger.
+// Boundary-mock style (like generateHandoff.test.ts): fake Firestore (equality
+// clauses honored), a scripted OpenAI that returns either a plain-content answer
+// (which terminates the loop) or tool_calls, and mocked tool helpers so the flow
+// never imports githubClient → @octokit/rest (ESM, jest can't parse it).
 
 class FakeHttpsError extends Error {
   constructor(public code: string, message: string) {
@@ -81,10 +83,34 @@ const fakeDb = {
 
 jest.mock('../admin', () => ({ db: fakeDb, REGION: 'asia-east1' }));
 
+// ---- Scripted OpenAI -------------------------------------------------------
+// A queued tool-call turn (when present) drives the agentic loop; otherwise each
+// create() returns `nextContent` as a plain assistant message, which the loop
+// accepts as the finished explanation (terminates in one round).
+type ToolCall = { id: string; name: string; args: unknown };
 let nextContent: string | null = '**What was done** — wired OAuth.';
-const mockCreate = jest.fn(async () => ({
-  choices: [{ message: { role: 'assistant', content: nextContent } }],
-}));
+const createQueue: Array<{ toolCalls: ToolCall[] }> = [];
+const mockCreate = jest.fn(async () => {
+  const next = createQueue.shift();
+  if (next) {
+    return {
+      choices: [
+        {
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: next.toolCalls.map((t) => ({
+              id: t.id,
+              type: 'function',
+              function: { name: t.name, arguments: JSON.stringify(t.args) },
+            })),
+          },
+        },
+      ],
+    };
+  }
+  return { choices: [{ message: { role: 'assistant', content: nextContent } }] };
+});
 
 jest.mock('../config', () => ({
   getOpenAI: () => ({ chat: { completions: { create: mockCreate } } }),
@@ -94,6 +120,37 @@ jest.mock('../config', () => ({
 const mockGetCommit = jest.fn();
 jest.mock('../services/githubClient', () => ({
   getCommit: (...args: unknown[]) => mockGetCommit(...args),
+}));
+
+// Discord retrieval tool (the agentic feature): return a recognizable snippet.
+const mockSearchDiscord = jest.fn(async (..._a: unknown[]) => [
+  {
+    channelId: 'chan',
+    score: 1,
+    messages: [
+      {
+        messageId: 'm1',
+        channelId: 'chan',
+        authorName: 'Carol',
+        content: 'we agreed to use OAuth here',
+        isMatch: true,
+        timestamp: null,
+      },
+    ],
+  },
+]);
+jest.mock('../tools/discordSearch', () => ({
+  searchDiscordMessages: (...a: unknown[]) => mockSearchDiscord(...a),
+}));
+
+const mockGetCommitDiff = jest.fn(async (..._a: unknown[]) => ({
+  sha: 'c1',
+  message: 'x',
+  files: [],
+  truncated: false,
+}));
+jest.mock('../tools/handoffTools', () => ({
+  getCommitDiff: (...a: unknown[]) => mockGetCommitDiff(...a),
 }));
 
 import { explainCommitFlow } from '../flows/explainCommit';
@@ -111,11 +168,16 @@ function seedCommit(sha: string, data: Record<string, unknown>) {
   });
 }
 
+type CreateCall = [{ messages: Array<{ role: string; content: string | null }> }];
+
 beforeEach(() => {
   store.clear();
   updateSpy.mockClear();
   mockCreate.mockClear();
   mockGetCommit.mockReset();
+  mockSearchDiscord.mockClear();
+  mockGetCommitDiff.mockClear();
+  createQueue.length = 0;
   nextContent = '**What was done** — wired OAuth.';
 });
 
@@ -151,13 +213,14 @@ describe('explainCommitFlow', () => {
     expect(res.cached).toBe(false);
     expect(res.markdown).toContain('What was done');
     expect(mockGetCommit).toHaveBeenCalledWith('team17', 'gitsync', 'tok', 'branch1');
+    // Fallback path is single-shot (no tools).
     expect(mockCreate).toHaveBeenCalledTimes(1);
     // No cache write on the fallback path (no doc to cache on).
     expect(updateSpy).not.toHaveBeenCalled();
     // The prompt context was built from the GitHub commit message.
-    const userMsg = (mockCreate.mock.calls[0] as unknown as [
-      { messages: Array<{ role: string; content: string }> },
-    ])[0].messages.find((m) => m.role === 'user');
+    const userMsg = (mockCreate.mock.calls[0] as unknown as CreateCall)[0].messages.find(
+      (m) => m.role === 'user',
+    );
     expect(userMsg?.content).toContain('branch-only work');
   });
 
@@ -191,14 +254,11 @@ describe('explainCommitFlow', () => {
       title: 'OAuth sign-in',
       status: 'done',
     });
-    // A neighboring commit by the same author for narrative context.
-    seedCommit('c0', { message: 'Add auth scaffolding' });
 
     const res = await explainCommitFlow({ repoId: REPO, sha: 'c1' });
 
     expect(res.cached).toBe(false);
     expect(res.markdown).toContain('What was done');
-    expect(mockCreate).toHaveBeenCalledTimes(1);
     // Cache written back onto the commit doc.
     expect(updateSpy).toHaveBeenCalledWith(
       `apps/gitsync/repos/${REPO}/commits/c1`,
@@ -207,12 +267,47 @@ describe('explainCommitFlow', () => {
         workSummaryGeneratedAt: '__ts__',
       }),
     );
-    // The prompt grounding included the linked task and the neighbor commit.
-    const userMsg = (mockCreate.mock.calls[0] as unknown as [
-      { messages: Array<{ role: string; content: string }> },
-    ])[0].messages.find((m) => m.role === 'user');
+    // The seed grounding includes the linked task (neighbors/Discord are now
+    // fetched via tools, not inlined into the seed).
+    const userMsg = (mockCreate.mock.calls[0] as unknown as CreateCall)[0].messages.find(
+      (m) => m.role === 'user',
+    );
     expect(userMsg?.content).toContain('OAuth sign-in');
-    expect(userMsg?.content).toContain('Add auth scaffolding');
+  });
+
+  it('agentically retrieves neighbor commits + Discord, then writes', async () => {
+    seedCommit('c1', {});
+    // A neighboring commit by the same author for narrative context.
+    seedCommit('c0', { message: 'Add auth scaffolding' });
+    // Round 1: the agent gathers evidence. Round 2: it writes the explanation.
+    createQueue.push({
+      toolCalls: [
+        { id: '1', name: 'listNeighborCommits', args: {} },
+        { id: '2', name: 'searchDiscordMessages', args: { query: 'oauth' } },
+      ],
+    });
+    createQueue.push({
+      toolCalls: [
+        {
+          id: '3',
+          name: 'writeExplanation',
+          args: { markdown: '**What was done** — OAuth, agreed with Carol.' },
+        },
+      ],
+    });
+
+    const res = await explainCommitFlow({ repoId: REPO, sha: 'c1' });
+
+    expect(res.markdown).toContain('Carol');
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+    expect(mockSearchDiscord).toHaveBeenCalled();
+    // Both tool results were fed back into the round-2 messages.
+    const round2 = (mockCreate.mock.calls[1] as unknown as CreateCall)[0].messages
+      .filter((m) => m.role === 'tool')
+      .map((m) => m.content ?? '')
+      .join('\n');
+    expect(round2).toContain('Add auth scaffolding');
+    expect(round2).toContain('we agreed to use OAuth');
   });
 
   it('force=true regenerates even when a cache exists', async () => {
@@ -225,9 +320,9 @@ describe('explainCommitFlow', () => {
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
-  it('throws internal when OpenAI returns nothing', async () => {
+  it('throws internal when the agent writes an empty explanation', async () => {
     seedCommit('c1', {});
-    nextContent = null;
+    createQueue.push({ toolCalls: [{ id: '1', name: 'writeExplanation', args: {} }] });
 
     await expect(
       explainCommitFlow({ repoId: REPO, sha: 'c1' }),
@@ -237,11 +332,9 @@ describe('explainCommitFlow', () => {
 
   // ---- W6: recompute in the app language -----------------------------------
   const systemContent = (callIdx = 0): string =>
-    (
-      mockCreate.mock.calls[callIdx] as unknown as [
-        { messages: Array<{ role: string; content: string }> },
-      ]
-    )[0].messages.find((m) => m.role === 'system')?.content ?? '';
+    (mockCreate.mock.calls[callIdx] as unknown as CreateCall)[0].messages.find(
+      (m) => m.role === 'system',
+    )?.content ?? '';
 
   it('language present → the directive is appended to the system prompt', async () => {
     seedCommit('c1', {});

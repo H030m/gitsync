@@ -21,7 +21,12 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { db } from '../admin';
 
 /** Which agentic flow produced a run (the doc's `flow` field). */
-export type AgentFlow = 'askRepo' | 'generateHandoff';
+export type AgentFlow =
+  | 'askRepo'
+  | 'generateHandoff'
+  | 'discordChat'
+  | 'explainCommit'
+  | 'editDiscordDigest';
 
 /** Human-readable English step labels, surfaced verbatim in the UI (the prd
  *  fixes them as English constants; the client does not translate them). */
@@ -39,6 +44,14 @@ export const TRACE_LABELS = {
   getCommitDiff: 'Reading a commit diff…',
   draftHandoff: 'Drafting the handoff…',
   composing: 'Composing answer…',
+  // discordChat agentic loop.
+  listDaySummaries: 'Listing day summaries…',
+  getDaySummary: 'Reading a day digest…',
+  // explainCommit agentic loop.
+  listNeighborCommits: 'Listing nearby commits…',
+  writeExplanation: 'Writing the explanation…',
+  // editDiscordDigest agentic loop.
+  writeDigest: 'Revising the digest…',
 } as const;
 
 /** Max accepted runId length + allowed charset (guards against path injection

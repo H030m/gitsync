@@ -83,10 +83,11 @@ void main() {
     await tester.testTextInput.receiveAction(TextInputAction.send);
     await tester.pumpAndSettle();
 
-    // The user's question and an AI source panel are now on screen. The shared
-    // Ask-GitSync rendering labels cited commits with the zh source-commits copy.
+    // The user's question and at least one AI commit-source panel are now on
+    // screen. The shared Ask-GitSync rendering now heads each panel with its
+    // per-author window label, so assert the panel via its commit icon.
     expect(find.text('OAuth 進度?'), findsOneWidget);
-    expect(find.textContaining('來源 commit'), findsOneWidget);
+    expect(find.byIcon(Icons.commit_outlined), findsWidgets);
   });
 
   testWidgets('a multi-day range shows one collapsible card per day',

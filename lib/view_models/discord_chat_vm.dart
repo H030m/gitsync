@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/discord_chat.dart';
 import '../services/functions_service.dart';
+import 'agent_trace_mixin.dart';
 
 /// Drives the Discord AI chat box: holds the conversation transcript and calls
 /// the `discordChat` callable. Each assistant turn carries the messages the AI
@@ -13,7 +14,7 @@ import '../services/functions_service.dart';
 /// digests. The window follows the same precedence as the rest of the Daily
 /// page (view → saved → today); when unscoped no range is sent and the backend
 /// treats it as unscoped.
-class DiscordChatViewModel with ChangeNotifier {
+class DiscordChatViewModel with ChangeNotifier, AgentTraceMixin {
   DiscordChatViewModel({
     required String repoId,
     FunctionsService? functionsService,
@@ -77,6 +78,7 @@ class DiscordChatViewModel with ChangeNotifier {
     // Snapshot history (oldest first) BEFORE adding the new user turn.
     final history = List<DiscordChatTurn>.from(_turns);
 
+    final runId = newRunId('chat-');
     _turns.add(DiscordChatTurn(
       role: 'user',
       content: trimmed,
@@ -86,6 +88,9 @@ class DiscordChatViewModel with ChangeNotifier {
     _error = null;
     notifyListeners();
 
+    // Stream the agent's live "thinking" steps while the callable runs.
+    beginTrace(_repoId, runId);
+
     try {
       final reply = await _functions.discordChat(
         repoId: _repoId,
@@ -93,6 +98,7 @@ class DiscordChatViewModel with ChangeNotifier {
         history: history,
         startDate: _start == null ? null : _key(_start!),
         endDate: _end == null ? null : _key(_end!),
+        runId: runId,
       );
       _turns.add(DiscordChatTurn(
         role: 'assistant',
@@ -108,8 +114,15 @@ class DiscordChatViewModel with ChangeNotifier {
         createdAt: DateTime.now(),
       ));
     } finally {
+      endTrace();
       _sending = false;
       notifyListeners();
     }
+  }
+
+  @override
+  void dispose() {
+    endTrace();
+    super.dispose();
   }
 }

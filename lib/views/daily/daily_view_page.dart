@@ -2262,9 +2262,13 @@ class _CommitDetailSheet extends StatelessWidget {
               ),
               const SizedBox(height: AppDimens.spacingSm),
               if (explaining)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: AppDimens.spacingMd),
-                  child: Center(child: CircularProgressIndicator()),
+                // Live agent "thinking" steps (reading nearby commits,
+                // searching Discord, writing) while the callable runs.
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: AppDimens.spacingSm,
+                  ),
+                  child: AskRepoLiveTraceStrip(steps: vm.liveSteps),
                 )
               else if (explanation != null)
                 MarkdownView(data: explanation)
@@ -2733,6 +2737,12 @@ class _DigestCardState extends State<_DigestCard> {
                               ),
                             ],
                           ),
+                        if (editing) ...[
+                          const SizedBox(height: AppDimens.spacingXs),
+                          // Live agent "thinking" steps while the digest is
+                          // rewritten (searching Discord, revising…).
+                          AskRepoLiveTraceStrip(steps: vm.liveSteps),
+                        ],
                         if (vm.digestError != null) ...[
                           const SizedBox(height: AppDimens.spacingXs),
                           Text(
@@ -2826,7 +2836,11 @@ class _DiscordChatState extends State<_DiscordChat> {
                       padding: const EdgeInsets.all(AppDimens.spacingMd),
                       itemCount: turns.length + (vm.sending ? 1 : 0),
                       itemBuilder: (_, i) {
-                        if (i >= turns.length) return const _ThinkingBubble();
+                        if (i >= turns.length) {
+                          // Live agent trace (searching Discord, composing…)
+                          // replaces the generic "thinking" bubble.
+                          return AskRepoLiveTraceStrip(steps: vm.liveSteps);
+                        }
                         return _ChatTurnView(turn: turns[i]);
                       },
                     ),
@@ -3102,29 +3116,6 @@ class _SnippetMessage extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
       ),
       child: row,
-    );
-  }
-}
-
-class _ThinkingBubble extends StatelessWidget {
-  const _ThinkingBubble();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppDimens.spacingMd),
-      child: Row(
-        children: [
-          const SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-          const SizedBox(width: AppDimens.spacingSm),
-          Text(context.l10n.thinking,
-              style: Theme.of(context).textTheme.bodySmall),
-        ],
-      ),
     );
   }
 }
