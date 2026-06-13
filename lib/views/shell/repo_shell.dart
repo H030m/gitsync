@@ -40,11 +40,6 @@ class _RepoShellState extends State<RepoShell> {
   Set<String> _assignedToMe = {};
   bool _seeded = false;
 
-  // Last tab index we routed to. Used to pick the slide direction for the
-  // AnimatedSwitcher's content swap so the page lurches in the same direction
-  // the bottom-nav indicator pill just moved.
-  int _previousIndex = 0;
-
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -153,64 +148,10 @@ class _RepoShellState extends State<RepoShell> {
   @override
   Widget build(BuildContext context) {
     final currentIndex = _selectedIndex(context);
-    // Direction the bottom-nav indicator just moved: forward (right) when the
-    // index grew, backward (left) when it shrank. The first build (no swap
-    // yet) defaults to "right" since _previousIndex starts at 0.
-    final goingRight = currentIndex >= _previousIndex;
-    // Schedule the index update for after this build so the next swap reads
-    // the previous tab's index (not the one we just routed to).
-    if (currentIndex != _previousIndex) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _previousIndex = currentIndex;
-      });
-    }
+    // Page-swap animation was moved to the route level — see task
+    // 06-13-...custom-transition-page-at-gorouter-level.
     return Scaffold(
-      body: AnimatedSwitcher(
-        duration: AppMotion.nav,
-        switchInCurve: AppMotion.emphasized,
-        switchOutCurve: AppMotion.emphasized,
-        transitionBuilder: (child, animation) {
-          // For the entering child, slide from the side the indicator just
-          // moved AWAY from (so the page slides in the same direction the
-          // indicator's pill is travelling). Fixed 6 % offset, not "by N
-          // tabs", so a jump from tab 1 → 4 doesn't read as a giant lurch.
-          //
-          // AnimatedSwitcher reuses the transition builder for both incoming
-          // and outgoing children; we detect direction by the animation's
-          // status — forward/completed = entering, reverse/dismissed = exiting.
-          //
-          // The outgoing child's animation runs in REVERSE (value 1 → 0), so
-          // both children's Tween must be authored as:
-          //   value=1 → on center (just visible / still visible)
-          //   value=0 → at the off-screen offset (about to enter / fully gone)
-          // That means both children share the same `end` (center) and pick
-          // their `begin` by direction. Authoring the outgoing Tween as
-          // `begin: zero, end: exitOffset` would snap it sideways at value=1
-          // and slide it back toward center as it fades — the bug we just
-          // fixed.
-          final isIncoming = animation.status == AnimationStatus.forward ||
-              animation.status == AnimationStatus.completed;
-          final enterOffset = Offset(goingRight ? 0.06 : -0.06, 0);
-          final exitOffset = Offset(goingRight ? -0.06 : 0.06, 0);
-          final beginOffset = isIncoming ? enterOffset : exitOffset;
-          const endOffset = Offset.zero;
-          return FadeTransition(
-            opacity: animation,
-            child: SlideTransition(
-              position: Tween<Offset>(begin: beginOffset, end: endOffset)
-                  .animate(animation),
-              child: child,
-            ),
-          );
-        },
-        // KeyedSubtree swaps based on currentIndex, NOT on the routed Widget
-        // identity (GoRouter may rebuild the same page widget). State preserved
-        // for each route subtree is handled by GoRouter's own ShellRoute scope.
-        child: KeyedSubtree(
-          key: ValueKey<int>(currentIndex),
-          child: widget.child,
-        ),
-      ),
+      body: widget.child,
       bottomNavigationBar: _SlidingBottomNav(
         key: RepoShell._navKey,
         selectedIndex: currentIndex,
