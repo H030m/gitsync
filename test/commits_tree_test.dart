@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 import 'package:gitsync/data/dummy_data.dart';
+import 'package:gitsync/l10n/app_locale.dart';
 import 'package:gitsync/view_models/ask_repo_vm.dart';
 import 'package:gitsync/view_models/commits_vm.dart';
 import 'package:gitsync/view_models/daily_brief_vm.dart';
@@ -12,27 +13,42 @@ import 'package:gitsync/view_models/discord_messages_vm.dart';
 import 'package:gitsync/view_models/intel_range_vm.dart';
 import 'package:gitsync/views/daily/daily_view_page.dart';
 
+import '_helpers/locale.dart';
+
 // Renders the real Commits tab (tree map) against the fake backend, drives the
 // range filter and the tap-a-commit → AI work summary sheet.
+//
+// The widget tests in this file look for English UI strings (e.g. the
+// "Commits" tab label). Since the upstream i18n switch (`5b7e562`) made the
+// default UI language Traditional Chinese, every `_harness()` here pins the
+// locale to English via [pinLocale] so finders match the strings the tests
+// were authored against.
 Widget _harness() {
   const repoId = DummyData.demoRepoId;
-  return MaterialApp(
-    home: MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => CommitsViewModel(repoId: repoId)),
-        ChangeNotifierProvider(
-            create: (_) => DiscordMessagesViewModel(repoId: repoId)),
-        ChangeNotifierProvider(
-            create: (_) => DiscordChatViewModel(repoId: repoId)),
-        ChangeNotifierProvider(
-            create: (_) => DailyReportViewModel(repoId: repoId)),
-        ChangeNotifierProvider(
-            create: (_) => DailyBriefChatViewModel(repoId: repoId)),
-        // The Summary tab's chat now reads the shared, repo-wide AskRepoViewModel.
-        ChangeNotifierProvider(create: (_) => AskRepoViewModel(repoId: repoId)),
-        ChangeNotifierProvider(create: (_) => IntelRangeViewModel()),
-      ],
-      child: const DailyViewPage(repoId: repoId),
+  // [pinLocale] wraps the MaterialApp itself (rather than its `home`) so the
+  // `LocaleNotifier` provider sits ABOVE MaterialApp's Navigator — that way
+  // routes pushed by `showModalBottomSheet` (e.g. the commit-detail sheet)
+  // also resolve `context.l10n` to the pinned English locale.
+  return pinLocale(
+    AppLocale.en,
+    child: MaterialApp(
+      home: MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => CommitsViewModel(repoId: repoId)),
+          ChangeNotifierProvider(
+              create: (_) => DiscordMessagesViewModel(repoId: repoId)),
+          ChangeNotifierProvider(
+              create: (_) => DiscordChatViewModel(repoId: repoId)),
+          ChangeNotifierProvider(
+              create: (_) => DailyReportViewModel(repoId: repoId)),
+          ChangeNotifierProvider(
+              create: (_) => DailyBriefChatViewModel(repoId: repoId)),
+          // The Summary tab's chat now reads the shared, repo-wide AskRepoViewModel.
+          ChangeNotifierProvider(create: (_) => AskRepoViewModel(repoId: repoId)),
+          ChangeNotifierProvider(create: (_) => IntelRangeViewModel()),
+        ],
+        child: const DailyViewPage(repoId: repoId),
+      ),
     ),
   );
 }
@@ -243,7 +259,7 @@ void main() {
     // The per-tab refresh button is gone (D3); refresh is the shared AppBar
     // action (reachable from every tab).
     expect(find.byTooltip('Refresh graph'), findsNothing);
-    await tester.tap(find.byTooltip('重新整理目前範圍'));
+    await tester.tap(find.byTooltip('Refresh current range'));
     await tester.pumpAndSettle();
 
     // The existing graph stays visible through the (forced) reload.

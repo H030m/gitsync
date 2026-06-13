@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 import 'package:gitsync/data/dummy_data.dart';
+import 'package:gitsync/l10n/app_locale.dart';
 import 'package:gitsync/view_models/ask_repo_vm.dart';
 import 'package:gitsync/view_models/commits_vm.dart';
 import 'package:gitsync/view_models/daily_brief_vm.dart';
@@ -12,30 +13,45 @@ import 'package:gitsync/view_models/discord_messages_vm.dart';
 import 'package:gitsync/view_models/intel_range_vm.dart';
 import 'package:gitsync/views/daily/daily_view_page.dart';
 
+import '_helpers/locale.dart';
+
 // Renders the real DailyViewPage (Summary tab) against the fake backend and
 // drives the global "Ask GitSync" chat — now the shared, repo-wide
 // AskRepoViewModel — verifying the intelligence-hub UI wires up end-to-end.
 //
 // DailyBriefChatViewModel is still provided (the page's range fan-out keeps it
 // in sync) even though the Summary chat no longer reads it.
-Widget _harness() {
+//
+// `locale` pins `context.l10n` to a known UI language so finders match the
+// strings the test was authored against — defaults to Traditional Chinese
+// (the production default since the i18n switch in `5b7e562`) so pre-existing
+// tests that look for zh strings keep passing; tests that look for English
+// strings pass `AppLocale.en`.
+Widget _harness({AppLocale locale = AppLocale.zhHant}) {
   const repoId = DummyData.demoRepoId;
-  return MaterialApp(
-    home: MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => CommitsViewModel(repoId: repoId)),
-        ChangeNotifierProvider(
-            create: (_) => DiscordMessagesViewModel(repoId: repoId)),
-        ChangeNotifierProvider(
-            create: (_) => DiscordChatViewModel(repoId: repoId)),
-        ChangeNotifierProvider(
-            create: (_) => DailyReportViewModel(repoId: repoId)),
-        ChangeNotifierProvider(
-            create: (_) => DailyBriefChatViewModel(repoId: repoId)),
-        ChangeNotifierProvider(create: (_) => AskRepoViewModel(repoId: repoId)),
-        ChangeNotifierProvider(create: (_) => IntelRangeViewModel()),
-      ],
-      child: const DailyViewPage(repoId: repoId),
+  // [pinLocale] wraps the MaterialApp itself (rather than its `home`) so the
+  // `LocaleNotifier` provider sits ABOVE MaterialApp's Navigator — that way
+  // routes pushed via `showModalBottomSheet` also resolve `context.l10n` to
+  // the pinned locale.
+  return pinLocale(
+    locale,
+    child: MaterialApp(
+      home: MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => CommitsViewModel(repoId: repoId)),
+          ChangeNotifierProvider(
+              create: (_) => DiscordMessagesViewModel(repoId: repoId)),
+          ChangeNotifierProvider(
+              create: (_) => DiscordChatViewModel(repoId: repoId)),
+          ChangeNotifierProvider(
+              create: (_) => DailyReportViewModel(repoId: repoId)),
+          ChangeNotifierProvider(
+              create: (_) => DailyBriefChatViewModel(repoId: repoId)),
+          ChangeNotifierProvider(create: (_) => AskRepoViewModel(repoId: repoId)),
+          ChangeNotifierProvider(create: (_) => IntelRangeViewModel()),
+        ],
+        child: const DailyViewPage(repoId: repoId),
+      ),
     ),
   );
 }
@@ -48,7 +64,8 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(_harness());
+    // Pin English so finders match the English literals below.
+    await tester.pumpWidget(_harness(locale: AppLocale.en));
     await tester.pumpAndSettle();
 
     // Today's per-day card is expanded by default, showing the full report.
@@ -57,12 +74,11 @@ void main() {
     expect(find.text('Commit rollup'), findsOneWidget);
     expect(find.text('Contributions'), findsOneWidget);
     // The lower chat is now the global, repo-wide "Ask GitSync" assistant.
-    // (The test locale resolves to zh, like the report sections above.)
-    expect(find.text('問 GitSync'), findsOneWidget);
+    expect(find.text('Ask GitSync'), findsOneWidget);
     expect(
       find.byWidgetPredicate((w) =>
           w is TextField &&
-          w.decoration?.hintText == '問問 GitSync 關於這個 repo…'),
+          w.decoration?.hintText == 'Ask GitSync about this repo…'),
       findsOneWidget,
     );
   });
@@ -97,7 +113,8 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(_harness());
+    // Pin English so finders match the English literals below.
+    await tester.pumpWidget(_harness(locale: AppLocale.en));
     await tester.pumpAndSettle();
 
     // Pick a 3-day range ending today via the shared range notifier.
@@ -112,6 +129,11 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
+    // The reports panel defaults to collapsed for multi-day ranges (single-day
+    // stays expanded), so tap its header to reveal the per-day cards.
+    await tester.tap(find.text('Daily report'));
+    await tester.pumpAndSettle();
+
     // The report VM took the range → exactly 3 day cards, rendered inside the
     // upper day-report panel.
     expect(report.rangeDays.length, 3);
@@ -119,14 +141,14 @@ void main() {
         findsOneWidget);
 
     // Today's card is expanded — the full body (Regenerate + sub-cards) shows.
-    expect(find.widgetWithText(FilledButton, 'Regenerate'), findsOneWidget);
+    expect(find.widgetWithText(TextButton, 'Regenerate'), findsOneWidget);
     expect(find.text('Commit rollup'), findsOneWidget);
 
     // Tap the header to collapse; the full body disappears (the one-line
     // summary preview remains in the collapsed header).
     await tester.tap(find.textContaining('Today ·'));
     await tester.pumpAndSettle();
-    expect(find.widgetWithText(FilledButton, 'Regenerate'), findsNothing);
+    expect(find.widgetWithText(TextButton, 'Regenerate'), findsNothing);
     expect(find.text('Commit rollup'), findsNothing);
   });
 
@@ -137,7 +159,8 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(_harness());
+    // Pin English so finders match the English literals below.
+    await tester.pumpWidget(_harness(locale: AppLocale.en));
     await tester.pumpAndSettle();
 
     final intel =
@@ -149,19 +172,22 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    // The panel header is present and the day cards render inside it.
-    expect(find.text('日報'), findsOneWidget);
+    // The reports panel defaults to collapsed for multi-day ranges; the header
+    // is always present, so tap it to expand and reveal the day cards.
+    expect(find.text('Daily report'), findsOneWidget);
+    await tester.tap(find.text('Daily report'));
+    await tester.pumpAndSettle();
     expect(find.byKey(ValueKey(DailyReportViewModel.dayKeyOf(now))),
         findsOneWidget);
     // The expanded panel pins a Scrollbar flush to its right edge.
     expect(find.byType(Scrollbar), findsWidgets);
 
     // Collapsing the whole panel via its header hides every day card.
-    await tester.tap(find.text('日報'));
+    await tester.tap(find.text('Daily report'));
     await tester.pumpAndSettle();
     expect(find.byKey(ValueKey(DailyReportViewModel.dayKeyOf(now))),
         findsNothing);
-    expect(find.text('日報'), findsOneWidget);
+    expect(find.text('Daily report'), findsOneWidget);
   });
 
   testWidgets('the new-session button clears the chat thread', (tester) async {

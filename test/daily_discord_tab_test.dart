@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 import 'package:gitsync/data/dummy_data.dart';
+import 'package:gitsync/l10n/app_locale.dart';
 import 'package:gitsync/models/commit_graph.dart';
 import 'package:gitsync/models/daily_brief.dart';
 import 'package:gitsync/models/discord_chat.dart';
@@ -19,6 +20,8 @@ import 'package:gitsync/view_models/discord_chat_vm.dart';
 import 'package:gitsync/view_models/discord_messages_vm.dart';
 import 'package:gitsync/view_models/intel_range_vm.dart';
 import 'package:gitsync/views/daily/daily_view_page.dart';
+
+import '_helpers/locale.dart';
 
 const _repoId = DummyData.demoRepoId;
 
@@ -176,28 +179,40 @@ class _SpyFunctions implements FunctionsService {
       _fake.subscribeToTopic(token: token, topic: topic);
 }
 
-Widget _harness({FunctionsService? functions}) {
-  return MaterialApp(
-    home: MultiProvider(
-      providers: [
-        ChangeNotifierProvider(
-            create: (_) =>
-                CommitsViewModel(repoId: _repoId, functionsService: functions)),
-        ChangeNotifierProvider(
-            create: (_) => DiscordMessagesViewModel(
-                repoId: _repoId, functionsService: functions)),
-        ChangeNotifierProvider(
-            create: (_) => DiscordChatViewModel(
-                repoId: _repoId, functionsService: functions)),
-        ChangeNotifierProvider(
-            create: (_) => DailyReportViewModel(repoId: _repoId)),
-        ChangeNotifierProvider(
-            create: (_) => DailyBriefChatViewModel(repoId: _repoId)),
-        // The Summary tab's chat now reads the shared, repo-wide AskRepoViewModel.
-        ChangeNotifierProvider(create: (_) => AskRepoViewModel(repoId: _repoId)),
-        ChangeNotifierProvider(create: (_) => IntelRangeViewModel()),
-      ],
-      child: const DailyViewPage(repoId: _repoId),
+// `locale` pins `context.l10n` to a known UI language so finders match the
+// strings the test was authored against — defaults to Traditional Chinese
+// (the production default since the i18n switch in `5b7e562`) so pre-existing
+// tests that look for zh strings (e.g. `'重新整理目前範圍'`) keep passing; tests
+// that look for English strings pass `AppLocale.en`.
+Widget _harness({FunctionsService? functions, AppLocale locale = AppLocale.zhHant}) {
+  // [pinLocale] wraps the MaterialApp itself (rather than its `home`) so the
+  // `LocaleNotifier` provider sits ABOVE MaterialApp's Navigator — that way
+  // routes pushed via `showModalBottomSheet` also resolve `context.l10n` to
+  // the pinned locale.
+  return pinLocale(
+    locale,
+    child: MaterialApp(
+      home: MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+              create: (_) =>
+                  CommitsViewModel(repoId: _repoId, functionsService: functions)),
+          ChangeNotifierProvider(
+              create: (_) => DiscordMessagesViewModel(
+                  repoId: _repoId, functionsService: functions)),
+          ChangeNotifierProvider(
+              create: (_) => DiscordChatViewModel(
+                  repoId: _repoId, functionsService: functions)),
+          ChangeNotifierProvider(
+              create: (_) => DailyReportViewModel(repoId: _repoId)),
+          ChangeNotifierProvider(
+              create: (_) => DailyBriefChatViewModel(repoId: _repoId)),
+          // The Summary tab's chat now reads the shared, repo-wide AskRepoViewModel.
+          ChangeNotifierProvider(create: (_) => AskRepoViewModel(repoId: _repoId)),
+          ChangeNotifierProvider(create: (_) => IntelRangeViewModel()),
+        ],
+        child: const DailyViewPage(repoId: _repoId),
+      ),
     ),
   );
 }
@@ -270,20 +285,24 @@ void main() {
   testWidgets('the Commits tab has no local refresh button (shared only)',
       (tester) async {
     await tall(tester);
-    await tester.pumpWidget(_harness());
+    // Pin English so the `Commits` tab label and `Refresh current range`
+    // tooltip below match the production strings.
+    await tester.pumpWidget(_harness(locale: AppLocale.en));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Commits'));
     await tester.pumpAndSettle();
 
     // The only refresh tooltip on screen is the shared AppBar one.
     expect(find.byTooltip('Refresh graph'), findsNothing);
-    expect(find.byTooltip('重新整理目前範圍'), findsOneWidget);
+    expect(find.byTooltip('Refresh current range'), findsOneWidget);
   });
 
   testWidgets('the Discord digest panel collapses, hiding the day cards',
       (tester) async {
     await tall(tester);
-    await tester.pumpWidget(_harness());
+    // Pin English so the `Discord digest` header + `Discord digest · <date>`
+    // card labels below match the production strings.
+    await tester.pumpWidget(_harness(locale: AppLocale.en));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Discord'));
     await tester.pumpAndSettle();
@@ -336,7 +355,9 @@ void main() {
   testWidgets('the Discord chat new-session button clears the thread',
       (tester) async {
     await tall(tester);
-    await tester.pumpWidget(_harness());
+    // Pin English so the `Ask AI about the Discord chat…` hint and the
+    // `New session` tooltip below match the production strings.
+    await tester.pumpWidget(_harness(locale: AppLocale.en));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Discord'));
     await tester.pumpAndSettle();
@@ -351,7 +372,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('OAuth 進度?'), findsOneWidget);
 
-    await tester.tap(find.byTooltip('開啟新 session'));
+    await tester.tap(find.byTooltip('New session'));
     await tester.pumpAndSettle();
     expect(find.text('OAuth 進度?'), findsNothing);
   });
