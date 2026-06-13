@@ -106,6 +106,11 @@ class StatsViewModel with ChangeNotifier {
   TasksBoardViewModel? _tasksVm;
   MembersViewModel? _membersVm;
 
+  // Guards against notifyListeners() firing after dispose — async callbacks
+  // (e.g. _loadAllCommits, _resolveNames) can land after the VM is gone when
+  // the user leaves the Stats tab mid-flight.
+  bool _disposed = false;
+
   // ---- All-history commits (commit basis) ----------------------------------
 
   List<Commit> _allCommits = const [];
@@ -146,7 +151,7 @@ class StatsViewModel with ChangeNotifier {
     } finally {
       _commitsLoading = false;
       _authorGroups = buildAuthorGroups(_allCommits);
-      notifyListeners();
+      _safeNotify();
     }
   }
 
@@ -172,7 +177,7 @@ class StatsViewModel with ChangeNotifier {
       }).whenComplete(() {
         _resolving.remove(uid);
         _recompute();
-        notifyListeners();
+        _safeNotify();
       });
     }
   }
@@ -199,7 +204,7 @@ class StatsViewModel with ChangeNotifier {
     _membersVm = members;
     _resolveNames(members.members);
     _recompute();
-    notifyListeners();
+    _safeNotify();
   }
 
   void _recompute() {
@@ -236,7 +241,7 @@ class StatsViewModel with ChangeNotifier {
 
     _summarizing.add(g.key);
     _summaryErrors.remove(g.key);
-    notifyListeners();
+    _safeNotify();
 
     try {
       final markdown = await _functions.summarizeAuthorWork(
@@ -250,7 +255,7 @@ class StatsViewModel with ChangeNotifier {
       _summaryErrors[g.key] = e.toString();
     } finally {
       _summarizing.remove(g.key);
-      notifyListeners();
+      _safeNotify();
     }
   }
 
@@ -400,5 +405,18 @@ class StatsViewModel with ChangeNotifier {
     final resolved = names[id];
     if (resolved != null && resolved.isNotEmpty) return resolved;
     return id; // not yet resolved / no match → raw id
+  }
+
+  // Notify only while alive — prevents post-dispose async callbacks tripping
+  // debugAssertNotDisposed.
+  void _safeNotify() {
+    if (_disposed) return;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }
