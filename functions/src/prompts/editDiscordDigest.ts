@@ -18,6 +18,7 @@ Call a tool only when the instruction needs evidence the current summary lacks (
 Rules:
 - Keep it a clean digest: short headings, bullet lists, **bold** for emphasis.
 - Preserve the existing factual content unless the instruction asks to change it. Never invent chat content not present in the summary or the tool results.
+- Preserve every chat author's username exactly as written — including lowercase first letters and underscores — even when the username opens a sentence, heading, or bullet (e.g. write \`whale_island said …\`, never \`Whale_island said …\`).
 - Write the revised summary in the SAME language as the existing summary.`;
 
 export function editDiscordDigestSeed(args: {
