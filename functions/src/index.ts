@@ -40,6 +40,7 @@ export { onTaskCreated } from './triggers/onTaskCreated';
 export { onTaskUpdated } from './triggers/onTaskUpdated';
 export { onTaskDeleted } from './triggers/onTaskDeleted';
 export { onCommitCreated } from './triggers/onCommitCreated';
+export { onCommitCompletesTask } from './triggers/onCommitCompletesTask';
 export { onPRMerged } from './triggers/onPRMerged';
 export { onPullRequestOpened } from './triggers/onPullRequestOpened';
 export { onIssueWritten } from './triggers/onIssueWritten';
