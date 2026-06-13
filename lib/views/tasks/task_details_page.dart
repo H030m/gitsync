@@ -766,30 +766,46 @@ class _AssigneeCardBody extends StatelessWidget {
     final scheme = theme.colorScheme;
     final id = assigneeId;
     final profile = id == null ? null : membersVm.profileFor(id);
-    final label = id == null ? s.unassigned : membersVm.labelFor(id);
+    // Resolve this assignee's profile on demand (it may not be in the streamed
+    // member list yet). Once it lands, the VM notifies and this card rebuilds
+    // with the real name instead of the raw UID.
+    if (id != null && profile == null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => membersVm.ensureResolved(id),
+      );
+    }
+    // Until the name resolves, show a neutral placeholder rather than the raw,
+    // overflow-prone 28-char UID.
+    final label = id == null
+        ? s.unassigned
+        : (profile != null ? membersVm.labelFor(id) : '…');
 
     return Row(
       children: [
         _Avatar(user: profile, fallbackSeed: id, radius: 24),
         const SizedBox(width: AppDimens.spacingMd),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              s.assignee,
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: scheme.onSurfaceVariant,
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                s.assignee,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: theme.textTheme.bodyLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: id == null ? scheme.onSurfaceVariant : null,
+              const SizedBox(height: 2),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: id == null ? scheme.onSurfaceVariant : null,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ],
     );

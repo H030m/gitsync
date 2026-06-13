@@ -118,7 +118,8 @@ class AskRepoLiveTraceStrip extends StatelessWidget {
     final s = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final labels = steps.map((e) => e.label).toList();
+    // Localize each backend step label to a descriptive, app-language line.
+    final labels = steps.map((e) => s.traceStep(e.label)).toList();
     // Until the first step arrives, show a generic "thinking" line.
     final lines = labels.isEmpty ? [s.askRepoThinking] : labels;
     return Padding(

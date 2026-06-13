@@ -2140,8 +2140,9 @@ void _showCommitSheet(
   Commit commit,
   CommitsViewModel vm,
 ) {
-  // Kick off the explanation fetch before the sheet builds.
-  vm.explain(commit.sha);
+  // Kick off the explanation fetch before the sheet builds — in the app's
+  // language so the FIRST tap (not just a regenerate) comes back localized.
+  vm.explain(commit.sha, language: context.l10n.backendLanguage);
   showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -2665,20 +2666,14 @@ class _DigestCardState extends State<_DigestCard> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Long digests can overflow the card; cap the height
-                        // and let the markdown scroll within it. The markdown
-                        // body shrink-wraps to its content width, so force the
-                        // scroll viewport to fill the card width — otherwise the
-                        // scrollbar floats in the middle where the text ends
-                        // instead of pinning to the card's right edge.
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 360),
-                          child: SingleChildScrollView(
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: MarkdownView(data: digest.markdown),
-                            ),
-                          ),
+                        // Render the full digest inline and let the enclosing
+                        // panel ListView own the scroll. (A nested same-axis
+                        // SingleChildScrollView here captured vertical drags, so
+                        // the panel couldn't scroll past a long digest and the
+                        // card's bottom — adjust field, trace — was unreachable.)
+                        SizedBox(
+                          width: double.infinity,
+                          child: MarkdownView(data: digest.markdown),
                         ),
                         const SizedBox(height: AppDimens.spacingSm),
                         const Divider(height: 1),
