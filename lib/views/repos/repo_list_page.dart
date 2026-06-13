@@ -51,25 +51,8 @@ class RepoListPage extends StatelessWidget {
                 message: s.noReposMsg,
               );
             }
-            final scheme = Theme.of(ctx).colorScheme;
-            final isDark = Theme.of(ctx).brightness == Brightness.dark;
-            final cardBg = isDark
-                ? const Color(0xFF222630)
-                : scheme.surface;
-            final shadow = BoxShadow(
-              color: isDark
-                  ? Colors.black.withValues(alpha: 0.3)
-                  : const Color(0xFF1565C0).withValues(alpha: 0.14),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            );
-            final lightShadow = BoxShadow(
-              color: isDark
-                  ? Colors.black.withValues(alpha: 0.2)
-                  : const Color(0xFF1565C0).withValues(alpha: 0.10),
-              blurRadius: 3,
-              offset: const Offset(0, 1),
-            );
+            final theme = Theme.of(ctx);
+            final scheme = theme.colorScheme;
             return ListView.builder(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppDimens.spacingMd + 4,
@@ -88,12 +71,21 @@ class RepoListPage extends StatelessWidget {
                       child: Container(
                         padding: const EdgeInsets.all(AppDimens.spacingMd),
                         decoration: BoxDecoration(
+                          color: theme.brightness == Brightness.light
+                              ? const Color(0xFFFFFFFF)
+                              : scheme.surfaceContainerHigh,
                           borderRadius:
                               BorderRadius.circular(AppDimens.radiusLg),
                           border: Border.all(
                             color: scheme.primary.withValues(alpha: 0.4),
-                            style: BorderStyle.solid,
                           ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: scheme.shadow.withValues(alpha: 0.06),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
                         ),
                         child: Row(
                           children: [
@@ -130,8 +122,7 @@ class RepoListPage extends StatelessWidget {
 
                 final repo = vm.repos[i];
                 final removing = vm.isRemoving(repo.id);
-                final isEdge =
-                    i == 0 || i == vm.repos.length - 1;
+                final isEdge = i == 0 || i == vm.repos.length - 1;
                 return Padding(
                   padding: const EdgeInsets.only(bottom: AppDimens.spacingSm),
                   child: GestureDetector(
@@ -146,10 +137,21 @@ class RepoListPage extends StatelessWidget {
                     child: Container(
                       padding: const EdgeInsets.all(AppDimens.spacingMd),
                       decoration: BoxDecoration(
-                        color: cardBg,
+                        color: theme.brightness == Brightness.light
+                            ? const Color(0xFFFFFFFF)
+                            : scheme.surfaceContainerHigh,
                         borderRadius:
                             BorderRadius.circular(AppDimens.radiusLg),
-                        boxShadow: [isEdge ? shadow : lightShadow],
+                        border: Border.all(
+                          color: scheme.outlineVariant.withValues(alpha: 0.4),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: scheme.shadow.withValues(alpha: 0.06),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
                       child: Row(
                         children: [

@@ -15,6 +15,7 @@ import '../../services/functions_service.dart';
 import '../../services/navigation.dart';
 import '../../theme/app_dimens.dart';
 import '../../theme/app_motion.dart';
+import '../../widgets/section_card.dart';
 import '../../view_models/graph_edit_ops.dart';
 import '../../view_models/members_vm.dart';
 import '../../view_models/repo_vm.dart';
@@ -392,7 +393,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
             padding: const EdgeInsets.all(AppDimens.spacingMd),
             children: [
               // ---- Assignee card ----
-              _DetailCard(
+              SectionCard(
                 child: InkWell(
                   borderRadius: BorderRadius.circular(AppDimens.radiusMd),
                   onTap: () => _pickAssignee(task),
@@ -420,7 +421,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
               const SizedBox(height: AppDimens.spacingMd),
 
               // ---- Task content card (description + subtasks) ----
-              _DetailCard(
+              SectionCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -557,7 +558,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
               const SizedBox(height: AppDimens.spacingMd),
 
               // ---- Dependencies card ----
-              _DetailCard(
+              SectionCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -603,7 +604,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
               if (task.githubIssueNumber != null ||
                   task.linkedPRNumbers.isNotEmpty) ...[
                 const SizedBox(height: AppDimens.spacingMd),
-                _DetailCard(
+                SectionCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -651,7 +652,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
 
               // ---- Handoff doc card ----
               const SizedBox(height: AppDimens.spacingMd),
-              _DetailCard(
+              SectionCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -761,35 +762,7 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
-// White rounded-rect card used to wrap each section of the detail view.
-class _DetailCard extends StatelessWidget {
-  const _DetailCard({required this.child});
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(AppDimens.spacingMd),
-      decoration: BoxDecoration(
-        color: theme.brightness == Brightness.light
-            ? const Color(0xFFFFFFFF)
-            : scheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
-        boxShadow: [
-          BoxShadow(
-            color: scheme.shadow.withValues(alpha: 0.06),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: child,
-    );
-  }
-}
+// White rounded-rect card — now delegates to the shared SectionCard widget.
 
 // Assignee card body: large avatar + "認領者" label + name.
 class _AssigneeCardBody extends StatelessWidget {

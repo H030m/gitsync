@@ -12,6 +12,7 @@ import '../../l10n/app_strings.dart';
 import '../../repositories/user_repo.dart';
 import '../../theme/app_dimens.dart';
 import '../../theme/app_motion.dart';
+import '../../widgets/section_card.dart';
 import '../../view_models/ask_repo_vm.dart';
 import '../../view_models/commits_vm.dart';
 import '../../view_models/daily_brief_vm.dart';
@@ -229,9 +230,9 @@ class _SummaryTabState extends State<_SummaryTab> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
 
-  // Whether the upper day-report panel (D2) is expanded. Collapsed shows just
-  // its header row, giving the chat the full height.
-  bool _reportsExpanded = true;
+  // Whether the upper day-report panel (D2) is expanded. Starts collapsed for
+  // multi-day ranges so the chat gets more room; single-day starts expanded.
+  bool? _reportsExpanded;
 
   @override
   void dispose() {
@@ -289,18 +290,27 @@ class _SummaryTabState extends State<_SummaryTab> {
         if (report.loading) {
           return const Center(child: CircularProgressIndicator());
         }
+        // Default: expanded for single-day, collapsed for multi-day ranges so
+        // the chat area gets more room.
+        final expanded = _reportsExpanded ?? report.isSingleDay;
         // Cap the day-report panel at ~42% of the viewport so many days never
         // push the chat off screen — it scrolls internally instead (D2).
         final panelMaxHeight = MediaQuery.of(ctx).size.height * 0.42;
+        // Count how many days are currently generating (for progress label).
+        final generatingCount = report.rangeDays
+            .where((d) => report.isGeneratingDay(
+                DailyReportViewModel.dayKeyOf(d)))
+            .length;
         return Column(
           children: [
             // ---- Upper panel: collapsible, fixed-height, internally scrollable
             _ReportsPanel(
               dayCount: report.rangeDays.length,
-              expanded: _reportsExpanded,
+              expanded: expanded,
               maxHeight: panelMaxHeight,
+              generatingCount: generatingCount,
               onToggle: () =>
-                  setState(() => _reportsExpanded = !_reportsExpanded),
+                  setState(() => _reportsExpanded = !expanded),
               cards: _dayCards(report),
             ),
             const Divider(height: 1),
@@ -346,6 +356,7 @@ class _ReportsPanel extends StatefulWidget {
     required this.maxHeight,
     required this.onToggle,
     required this.cards,
+    this.generatingCount = 0,
   });
 
   final int dayCount;
@@ -353,6 +364,7 @@ class _ReportsPanel extends StatefulWidget {
   final double maxHeight;
   final VoidCallback onToggle;
   final List<Widget> cards;
+  final int generatingCount;
 
   @override
   State<_ReportsPanel> createState() => _ReportsPanelState();
@@ -375,37 +387,54 @@ class _ReportsPanelState extends State<_ReportsPanel> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        InkWell(
-          onTap: widget.onToggle,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppDimens.spacingMd,
-              AppDimens.spacingSm,
-              AppDimens.spacingSm,
-              AppDimens.spacingSm,
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.summarize_outlined, size: 20, color: scheme.primary),
-                const SizedBox(width: AppDimens.spacingSm),
-                Text(
-                  s.dailyReport,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+        Semantics(
+          expanded: widget.expanded,
+          button: true,
+          label: s.dailyReport,
+          child: InkWell(
+            onTap: widget.onToggle,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppDimens.spacingMd,
+                AppDimens.spacingSm,
+                AppDimens.spacingSm,
+                AppDimens.spacingSm,
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.summarize_outlined, size: 20, color: scheme.primary),
+                  const SizedBox(width: AppDimens.spacingSm),
+                  Text(
+                    s.dailyReport,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-                const SizedBox(width: AppDimens.spacingSm),
-                _CountChip(
-                  icon: Icons.calendar_today_outlined,
-                  label: '${widget.dayCount}',
-                ),
-                const Spacer(),
-                AnimatedRotation(
-                  turns: widget.expanded ? 0.5 : 0,
-                  duration: AppMotion.short,
-                  child: const Icon(Icons.expand_more),
-                ),
-              ],
+                  const SizedBox(width: AppDimens.spacingSm),
+                  _CountChip(
+                    icon: Icons.calendar_today_outlined,
+                    label: '${widget.dayCount}',
+                  ),
+                  if (widget.generatingCount > 0) ...[
+                    const SizedBox(width: AppDimens.spacingSm),
+                    Text(
+                      s.generatingDayProgress(
+                        widget.dayCount - widget.generatingCount,
+                        widget.dayCount,
+                      ),
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: scheme.primary,
+                      ),
+                    ),
+                  ],
+                  const Spacer(),
+                  AnimatedRotation(
+                    turns: widget.expanded ? 0.5 : 0,
+                    duration: AppMotion.short,
+                    child: const Icon(Icons.expand_more),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -494,67 +523,80 @@ class _DayReportCardState extends State<_DayReportCard> {
       duration: AppMotion.medium,
       curve: AppMotion.emphasizedDecel,
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: scheme.outlineVariant),
+        color: theme.brightness == Brightness.light
+            ? const Color(0xFFFFFFFF)
+            : scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.shadow.withValues(alpha: 0.06),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // ---- Header (tap to collapse/expand) ----
-          InkWell(
-            onTap: () => setState(() => _expanded = !_expanded),
-            borderRadius: BorderRadius.circular(12),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppDimens.spacingMd,
-                AppDimens.spacingSm,
-                AppDimens.spacingSm,
-                AppDimens.spacingSm,
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.auto_awesome_outlined,
-                    size: 20,
-                    color: scheme.primary,
-                  ),
-                  const SizedBox(width: AppDimens.spacingSm),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _headerLabel(s.today),
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        if (!_expanded)
+          Semantics(
+            expanded: _expanded,
+            button: true,
+            child: InkWell(
+              onTap: () => setState(() => _expanded = !_expanded),
+              borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppDimens.spacingMd,
+                  AppDimens.spacingSm,
+                  AppDimens.spacingSm,
+                  AppDimens.spacingSm,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.auto_awesome_outlined,
+                      size: 20,
+                      color: scheme.primary,
+                    ),
+                    const SizedBox(width: AppDimens.spacingSm),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            _summaryLine(report, s.noReportYet),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: scheme.onSurfaceVariant,
+                            _headerLabel(s.today),
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
-                      ],
+                          if (!_expanded)
+                            Text(
+                              _summaryLine(report, s.noReportYet),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                  if (report != null && report.commitCount > 0) ...[
-                    const SizedBox(width: AppDimens.spacingSm),
-                    _CountChip(
-                      icon: Icons.commit_outlined,
-                      label: '${report.commitCount}',
+                    if (report != null && report.commitCount > 0) ...[
+                      const SizedBox(width: AppDimens.spacingSm),
+                      _CountChip(
+                        icon: Icons.commit_outlined,
+                        label: '${report.commitCount}',
+                      ),
+                    ],
+                    AnimatedRotation(
+                      turns: _expanded ? 0.5 : 0,
+                      duration: AppMotion.short,
+                      child: const Icon(Icons.expand_more),
                     ),
                   ],
-                  AnimatedRotation(
-                    turns: _expanded ? 0.5 : 0,
-                    duration: AppMotion.short,
-                    child: const Icon(Icons.expand_more),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -614,7 +656,7 @@ class _DayReportBody extends StatelessWidget {
         const SizedBox(height: AppDimens.spacingSm),
         Align(
           alignment: Alignment.centerLeft,
-          child: FilledButton.icon(
+          child: TextButton.icon(
             onPressed: generating
                 ? null
                 : () => vm.generateDay(
@@ -627,7 +669,7 @@ class _DayReportBody extends StatelessWidget {
                     height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.refresh),
+                : const Icon(Icons.refresh, size: 18),
             label: Text(generating ? s.generating : s.regenerateReport),
           ),
         ),
@@ -687,33 +729,47 @@ class _HighlightsCard extends StatelessWidget {
     if (report.highlights.isEmpty && report.blockers.isEmpty) {
       return const SizedBox.shrink();
     }
+    final s = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Padding(
       padding: const EdgeInsets.only(top: AppDimens.spacingMd),
-      child: Card(
-        margin: EdgeInsets.zero,
-        child: Padding(
-          padding: const EdgeInsets.all(AppDimens.spacingMd),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (final h in report.highlights)
-                _BulletRow(
-                  icon: Icons.check_circle_outline,
+      child: SectionCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.emoji_events_outlined,
+                  size: 20,
                   color: scheme.primary,
-                  text: h,
                 ),
-              if (report.highlights.isNotEmpty && report.blockers.isNotEmpty)
-                const SizedBox(height: AppDimens.spacingSm),
-              for (final b in report.blockers)
-                _BulletRow(
-                  icon: Icons.report_problem_outlined,
-                  color: scheme.error,
-                  text: b,
+                const SizedBox(width: AppDimens.spacingSm),
+                Text(
+                  s.highlights,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-            ],
-          ),
+              ],
+            ),
+            const SizedBox(height: AppDimens.spacingSm),
+            for (final h in report.highlights)
+              _BulletRow(
+                icon: Icons.check_circle_outline,
+                color: scheme.primary,
+                text: h,
+              ),
+            if (report.highlights.isNotEmpty && report.blockers.isNotEmpty)
+              const SizedBox(height: AppDimens.spacingSm),
+            for (final b in report.blockers)
+              _BulletRow(
+                icon: Icons.report_problem_outlined,
+                color: scheme.error,
+                text: b,
+              ),
+          ],
         ),
       ),
     );
@@ -733,68 +789,64 @@ class _CommitRollupCard extends StatelessWidget {
     final scheme = theme.colorScheme;
     return Padding(
       padding: const EdgeInsets.only(top: AppDimens.spacingMd),
-      child: Card(
-        margin: EdgeInsets.zero,
-        child: Padding(
-          padding: const EdgeInsets.all(AppDimens.spacingMd),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.merge_type_outlined,
-                    size: 20,
-                    color: scheme.tertiary,
-                  ),
-                  const SizedBox(width: AppDimens.spacingSm),
-                  Text(
-                    s.commitRollup,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppDimens.spacingSm),
-              for (final t in report.commitThemes)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: AppDimens.spacingSm),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              t.theme,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            if (t.summary.isNotEmpty)
-                              Text(
-                                t.summary,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: scheme.onSurfaceVariant,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      if (t.commitCount > 0) ...[
-                        const SizedBox(width: AppDimens.spacingSm),
-                        _CountChip(
-                          icon: Icons.commit_outlined,
-                          label: '${t.commitCount}',
-                        ),
-                      ],
-                    ],
+      child: SectionCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.merge_type_outlined,
+                  size: 20,
+                  color: scheme.tertiary,
+                ),
+                const SizedBox(width: AppDimens.spacingSm),
+                Text(
+                  s.commitRollup,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-            ],
-          ),
+              ],
+            ),
+            const SizedBox(height: AppDimens.spacingSm),
+            for (final t in report.commitThemes)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppDimens.spacingSm),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            t.theme,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          if (t.summary.isNotEmpty)
+                            Text(
+                              t.summary,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (t.commitCount > 0) ...[
+                      const SizedBox(width: AppDimens.spacingSm),
+                      _CountChip(
+                        icon: Icons.commit_outlined,
+                        label: '${t.commitCount}',
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -879,78 +931,76 @@ class _ContributionsCardState extends State<_ContributionsCard> {
     final scheme = theme.colorScheme;
     return Padding(
       padding: const EdgeInsets.only(top: AppDimens.spacingMd),
-      child: Card(
-        margin: EdgeInsets.zero,
-        child: Padding(
-          padding: const EdgeInsets.all(AppDimens.spacingMd),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.groups_outlined,
-                    size: 20,
-                    color: scheme.secondary,
+      child: SectionCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.groups_outlined,
+                  size: 20,
+                  color: scheme.secondary,
+                ),
+                const SizedBox(width: AppDimens.spacingSm),
+                Text(
+                  s.contributions,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
-                  const SizedBox(width: AppDimens.spacingSm),
-                  Text(
-                    s.contributions,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppDimens.spacingSm),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppDimens.spacingSm),
               Wrap(
                 spacing: AppDimens.spacingSm,
                 runSpacing: AppDimens.spacingSm,
                 children: [
                   for (final e in entries)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppDimens.spacingSm,
-                        vertical: AppDimens.spacingXs,
-                      ),
-                      decoration: BoxDecoration(
-                        color: scheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CircleAvatar(
-                            radius: 10,
-                            backgroundColor: scheme.primaryContainer,
-                            child: Text(
-                              _initial(_memberLabel(e)),
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: scheme.onPrimaryContainer,
-                                fontWeight: FontWeight.w700,
+                    Semantics(
+                      label: '${_memberLabel(e)}: '
+                          '${e.value.tasksDone} tasks, '
+                          '${e.value.commits} commits',
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppDimens.spacingSm,
+                          vertical: AppDimens.spacingXs,
+                        ),
+                        decoration: BoxDecoration(
+                          color: scheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircleAvatar(
+                              radius: 10,
+                              backgroundColor: scheme.primaryContainer,
+                              child: Text(
+                                _initial(_memberLabel(e)),
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: scheme.onPrimaryContainer,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: AppDimens.spacingXs),
-                          // Cap the name width + ellipsize so a long fallback
-                          // label (the raw Firebase UID, used when the report
-                          // carries no githubLogin/displayName) can't overflow
-                          // the chip. Counts stay outside, always visible.
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 120),
-                            child: Text(
-                              _memberLabel(e),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                            const SizedBox(width: AppDimens.spacingXs),
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 120),
+                              child: Text(
+                                _memberLabel(e),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.labelMedium,
+                              ),
+                            ),
+                            const SizedBox(width: AppDimens.spacingXs),
+                            Text(
+                              '·  ${e.value.tasksDone}✓ ${e.value.commits}⎇',
                               style: theme.textTheme.labelMedium,
                             ),
-                          ),
-                          const SizedBox(width: AppDimens.spacingXs),
-                          Text(
-                            '·  ${e.value.tasksDone}✓ ${e.value.commits}⎇',
-                            style: theme.textTheme.labelMedium,
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                 ],
@@ -958,10 +1008,8 @@ class _ContributionsCardState extends State<_ContributionsCard> {
             ],
           ),
         ),
-      ),
-    );
+      );
   }
-
 }
 
 class _BulletRow extends StatelessWidget {
@@ -1027,14 +1075,29 @@ class _AskRepoHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = context.l10n;
     final theme = Theme.of(context);
-    return Row(
+    final scheme = theme.colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(Icons.auto_awesome, size: 20, color: theme.colorScheme.primary),
-        const SizedBox(width: AppDimens.spacingSm),
-        Text(
-          s.askRepoTitle,
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w600,
+        Row(
+          children: [
+            Icon(Icons.auto_awesome, size: 20, color: scheme.primary),
+            const SizedBox(width: AppDimens.spacingSm),
+            Text(
+              s.askRepoTitle,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        Padding(
+          padding: const EdgeInsets.only(left: 28),
+          child: Text(
+            s.askRepoScope,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
           ),
         ),
       ],
@@ -2415,7 +2478,11 @@ class _DigestPanelState extends State<_DigestPanel> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        InkWell(
+        Semantics(
+          expanded: widget.expanded,
+          button: true,
+          label: s.discordDigest,
+          child: InkWell(
           onTap: widget.onToggle,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(
@@ -2468,6 +2535,7 @@ class _DigestPanelState extends State<_DigestPanel> {
               ],
             ),
           ),
+        ),
         ),
         if (widget.expanded)
           ConstrainedBox(
@@ -2676,20 +2744,34 @@ class _DigestCardState extends State<_DigestCard> {
       duration: AppMotion.medium,
       curve: AppMotion.emphasizedDecel,
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
+        color: theme.brightness == Brightness.light
+            ? const Color(0xFFFFFFFF)
+            : scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(AppDimens.radiusMd),
         border: Border.all(
-          color: locked ? scheme.primary : scheme.outlineVariant,
+          color: locked
+              ? scheme.primary
+              : scheme.outlineVariant.withValues(alpha: 0.4),
           width: locked ? 1.6 : 1,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.shadow.withValues(alpha: 0.06),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // ---- Header (tap to collapse/expand) ----
-          InkWell(
+          Semantics(
+            expanded: _expanded,
+            button: true,
+            child: InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppDimens.radiusMd),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(
                 AppDimens.spacingMd,
@@ -2751,6 +2833,7 @@ class _DigestCardState extends State<_DigestCard> {
                 ],
               ),
             ),
+          ),
           ),
           // ---- Collapsible body ----
           AnimatedSize(
@@ -2941,14 +3024,28 @@ class _DiscordChatState extends State<_DiscordChat> {
                   : ListView.builder(
                       controller: _scrollController,
                       padding: const EdgeInsets.all(AppDimens.spacingMd),
-                      itemCount: turns.length + (vm.sending ? 1 : 0),
+                      itemCount: turns.length + 1 + (vm.sending ? 1 : 0),
                       itemBuilder: (_, i) {
-                        if (i >= turns.length) {
+                        if (i == 0) {
+                          return Padding(
+                            padding: const EdgeInsets.only(
+                              bottom: AppDimens.spacingSm,
+                            ),
+                            child: Text(
+                              s.askDiscordScope,
+                              style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                                color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          );
+                        }
+                        final ti = i - 1;
+                        if (ti >= turns.length) {
                           // Live agent trace (searching Discord, composing…)
                           // replaces the generic "thinking" bubble.
                           return AskRepoLiveTraceStrip(steps: vm.liveSteps);
                         }
-                        return _ChatTurnView(turn: turns[i]);
+                        return _ChatTurnView(turn: turns[ti]);
                       },
                     ),
             ),
