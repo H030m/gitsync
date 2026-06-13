@@ -65,6 +65,7 @@ export interface DayCommit {
   linkedTaskIds: string[];
   additions: number;
   deletions: number;
+  committedAt: string | null; // ISO 8601 (UTC); when the commit was authored
 }
 
 const RANGE_COMMIT_LIMIT = 500;
@@ -119,7 +120,21 @@ function toDayCommit(sha: string, data: Record<string, unknown>): DayCommit {
     linkedTaskIds: (data.linkedTaskIds as string[] | undefined) ?? [],
     additions: (data.additions as number | undefined) ?? 0,
     deletions: (data.deletions as number | undefined) ?? 0,
+    committedAt: toIso(data.committedAt),
   };
+}
+
+/** A Firestore Timestamp / ISO string / millis → ISO 8601, else null. */
+function toIso(value: unknown): string | null {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (typeof (value as { toDate?: unknown }).toDate === 'function') {
+    return (value as { toDate: () => Date }).toDate().toISOString();
+  }
+  const ms = (value as { _seconds?: number; seconds?: number })._seconds ??
+    (value as { seconds?: number }).seconds;
+  if (typeof ms === 'number') return new Date(ms * 1000).toISOString();
+  return null;
 }
 
 // ---- listCompletedTasks ----------------------------------------------------

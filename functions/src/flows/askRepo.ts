@@ -57,9 +57,23 @@ export interface AskRepoInput {
   runId?: string;
 }
 
+/** One labeled commit "window" the agent surfaced — the result of a single
+ *  listDayCommits / searchPastCommits call. `label` is the person / task /
+ *  search the window represents (empty = a plain recent-activity window, which
+ *  the UI renders under a localized default header). */
+export interface CommitGroup {
+  label: string;
+  commits: DayCommit[];
+}
+
 export interface AskRepoResult {
   answer: string;
-  commits: DayCommit[]; // commits the agent surfaced (deduped by sha)
+  // Flat, deduped-by-sha union of every window (kept for backward compat with
+  // the fake backend / existing clients that read `commits`).
+  commits: DayCommit[];
+  // The same commits split into the agent's per-person / per-task windows, in
+  // the order the agent surfaced them. The UI renders one panel per group.
+  commitGroups: CommitGroup[];
   snippets: DiscordSnippet[]; // Discord clusters surfaced (deduped by key)
 }
 
@@ -95,8 +109,28 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       name: 'listDayCommits',
       description:
         'List commits committed in the last `days` days (author, message, ' +
-        'one-line AI summary, linked tasks). Start here for "what landed".',
-      parameters: { type: 'object', properties: { ...DAYS_PARAM }, additionalProperties: false },
+        'one-line AI summary, linked tasks, commit time). Start here for "what ' +
+        'landed". Pass `authorLogin` to get ONE person\'s commits, or `taskId` ' +
+        'to get a single task\'s commits — call it once per person / task to ' +
+        'build separate, labeled windows for a project-wide question.',
+      parameters: {
+        type: 'object',
+        properties: {
+          ...DAYS_PARAM,
+          authorLogin: {
+            type: 'string',
+            description:
+              "Only this author's commits (a GitHub login from readTeamState). " +
+              'The window is labeled with this person.',
+          },
+          taskId: {
+            type: 'string',
+            description:
+              'Only commits linked to this task id. The window is labeled with the task.',
+          },
+        },
+        additionalProperties: false,
+      },
     },
   },
   {
@@ -225,20 +259,41 @@ export async function askRepoFlow(input: AskRepoInput): Promise<AskRepoResult> {
     { role: 'user', content: question },
   ];
 
-  // Sources surfaced across rounds — commits deduped by sha, snippets by key,
-  // both first-seen order (the order the agent found them).
+  // Sources surfaced across rounds — commits split into labeled "windows" (one
+  // per listDayCommits / searchPastCommits call), snippets deduped by key, both
+  // in first-seen order (the order the agent found them).
   //
-  // Commits the agent retrieves (both the listing tool and the semantic search)
-  // are shown to the user as cards in a scrollable sources panel. A hard cap
-  // keeps a broad "how's progress" question from surfacing the whole window; the
-  // prompt tells the agent to summarize in prose and NOT paste commits as text.
-  const MAX_SURFACED_COMMITS = 12;
-  const surfacedCommits = new Map<string, DayCommit>();
-  const collectCommits = (cs: DayCommit[]) => {
+  // Each window is the result of one tool call: a per-person / per-task
+  // listDayCommits, or a semantic search. Caps keep a broad "how's progress"
+  // question bounded WITHOUT surfacing the whole history; the prompt tells the
+  // agent to summarize in prose, group by person/task, and NEVER mention these
+  // limits to the user. A commit already shown in an earlier window is not
+  // repeated in a later one (deduped across windows by sha).
+  const PER_GROUP_COMMITS = 10; // cap per window
+  const MAX_SURFACED_COMMITS = 50; // global safety cap across all windows
+  const seenShas = new Set<string>();
+  const groups = new Map<string, DayCommit[]>(); // label → window (insertion order)
+  const collectCommits = (cs: DayCommit[], label: string) => {
+    const bucket = groups.get(label) ?? [];
+    if (!groups.has(label)) groups.set(label, bucket);
     for (const c of cs) {
-      if (surfacedCommits.size >= MAX_SURFACED_COMMITS) break;
-      if (!surfacedCommits.has(c.sha)) surfacedCommits.set(c.sha, c);
+      if (seenShas.size >= MAX_SURFACED_COMMITS) break;
+      if (bucket.length >= PER_GROUP_COMMITS) break;
+      if (seenShas.has(c.sha)) continue;
+      seenShas.add(c.sha);
+      bucket.push(c);
     }
+  };
+  const buildResult = (answer: string): AskRepoResult => {
+    const commitGroups = [...groups.entries()]
+      .map(([label, commits]) => ({ label, commits }))
+      .filter((g) => g.commits.length > 0);
+    return {
+      answer,
+      commits: commitGroups.flatMap((g) => g.commits),
+      commitGroups,
+      snippets: [...surfacedSnippets.values()],
+    };
   };
   const surfacedSnippets = new Map<string, DiscordSnippet>();
   const collectSnippets = (ss: DiscordSnippet[]) => {
@@ -265,11 +320,7 @@ export async function askRepoFlow(input: AskRepoInput): Promise<AskRepoResult> {
       const toolCalls = choice.tool_calls ?? [];
       if (toolCalls.length === 0) {
         await finishRun(repoId, runId, 'done');
-        return {
-          answer: choice.content ?? '',
-          commits: [...surfacedCommits.values()],
-          snippets: [...surfacedSnippets.values()],
-        };
+        return buildResult(choice.content ?? '');
       }
 
       const results = await Promise.all(
@@ -301,11 +352,7 @@ export async function askRepoFlow(input: AskRepoInput): Promise<AskRepoResult> {
       ],
     });
     await finishRun(repoId, runId, 'done');
-    return {
-      answer: finalCompletion.choices[0]?.message?.content ?? '',
-      commits: [...surfacedCommits.values()],
-      snippets: [...surfacedSnippets.values()],
-    };
+    return buildResult(finalCompletion.choices[0]?.message?.content ?? '');
   } catch (err) {
     // The flow failed (e.g. OpenAI down) — mark the run errored, then rethrow so
     // the handler still surfaces the failure to the client.
@@ -321,7 +368,7 @@ async function runTool(
   sinceKey: (days: number) => string,
   today: string,
   collect: {
-    collectCommits: (cs: DayCommit[]) => void;
+    collectCommits: (cs: DayCommit[], groupLabel: string) => void;
     collectSnippets: (ss: DiscordSnippet[]) => void;
   },
 ): Promise<{ id: string; content: string; label: string }> {
@@ -332,8 +379,26 @@ async function runTool(
   const name = call.function.name;
   switch (name) {
     case 'listDayCommits': {
-      const cs = await listRangeCommits(repoId, sinceKey(clampDays(args.days)), today);
-      collect.collectCommits(cs); // surfaced to the panel (capped in collectCommits)
+      const all = await listRangeCommits(repoId, sinceKey(clampDays(args.days)), today);
+      // Optional in-memory filters (no Firestore composite index needed). Each
+      // filtered call becomes its own labeled window so a project-wide question
+      // can be split per person / per task instead of one mixed list.
+      const authorLogin =
+        typeof args.authorLogin === 'string' ? args.authorLogin.trim() : '';
+      const taskId = typeof args.taskId === 'string' ? args.taskId.trim() : '';
+      let cs = all;
+      let label = '';
+      if (authorLogin) {
+        cs = all.filter(
+          (c) => c.authorLogin.toLowerCase() === authorLogin.toLowerCase(),
+        );
+        // Prefer the human name (from the matched commits) for the window label.
+        label = cs.find((c) => c.authorName)?.authorName || authorLogin;
+      } else if (taskId) {
+        cs = all.filter((c) => c.linkedTaskIds.includes(taskId));
+        label = `Task ${taskId}`;
+      }
+      collect.collectCommits(cs, label); // surfaced to the panel (capped per window)
       return { id: call.id, content: JSON.stringify(cs), label: TRACE_LABELS.listDayCommits };
     }
     case 'listCompletedTasks': {
@@ -345,12 +410,14 @@ async function runTool(
       return { id: call.id, content: JSON.stringify(ds), label: TRACE_LABELS.listRangeDigests };
     }
     case 'searchPastCommits': {
+      const query = String(args.query ?? '');
       const cs = await searchPastCommits(
         repoId,
-        String(args.query ?? ''),
+        query,
         typeof args.limit === 'number' ? args.limit : 8,
       );
-      collect.collectCommits(cs);
+      // Search results are their own window, labeled by the query.
+      collect.collectCommits(cs, query ? `“${query}”` : '');
       return { id: call.id, content: JSON.stringify(cs), label: TRACE_LABELS.searchPastCommits };
     }
     case 'searchDiscordMessages': {

@@ -2149,8 +2149,9 @@ void _showCommitSheet(
   Commit commit,
   CommitsViewModel vm,
 ) {
-  // Kick off the explanation fetch before the sheet builds.
-  vm.explain(commit.sha);
+  // Kick off the explanation fetch before the sheet builds — in the app's
+  // language so the FIRST tap (not just a regenerate) comes back localized.
+  vm.explain(commit.sha, language: context.l10n.backendLanguage);
   showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -2271,9 +2272,13 @@ class _CommitDetailSheet extends StatelessWidget {
               ),
               const SizedBox(height: AppDimens.spacingSm),
               if (explaining)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: AppDimens.spacingMd),
-                  child: Center(child: CircularProgressIndicator()),
+                // Live agent "thinking" steps (reading nearby commits,
+                // searching Discord, writing) while the callable runs.
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: AppDimens.spacingSm,
+                  ),
+                  child: AskRepoLiveTraceStrip(steps: vm.liveSteps),
                 )
               else if (explanation != null)
                 MarkdownView(data: explanation)
@@ -2525,8 +2530,101 @@ class _DigestPanelState extends State<_DigestPanel> {
   }
 }
 
-// Collapsible Discord digest card with a lock toggle (frozen when locked) and
-// an "ask AI to adjust this summary" field. The header is tappable to
+/// The messages a digest references, with timestamps. Prefers the set the
+/// backend persisted on the digest doc (`sourceMessages`); for older digests
+/// written before that field existed, falls back to the day's streamed messages
+/// (filtered to the digest's Asia/Taipei day) so the panel still appears. Capped
+/// to keep the list bounded.
+List<DiscordDigestSource> _digestSources(
+  DiscordDigest digest,
+  DiscordMessagesViewModel vm,
+) {
+  if (digest.sourceMessages.isNotEmpty) return digest.sourceMessages;
+  String taipeiKey(DateTime ts) {
+    final t = ts.toUtc().add(const Duration(hours: 8));
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${t.year}-${two(t.month)}-${two(t.day)}';
+  }
+  final sameDay = vm.messages
+      .where((m) => taipeiKey(m.timestamp.toDate()) == digest.date)
+      .toList()
+    ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+  return sameDay
+      .take(50)
+      .map((m) => DiscordDigestSource(
+            authorName: m.authorName,
+            content: m.content,
+            timestamp: m.timestamp.toDate().toLocal(),
+          ))
+      .toList();
+}
+
+// Collapsible "referenced messages" list under a digest: the messages the
+// summary was built from, each with its send time, so the user can see what was
+// discussed and WHEN (not just the outline). Collapsed by default.
+class _DigestSourceMessages extends StatelessWidget {
+  const _DigestSourceMessages({required this.sources});
+  final List<DiscordDigestSource> sources;
+
+  static String _stamp(DateTime? dt) {
+    if (dt == null) return '';
+    final d = dt.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}/${two(d.month)}/${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.l10n;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Theme(
+      // Strip the default ExpansionTile dividers so it sits flush in the card.
+      data: theme.copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(bottom: AppDimens.spacingSm),
+        // ExpansionTile centers its children by default — left-align them.
+        expandedCrossAxisAlignment: CrossAxisAlignment.start,
+        expandedAlignment: Alignment.centerLeft,
+        dense: true,
+        leading: Icon(Icons.forum_outlined, size: 16, color: scheme.secondary),
+        title: Text(
+          s.digestSourceMessages(sources.length),
+          style: theme.textTheme.labelMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        children: [
+          for (final m in sources)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: RichText(
+                text: TextSpan(
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                  children: [
+                    if (_stamp(m.timestamp).isNotEmpty)
+                      TextSpan(
+                        text: '${_stamp(m.timestamp)}  ',
+                        style: theme.textTheme.labelSmall
+                            ?.copyWith(color: scheme.onSurfaceVariant),
+                      ),
+                    TextSpan(
+                      text: '${m.authorName}: ',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    TextSpan(text: m.content),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 // collapse/expand; the lock button animates; the card border animates to a
 // "frozen" tint when locked.
 class _DigestCard extends StatefulWidget {
@@ -2670,21 +2768,25 @@ class _DigestCardState extends State<_DigestCard> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Long digests can overflow the card; cap the height
-                        // and let the markdown scroll within it. The markdown
-                        // body shrink-wraps to its content width, so force the
-                        // scroll viewport to fill the card width — otherwise the
-                        // scrollbar floats in the middle where the text ends
-                        // instead of pinning to the card's right edge.
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 360),
-                          child: SingleChildScrollView(
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: MarkdownView(data: digest.markdown),
-                            ),
-                          ),
+                        // Render the full digest inline and let the enclosing
+                        // panel ListView own the scroll. (A nested same-axis
+                        // SingleChildScrollView here captured vertical drags, so
+                        // the panel couldn't scroll past a long digest and the
+                        // card's bottom — adjust field, trace — was unreachable.)
+                        SizedBox(
+                          width: double.infinity,
+                          child: MarkdownView(data: digest.markdown),
                         ),
+                        // The messages this digest references. Prefer the set
+                        // the backend persisted with the digest; for older
+                        // digests written before that existed, fall back to the
+                        // day's streamed messages so the panel still shows.
+                        if (_digestSources(digest, vm).isNotEmpty) ...[
+                          const SizedBox(height: AppDimens.spacingSm),
+                          _DigestSourceMessages(
+                            sources: _digestSources(digest, vm),
+                          ),
+                        ],
                         const SizedBox(height: AppDimens.spacingSm),
                         const Divider(height: 1),
                         const SizedBox(height: AppDimens.spacingSm),
@@ -2742,6 +2844,12 @@ class _DigestCardState extends State<_DigestCard> {
                               ),
                             ],
                           ),
+                        if (editing) ...[
+                          const SizedBox(height: AppDimens.spacingXs),
+                          // Live agent "thinking" steps while the digest is
+                          // rewritten (searching Discord, revising…).
+                          AskRepoLiveTraceStrip(steps: vm.liveSteps),
+                        ],
                         if (vm.digestError != null) ...[
                           const SizedBox(height: AppDimens.spacingXs),
                           Text(
@@ -2835,7 +2943,11 @@ class _DiscordChatState extends State<_DiscordChat> {
                       padding: const EdgeInsets.all(AppDimens.spacingMd),
                       itemCount: turns.length + (vm.sending ? 1 : 0),
                       itemBuilder: (_, i) {
-                        if (i >= turns.length) return const _ThinkingBubble();
+                        if (i >= turns.length) {
+                          // Live agent trace (searching Discord, composing…)
+                          // replaces the generic "thinking" bubble.
+                          return AskRepoLiveTraceStrip(steps: vm.liveSteps);
+                        }
                         return _ChatTurnView(turn: turns[i]);
                       },
                     ),
@@ -3111,29 +3223,6 @@ class _SnippetMessage extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
       ),
       child: row,
-    );
-  }
-}
-
-class _ThinkingBubble extends StatelessWidget {
-  const _ThinkingBubble();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppDimens.spacingMd),
-      child: Row(
-        children: [
-          const SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-          const SizedBox(width: AppDimens.spacingSm),
-          Text(context.l10n.thinking,
-              style: Theme.of(context).textTheme.bodySmall),
-        ],
-      ),
     );
   }
 }

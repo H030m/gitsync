@@ -86,9 +86,10 @@ class _SpyFunctions implements FunctionsService {
   Future<String> generateHandoff(
           {required String repoId,
           required String taskId,
-          String? language}) =>
+          String? language,
+          String? runId}) =>
       _fake.generateHandoff(
-          repoId: repoId, taskId: taskId, language: language);
+          repoId: repoId, taskId: taskId, language: language, runId: runId);
   @override
   Future<String> summarizeDay(
           {required String repoId,
@@ -118,9 +119,10 @@ class _SpyFunctions implements FunctionsService {
           {required String repoId,
           required String sha,
           bool force = false,
-          String? language}) =>
+          String? language,
+          String? runId}) =>
       _fake.explainCommit(
-          repoId: repoId, sha: sha, force: force, language: language);
+          repoId: repoId, sha: sha, force: force, language: language, runId: runId);
   @override
   Future<void> setDiscordWebhook(
           {required String repoId,
@@ -143,9 +145,10 @@ class _SpyFunctions implements FunctionsService {
   Future<String> editDiscordDigest(
           {required String repoId,
           required String date,
-          required String instruction}) =>
+          required String instruction,
+          String? runId}) =>
       _fake.editDiscordDigest(
-          repoId: repoId, date: date, instruction: instruction);
+          repoId: repoId, date: date, instruction: instruction, runId: runId);
   @override
   Future<void> setDigestLock(
           {required String repoId,
@@ -158,13 +161,15 @@ class _SpyFunctions implements FunctionsService {
           required String question,
           List<DiscordChatTurn> history = const [],
           String? startDate,
-          String? endDate}) =>
+          String? endDate,
+          String? runId}) =>
       _fake.discordChat(
           repoId: repoId,
           question: question,
           history: history,
           startDate: startDate,
-          endDate: endDate);
+          endDate: endDate,
+          runId: runId);
   @override
   Future<void> subscribeToTopic(
           {required String token, required String topic}) =>

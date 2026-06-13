@@ -54,11 +54,14 @@ abstract class FunctionsService {
   /// Regenerates the AI handoff doc for [taskId] (force=true). [language] is an
   /// English language NAME (e.g. "Traditional Chinese") derived from the app
   /// locale so the regenerated doc comes back in the user's language (W6);
-  /// omit it to keep the backend's default-language behavior.
+  /// omit it to keep the backend's default-language behavior. [runId] is a
+  /// client-generated id for the agent tool-trace doc the UI streams while the
+  /// agent drafts + self-reviews the handoff (omit to skip the trace).
   Future<String> generateHandoff({
     required String repoId,
     required String taskId,
     String? language,
+    String? runId,
   });
   /// Generates the Summary tab report for the inclusive day range
   /// [startDate]..[endDate] (both YYYY-MM-DD; omit [endDate] for one day).
@@ -106,6 +109,7 @@ abstract class FunctionsService {
     required String sha,
     bool force = false,
     String? language,
+    String? runId,
   });
 
   /// Asks the AI to summarize what one commit author worked on across the
@@ -166,10 +170,13 @@ abstract class FunctionsService {
 
   /// Asks the AI to rewrite the digest for [date] (YYYY-MM-DD) per
   /// [instruction]. Returns the new markdown. Throws if the digest is locked.
+  /// [runId] is a client-generated id for the agent tool-trace doc the UI
+  /// streams while the agent gathers evidence + rewrites (omit to skip).
   Future<String> editDiscordDigest({
     required String repoId,
     required String date,
     required String instruction,
+    String? runId,
   });
 
   /// Locks (freezes) or unlocks the digest for [date]. A locked digest is not
@@ -192,6 +199,7 @@ abstract class FunctionsService {
     List<DiscordChatTurn> history = const [],
     String? startDate,
     String? endDate,
+    String? runId,
   });
 
   // ---- FCM ---------------------------------------------------------------
@@ -275,12 +283,15 @@ class _LiveFunctionsService implements FunctionsService {
     required String repoId,
     required String taskId,
     String? language,
+    String? runId,
   }) async {
     final res = await _callable('generateHandoff').call({
       'repoId': repoId,
       'taskId': taskId,
       // Only sent on an explicit regenerate; absent → backend default language.
       'language': ?language,
+      // Client-generated trace doc id; absent → backend skips the trace.
+      'runId': ?runId,
     });
     final data = Map<String, dynamic>.from(res.data as Map);
     return data['handoffMarkdown'] as String;
@@ -344,6 +355,7 @@ class _LiveFunctionsService implements FunctionsService {
     required String sha,
     bool force = false,
     String? language,
+    String? runId,
   }) async {
     final res = await _callable('explainCommit').call({
       'repoId': repoId,
@@ -351,6 +363,8 @@ class _LiveFunctionsService implements FunctionsService {
       'force': force,
       // Only sent on a recompute; absent → backend default language.
       'language': ?language,
+      // Client-generated trace doc id; absent → backend skips the trace.
+      'runId': ?runId,
     });
     final data = Map<String, dynamic>.from(res.data as Map);
     return data['markdown'] as String;
@@ -445,11 +459,14 @@ class _LiveFunctionsService implements FunctionsService {
     required String repoId,
     required String date,
     required String instruction,
+    String? runId,
   }) async {
     final res = await _callable('editDiscordDigest').call({
       'repoId': repoId,
       'date': date,
       'instruction': instruction,
+      // Client-generated trace doc id; absent → backend skips the trace.
+      'runId': ?runId,
     });
     final data = Map<String, dynamic>.from(res.data as Map);
     return data['markdown'] as String;
@@ -475,6 +492,7 @@ class _LiveFunctionsService implements FunctionsService {
     List<DiscordChatTurn> history = const [],
     String? startDate,
     String? endDate,
+    String? runId,
   }) async {
     final res = await _callable('discordChat').call({
       'repoId': repoId,
@@ -483,6 +501,8 @@ class _LiveFunctionsService implements FunctionsService {
       // Only sent when scoped; the backend treats absent as unscoped (D2).
       'startDate': ?startDate,
       'endDate': ?endDate,
+      // Client-generated trace doc id; absent → backend skips the trace.
+      'runId': ?runId,
     });
     return DiscordChatReply.fromMap(Map<String, dynamic>.from(res.data as Map));
   }

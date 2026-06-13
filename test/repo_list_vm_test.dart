@@ -71,6 +71,7 @@ class _FakeFunctionsService implements FunctionsService {
     required String repoId,
     required String taskId,
     String? language,
+    String? runId,
   }) =>
       throw UnimplementedError();
 
@@ -108,6 +109,7 @@ class _FakeFunctionsService implements FunctionsService {
     required String sha,
     bool force = false,
     String? language,
+    String? runId,
   }) =>
       throw UnimplementedError();
 
@@ -164,6 +166,7 @@ class _FakeFunctionsService implements FunctionsService {
     required String repoId,
     required String date,
     required String instruction,
+    String? runId,
   }) =>
       throw UnimplementedError();
 
@@ -182,6 +185,7 @@ class _FakeFunctionsService implements FunctionsService {
     List<DiscordChatTurn> history = const [],
     String? startDate,
     String? endDate,
+    String? runId,
   }) =>
       throw UnimplementedError();
 

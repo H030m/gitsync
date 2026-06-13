@@ -17,6 +17,11 @@ import {
 // Taipei is a fixed UTC+8 offset year-round.
 const TAIPEI_OFFSET_MS = 8 * 60 * 60 * 1000;
 
+// How many source messages to persist alongside the digest (for the "referenced
+// messages" panel), and how far to trim each one's content.
+const MAX_SOURCE_MESSAGES = 50;
+const SOURCE_CONTENT_CHARS = 280;
+
 export interface DiscordDailyDigestInput {
   repoId: string;
   date: string; // YYYY-MM-DD
@@ -79,6 +84,24 @@ export async function discordDailyDigestFlow(
     })
     .join('\n');
 
+  // Capture the messages the summary is built from, so the digest card can cite
+  // them with timestamps ("referenced what, and when") instead of only an
+  // outline. Capped + content-trimmed to keep the digest doc bounded.
+  const sourceMessages = snap.docs.slice(0, MAX_SOURCE_MESSAGES).map((d) => {
+    const m = d.data();
+    const ts = m.timestamp;
+    return {
+      authorName: (m.authorName as string) ?? (m.authorId as string) ?? 'unknown',
+      content: ((m.content as string) ?? '').slice(0, SOURCE_CONTENT_CHARS),
+      timestamp:
+        ts && typeof (ts as { toDate?: unknown }).toDate === 'function'
+          ? (ts as { toDate: () => Date }).toDate().toISOString()
+          : typeof ts === 'string'
+            ? ts
+            : null,
+    };
+  });
+
   // ---- Step 3: summarize via OpenAI ----------------------------------------
   logger.info('Step 3: call OpenAI for digest', { repoId, date, count: snap.size });
   const completion = await getOpenAI().chat.completions.create({
@@ -109,6 +132,7 @@ export async function discordDailyDigestFlow(
     date,
     markdown,
     messageCount: snap.size,
+    sourceMessages,
     generatedAt: FieldValue.serverTimestamp(),
   });
 

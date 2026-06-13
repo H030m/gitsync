@@ -103,6 +103,7 @@ class FakeFunctionsService implements FunctionsService {
     required String repoId,
     required String taskId,
     String? language,
+    String? runId,
   }) async {
     await Future.delayed(AppConfig.simulatedLatency * 8);
     // W6: surface the requested language so a regenerate is visibly different.
@@ -150,8 +151,10 @@ class FakeFunctionsService implements FunctionsService {
     required String sha,
     bool force = false,
     String? language,
+    String? runId,
   }) async {
-    await Future.delayed(AppConfig.simulatedLatency * 3);
+    // *5 so the fake agent-trace (4 canned steps) plays through before we return.
+    await Future.delayed(AppConfig.simulatedLatency * 5);
     final commit =
         DummyData.commits.where((c) => c.sha == sha).firstOrNull;
     final message = commit?.message ?? sha.substring(0, 7);
@@ -305,15 +308,22 @@ class FakeFunctionsService implements FunctionsService {
       return terms.any(hay.contains);
     }).toList();
     final commitHits = matchedCommits.isNotEmpty ? matchedCommits : commits;
-    final commitSources = commitHits
-        .map((c) => DailyBriefSource(
-              sha: c.sha,
-              message: c.message.split('\n').first,
-              authorName: c.author.name,
-              authorLogin: c.author.login,
-              aiSummary: c.aiSummary,
-              linkedTaskIds: c.linkedTaskIds,
-            ))
+    // Split into per-author windows so fake mode demonstrates the grouped
+    // panels (mirrors the live backend's per-person windows).
+    final byAuthor = <String, List<DailyBriefSource>>{};
+    for (final c in commitHits) {
+      (byAuthor[c.author.name] ??= []).add(DailyBriefSource(
+        sha: c.sha,
+        message: c.message.split('\n').first,
+        authorName: c.author.name,
+        authorLogin: c.author.login,
+        aiSummary: c.aiSummary,
+        linkedTaskIds: c.linkedTaskIds,
+        committedAt: c.committedAt.toDate(),
+      ));
+    }
+    final commitGroups = byAuthor.entries
+        .map((e) => AskRepoCommitGroup(label: e.key, commits: e.value))
         .toList();
 
     // Discord sources — keyword-match the demo messages, grouped with one
@@ -358,7 +368,7 @@ class FakeFunctionsService implements FunctionsService {
 
     return AskRepoReply(
       answer: answer,
-      commits: commitSources,
+      commitGroups: commitGroups,
       snippets: snippets,
     );
   }
@@ -408,6 +418,7 @@ class FakeFunctionsService implements FunctionsService {
     required String repoId,
     required String date,
     required String instruction,
+    String? runId,
   }) async {
     await Future.delayed(AppConfig.simulatedLatency * 3);
     final repo = FakeDiscordDigestRepository();
@@ -434,8 +445,10 @@ class FakeFunctionsService implements FunctionsService {
     List<DiscordChatTurn> history = const [],
     String? startDate,
     String? endDate,
+    String? runId,
   }) async {
-    await Future.delayed(AppConfig.simulatedLatency * 3);
+    // *5 so the fake agent-trace (4 canned steps) plays through before we return.
+    await Future.delayed(AppConfig.simulatedLatency * 5);
 
     final all = DummyData.discordMessages;
 

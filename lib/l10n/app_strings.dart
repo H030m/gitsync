@@ -268,6 +268,8 @@ class AppStrings {
   String get discordDigest => _('Discord digest', 'Discord digest');
   String discordDigestForDate(String date) =>
       _('Discord digest · $date', 'Discord digest · $date');
+  String digestSourceMessages(int n) =>
+      _('Referenced messages ($n)', '參考訊息（$n）');
   String get noDigestInRange => _(
       'No digest in this range. Use "Refresh current range" above to pull messages.',
       '這個範圍還沒有摘要。用上方的「重新整理目前範圍」拉取訊息。');
@@ -302,6 +304,61 @@ class AppStrings {
       'Ask anything about this repo — progress, people, code, commits, or team discussion.',
       '關於這個 repo 的任何事都可以問 —— 進度、成員、程式碼、commit，或團隊討論。');
   String get askRepoThinking => _('Thinking…', '思考中…');
+
+  /// Localizes one agent tool-trace step. The backend writes fixed ENGLISH
+  /// label constants (see functions/src/tools/agentTrace.ts); here we map each to
+  /// a more descriptive, app-language line so the user sees concretely what the
+  /// agent is doing (e.g. "查詢相關 Discord 訊息…") instead of a bare "思考中".
+  /// Unknown labels are shown verbatim.
+  String traceStep(String label) {
+    switch (label) {
+      // shared / askRepo + dailyBrief
+      case 'Listing recent commits…':
+        return _('Listing recent commits…', '列出近期 commit…');
+      case 'Listing completed tasks…':
+        return _('Listing completed tasks…', '列出已完成任務…');
+      case 'Reading Discord digests…':
+        return _('Reading Discord digests…', '讀取 Discord 摘要…');
+      case 'Searching commit history…':
+        return _('Searching commit history…', '搜尋 commit 歷史…');
+      case 'Searching Discord…':
+        return _('Searching related Discord messages…', '查詢相關 Discord 訊息…');
+      case 'Reading .trellis planning docs…':
+        return _('Reading .trellis planning docs…', '讀取 .trellis 規劃文件…');
+      case 'Checking task dependents…':
+        return _('Checking task dependents…', '檢查相依任務…');
+      case 'Reading team roster…':
+        return _('Reading the team roster…', '讀取團隊成員名單…');
+      // generateHandoff
+      case 'Listing related commits…':
+        return _('Listing related commits…', '列出相關 commit…');
+      case 'Reading a commit diff…':
+        return _('Reading the commit diff…', '讀取 commit 變更內容…');
+      case 'Drafting the handoff…':
+        return _('Drafting the handoff…', '撰寫交接文件…');
+      case 'Composing answer…':
+        return _('Composing the answer…', '彙整回答…');
+      // discordChat
+      case 'Listing day summaries…':
+        return _('Scanning daily summaries…', '掃描每日摘要…');
+      case 'Reading a day digest…':
+        return _("Reading a day's digest…", '讀取當日摘要…');
+      // explainCommit
+      case 'Listing nearby commits…':
+        return _("Listing the author's nearby commits…", '查詢作者鄰近 commit…');
+      case 'Writing the explanation…':
+        return _('Writing the explanation…', '撰寫說明…');
+      // editDiscordDigest
+      case 'Revising the digest…':
+        return _('Revising the digest…', '改寫摘要…');
+    }
+    // generateHandoff self-review carries a dynamic score, e.g.
+    // "Reviewing draft (score 4/5)…" — match by prefix.
+    if (label.startsWith('Reviewing draft')) {
+      return _('Reviewing the draft…', '自我審查草稿…');
+    }
+    return label;
+  }
   String get askRepoNewSession => _('New session', '開啟新 session');
   String askRepoCommitSources(int n) =>
       _('Source commits ($n)', '來源 commit（$n）');

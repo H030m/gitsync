@@ -63,7 +63,7 @@ void main() {
     expect(vm.turns.first.isUser, isTrue);
     expect(vm.turns.last.isUser, isFalse);
     expect(vm.turns.last.content, isNotEmpty);
-    expect(vm.turns.last.commitSources, isNotEmpty);
+    expect(vm.turns.last.commitGroups, isNotEmpty);
     expect(vm.sending, isFalse);
     expect(vm.liveSteps, isEmpty); // cleared after the answer resolves
   });
