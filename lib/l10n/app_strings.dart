@@ -93,8 +93,12 @@ class AppStrings {
   String get addTaskTitle => _('Add task', '新增任務');
   String get manual => _('Manual', '手動');
   String get aiBreakdown => _('AI breakdown', 'AI 拆解');
+  String get aiBreakdownHint => _(
+      'Paste a project spec and let AI split it into subtasks.',
+      '貼上專案規格，讓 AI 自動拆成多個子任務。');
   String get taskTitleLabel => _('Task title', '任務標題');
   String get descriptionOptional => _('Description (optional)', '描述(選填)');
+  String get assigneeOptional => _('Assignee (optional)', '負責人(選填)');
   String get addingTask => _('Adding…', '新增中…');
   String get projectSpec => _('Project spec', '專案規格');
   String get projectSpecHint => _(
@@ -104,7 +108,16 @@ class AppStrings {
   String get breakingDown => _('Breaking down…', '拆解中…');
   String generatedNSubtasks(int n) =>
       _('Generated $n subtasks', '產生了 $n 個子任務');
+  String get reBreakdown => _('Re-breakdown', '重新拆解');
   String get taskAdded => _('Task added.', '已新增任務。');
+  String taskAddedWithTitle(String title) =>
+      _('Added: $title', '已新增：$title');
+  String get couldNotAddTask =>
+      _('Could not add the task. Please try again.', '無法新增任務，請檢查網路後重試。');
+  String get couldNotBreakdown => _(
+      'Could not break down the spec. Please try again.',
+      '無法拆解規格，請再試一次。');
+  String get openFullPage => _('Open full page', '開啟完整頁面');
 
   // ---- Task details ----
   String get taskDetailsTitle => _('Task details', '任務細節');

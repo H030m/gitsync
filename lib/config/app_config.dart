@@ -50,6 +50,15 @@ class AppConfig {
   static const String emulatorHost =
       String.fromEnvironment('EMULATOR_HOST', defaultValue: 'localhost');
 
+  // ---- FCM web --------------------------------------------------------
+
+  /// VAPID public key for FCM web push. Obtain from Firebase Console →
+  /// Cloud Messaging → Web Push certificates → Generate key pair, then run
+  /// with `--dart-define=FCM_VAPID_KEY=...`. Empty (default) = web token
+  /// fetch skipped with a clear console warning; mobile FCM is unaffected.
+  static const String fcmVapidKey =
+      String.fromEnvironment('FCM_VAPID_KEY', defaultValue: '');
+
   // ---- Fake-mode tuning -------------------------------------------------
 
   /// Artificial delay added to fake repository / service calls so streams

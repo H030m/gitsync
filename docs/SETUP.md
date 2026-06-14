@@ -189,6 +189,25 @@ flutter run --dart-define=BACKEND=live
 - 按 Sign in 後（如果你做了 B.4）能用 GitHub OAuth 登入
 - 登入後看到的 repo / task 是來自真實 Firestore（**目前是空的，因為還沒有人塞資料**）
 
+#### B.6 Firebase Cloud Messaging (web)
+
+Chrome 上要真的收到 FCM push，需要一把 **VAPID public key**（mobile FCM 不需要這個，
+所以只影響 web）。沒設的話 app 仍會正常啟動，只是 console 會印一行
+`[FCM web] FCM_VAPID_KEY not set` 提醒，不會拿到 token。
+
+拿 key：Firebase Console → 專案設定 → **Cloud Messaging** tab →
+**Web configuration** → **Web Push certificates** → **Generate key pair** →
+複製顯示出來的 public key 字串。
+
+跑的時候多帶一個 dart-define：
+
+```powershell
+flutter run -d chrome --dart-define=BACKEND=live --dart-define=FCM_VAPID_KEY=<貼上>
+```
+
+這把 key 是 **PUBLIC** 的（Firebase 自己叫它 "Web Push certificate public key"），
+分享出去沒安全問題；用 `--dart-define` 純粹是順便不讓它進 git。
+
 ---
 
 ### 路徑 C — Live mode 用你自己的 Firebase project（給想完全隔離測試的）
