@@ -437,11 +437,13 @@ async function incrementalBreakdown(
           if (call.type !== 'function') {
             return { id: call.id, content: 'unsupported tool call' };
           }
-          const content = await runIncrementalTool(
+          const args = safeParse(call.function.arguments);
+          const { content, resultCount } = await runIncrementalTool(
             repoId,
             call.function.name,
-            safeParse(call.function.arguments),
+            args,
           );
+          logToolCall(repoId, round, call.function.name, args, resultCount);
           return { id: call.id, content };
         }),
       );
@@ -449,9 +451,8 @@ async function incrementalBreakdown(
         messages.push({ role: 'tool', tool_call_id: r.id, content: r.content });
       }
 
-      const parsed = IncrementalBreakdownSchema.safeParse(
-        safeParse(submitCall.function.arguments),
-      );
+      const submitArgs = safeParse(submitCall.function.arguments);
+      const parsed = IncrementalBreakdownSchema.safeParse(submitArgs);
       if (!parsed.success) {
         // Malformed args — feed the error back and let the model retry.
         messages.push({
@@ -464,6 +465,8 @@ async function incrementalBreakdown(
         });
         continue;
       }
+
+      logSubmit(repoId, round, parsed.data.subtasks);
 
       const resolved = await resolveAndCheck(
         repoId,
@@ -490,11 +493,13 @@ async function incrementalBreakdown(
         if (call.type !== 'function') {
           return { id: call.id, content: 'unsupported tool call' };
         }
-        const content = await runIncrementalTool(
+        const args = safeParse(call.function.arguments);
+        const { content, resultCount } = await runIncrementalTool(
           repoId,
           call.function.name,
-          safeParse(call.function.arguments),
+          args,
         );
+        logToolCall(repoId, round, call.function.name, args, resultCount);
         return { id: call.id, content };
       }),
     );
@@ -590,40 +595,124 @@ async function resolveAndCheck(
   return { kind: 'ok', subtasks: resolved };
 }
 
-/** Execute one incremental read tool, returning a JSON string for the model. */
+/**
+ * Execute one incremental read tool, returning the JSON string for the model
+ * plus a `resultCount` (array/page length, for observability logging). Errors
+ * are already swallowed inside the tools (best-effort), so this never throws.
+ */
 async function runIncrementalTool(
   repoId: string,
   name: string,
   args: Record<string, unknown>,
-): Promise<string> {
+): Promise<{ content: string; resultCount: number }> {
   switch (name) {
-    case 'listExistingTaskTitles':
-      return JSON.stringify(
-        await listExistingTaskTitles(repoId, {
-          status: typeof args.status === 'string' ? args.status : undefined,
-          cursor: typeof args.cursor === 'string' ? args.cursor : undefined,
-        }),
+    case 'listExistingTaskTitles': {
+      const page = await listExistingTaskTitles(repoId, {
+        status: typeof args.status === 'string' ? args.status : undefined,
+        cursor: typeof args.cursor === 'string' ? args.cursor : undefined,
+      });
+      return { content: JSON.stringify(page), resultCount: page.tasks.length };
+    }
+    case 'searchExistingTasks': {
+      const hits = await searchExistingTasks(
+        repoId,
+        String(args.query ?? ''),
+        typeof args.limit === 'number' ? args.limit : undefined,
       );
-    case 'searchExistingTasks':
-      return JSON.stringify(
-        await searchExistingTasks(
-          repoId,
-          String(args.query ?? ''),
-          typeof args.limit === 'number' ? args.limit : undefined,
-        ),
+      return { content: JSON.stringify(hits), resultCount: hits.length };
+    }
+    case 'searchPastCommits': {
+      const commits = await searchPastCommits(
+        repoId,
+        String(args.query ?? ''),
+        typeof args.limit === 'number' ? args.limit : 8,
       );
-    case 'searchPastCommits':
-      return JSON.stringify(
-        await searchPastCommits(
-          repoId,
-          String(args.query ?? ''),
-          typeof args.limit === 'number' ? args.limit : 8,
-        ),
-      );
-    case 'readRepoPlanningDocs':
-      return JSON.stringify((await readRepoPlanningDocs(repoId)).content);
+      const count = Array.isArray(commits) ? commits.length : 0;
+      return { content: JSON.stringify(commits), resultCount: count };
+    }
+    case 'readRepoPlanningDocs': {
+      const content = (await readRepoPlanningDocs(repoId)).content;
+      return { content: JSON.stringify(content), resultCount: content ? 1 : 0 };
+    }
     default:
-      return `Error: unknown tool ${name}`;
+      return { content: `Error: unknown tool ${name}`, resultCount: 0 };
+  }
+}
+
+/**
+ * Best-effort per-tool-call observability log (prd 06-15). Records WHICH tool the
+ * model called this round, a COMPACT arg summary (never full content), and how
+ * many rows it returned — so cloud logs reveal whether the agent actually
+ * explored existing tasks. Never throws / never changes control flow.
+ */
+function logToolCall(
+  repoId: string,
+  round: number,
+  tool: string,
+  args: Record<string, unknown>,
+  resultCount: number,
+): void {
+  try {
+    let summary: Record<string, unknown> = {};
+    switch (tool) {
+      case 'listExistingTaskTitles':
+        summary = {
+          status: typeof args.status === 'string' ? args.status : undefined,
+          hasCursor: !!args.cursor,
+        };
+        break;
+      case 'searchExistingTasks':
+      case 'searchPastCommits':
+        summary = {
+          query: typeof args.query === 'string' ? args.query : undefined,
+          limit: typeof args.limit === 'number' ? args.limit : undefined,
+        };
+        break;
+      case 'readRepoPlanningDocs':
+      default:
+        summary = {};
+        break;
+    }
+    logger.info('incrementalBreakdown: tool call', {
+      repoId,
+      round,
+      tool,
+      args: summary,
+      resultCount,
+    });
+  } catch {
+    /* logging is best-effort; never let it affect the flow */
+  }
+}
+
+/**
+ * Best-effort submit-visibility log (prd 06-15): how many new subtasks were
+ * submitted and how many dependency edges point at NEW vs EXISTING tasks. Makes
+ * "did the new tasks depend on existing ones" directly visible in cloud logs.
+ */
+function logSubmit(
+  repoId: string,
+  round: number,
+  subtasks: IncrementalSubtask[],
+): void {
+  try {
+    let totalDependsOnNew = 0;
+    let totalDependsOnExisting = 0;
+    for (const s of subtasks) {
+      if (Array.isArray(s.dependsOnNew)) totalDependsOnNew += s.dependsOnNew.length;
+      if (Array.isArray(s.dependsOnExisting)) {
+        totalDependsOnExisting += s.dependsOnExisting.length;
+      }
+    }
+    logger.info('incrementalBreakdown: submit', {
+      repoId,
+      round,
+      subtaskCount: subtasks.length,
+      totalDependsOnNew,
+      totalDependsOnExisting,
+    });
+  } catch {
+    /* logging is best-effort; never let it affect the flow */
   }
 }
 

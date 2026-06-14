@@ -183,6 +183,7 @@ jest.mock('../tools/repoDocs', () => ({
 }));
 
 // Import after mocks.
+import { logger } from 'firebase-functions/v2';
 import { breakdownTaskFlow, detectCycles, hasCycleById } from '../flows/breakdownTask';
 import {
   listExistingTaskTitles,
@@ -223,6 +224,16 @@ function allCreateMessages(): Array<{ role: string; content: unknown }> {
     for (const m of arg.messages) out.push(m);
   }
   return out;
+}
+
+/**
+ * Find the structured `logger.info(message, fields)` calls whose message
+ * matches, returning their `fields` objects (for observability assertions).
+ */
+function infoLogs(message: string): Array<Record<string, unknown>> {
+  return (logger.info as jest.Mock).mock.calls
+    .filter((c) => c[0] === message)
+    .map((c) => (c[1] ?? {}) as Record<string, unknown>);
 }
 
 /** Script an assistant turn that calls a read tool. */
@@ -325,6 +336,8 @@ beforeEach(() => {
   mockCreate.mockClear();
   mockReadRepoPlanningDocs.mockClear();
   mockSearchPastCommits.mockClear();
+  (logger.info as jest.Mock).mockClear();
+  (logger.warn as jest.Mock).mockClear();
   pastCommitsResult = [];
   repoDocsResult = { content: '', summary: 'no GitHub docs available', source: 'none', cached: false };
 });
@@ -644,6 +657,31 @@ describe('breakdownTools repo isolation', () => {
     expect(second.tasks[0].taskId).toBe('t25');
     expect(second.nextCursor).toBeNull();
   });
+
+  it('listExistingTaskTitles logs a success page count (prd 06-15)', async () => {
+    seedTask('repo_a', 'a1', { title: 'A one' });
+    seedTask('repo_a', 'a2', { title: 'A two' });
+
+    await listExistingTaskTitles('repo_a');
+
+    expect(infoLogs('listExistingTaskTitles: page')[0]).toMatchObject({
+      repoId: 'repo_a',
+      count: 2,
+      hasMore: false,
+    });
+  });
+
+  it('searchExistingTasks logs a success result count (prd 06-15)', async () => {
+    seedTask('repo_a', 'a1', { title: 'add auth login' });
+
+    await searchExistingTasks('repo_a', 'auth');
+
+    expect(infoLogs('searchExistingTasks: results')[0]).toMatchObject({
+      repoId: 'repo_a',
+      query: 'auth',
+      count: 1,
+    });
+  });
 });
 
 // ---- INCREMENTAL agentic path (repo already has tasks) ---------------------
@@ -847,6 +885,80 @@ describe('breakdownTaskFlow incremental path', () => {
     ).rejects.toMatchObject({ code: 'internal' });
     expect(mockCreate).toHaveBeenCalledTimes(5);
     expect(batchWrites).toHaveLength(0);
+  });
+
+  it('logs each read tool call with a resultCount (observability, prd 06-15)', async () => {
+    seedNonEmptyRepo();
+    // Round 0: list existing tasks. Round 1: search. Round 2: submit.
+    createQueue.push(readToolTurn('listExistingTaskTitles', {}, 'tc-list'));
+    createQueue.push(
+      readToolTurn('searchExistingTasks', { query: 'auth', limit: 5 }, 'tc-search'),
+    );
+    createQueue.push(
+      submitTurn([
+        {
+          title: 'Add password reset',
+          description: 'reset flow',
+          estimatedHours: 4,
+          dependsOnNew: [],
+          dependsOnExisting: ['existing1'],
+        },
+      ]),
+    );
+
+    await breakdownTaskFlow({ repoId: 'x_y', goal: 'spec', requestedBy: 'u1' });
+
+    const toolLogs = infoLogs('incrementalBreakdown: tool call');
+    const listLog = toolLogs.find((l) => l.tool === 'listExistingTaskTitles');
+    expect(listLog).toMatchObject({
+      repoId: 'x_y',
+      round: 0,
+      tool: 'listExistingTaskTitles',
+    });
+    // Two seeded existing tasks → page length 2.
+    expect(listLog?.resultCount).toBe(2);
+
+    const searchLog = toolLogs.find((l) => l.tool === 'searchExistingTasks');
+    expect(searchLog).toMatchObject({
+      repoId: 'x_y',
+      round: 1,
+      tool: 'searchExistingTasks',
+      args: { query: 'auth', limit: 5 },
+    });
+    expect(typeof searchLog?.resultCount).toBe('number');
+  });
+
+  it('logs submit with totalDependsOnExisting (observability, prd 06-15)', async () => {
+    seedNonEmptyRepo();
+    createQueue.push(
+      submitTurn([
+        {
+          title: 'New A',
+          description: '',
+          estimatedHours: 1,
+          dependsOnNew: [],
+          dependsOnExisting: ['existing1'],
+        },
+        {
+          title: 'New B',
+          description: '',
+          estimatedHours: 1,
+          dependsOnNew: [0],
+          dependsOnExisting: ['existing2'],
+        },
+      ]),
+    );
+
+    await breakdownTaskFlow({ repoId: 'x_y', goal: 'spec', requestedBy: 'u1' });
+
+    const submitLogs = infoLogs('incrementalBreakdown: submit');
+    expect(submitLogs).toHaveLength(1);
+    expect(submitLogs[0]).toMatchObject({
+      repoId: 'x_y',
+      subtaskCount: 2,
+      totalDependsOnNew: 1,
+      totalDependsOnExisting: 2,
+    });
   });
 
   it('threads `language` into the incremental system prompt (W6)', async () => {

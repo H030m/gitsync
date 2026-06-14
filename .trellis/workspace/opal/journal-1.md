@@ -450,3 +450,36 @@ incrementalBreakdownSystem 由獨立 const 改為 incrementalBreakdownSystem(lan
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: 增量拆解可觀測性:記錄 agent 工具調用與依賴統計
+
+**Date**: 2026-06-15
+**Task**: 增量拆解可觀測性:記錄 agent 工具調用與依賴統計
+**Branch**: `feature/incremental-breakdown-observability`
+
+### Summary
+
+incrementalBreakdown 加結構化 log:每輪每個 tool call 記 {round,tool,args摘要,resultCount};submit 記 {subtaskCount,totalDependsOnNew,totalDependsOnExisting};listExistingTaskTitles/searchExistingTasks 成功也記 count。純 log、best-effort、演算法與 model-visible 內容不變。403 tests 綠。目的:診斷增量拆解新任務沒連既有任務依賴是『沒查』還是『查了不連』。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3dd960b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
