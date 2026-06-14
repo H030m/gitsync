@@ -93,6 +93,12 @@ export async function listExistingTaskTitles(
     const hasMore = rows.length > TITLES_PAGE_SIZE;
     const tasks = rows.slice(0, TITLES_PAGE_SIZE);
     const nextCursor = hasMore ? tasks[tasks.length - 1].taskId : null;
+    // Success-path observability (prd 06-15): counts only, no titles/content.
+    logger.info('listExistingTaskTitles: page', {
+      repoId,
+      count: tasks.length,
+      hasMore,
+    });
     return { tasks, nextCursor };
   } catch (err) {
     logger.warn('listExistingTaskTitles failed; returning empty page', {
@@ -124,19 +130,29 @@ export async function searchExistingTasks(
     const tasks = snap.docs.map((doc) => toWithDeps(doc.id, doc.data() ?? {}));
 
     const terms = new Set(tokenize(query));
-    if (terms.size === 0) return tasks.slice(0, cap);
+    let results: ExistingTaskWithDeps[];
+    if (terms.size === 0) {
+      results = tasks.slice(0, cap);
+    } else {
+      const scored = tasks
+        .map((t) => {
+          const hay = t.title.toLowerCase();
+          let score = 0;
+          for (const term of terms) if (hay.includes(term)) score++;
+          return { t, score };
+        })
+        .filter((s) => s.score > 0)
+        .sort((a, b) => b.score - a.score);
+      results = scored.map((s) => s.t).slice(0, cap);
+    }
 
-    const scored = tasks
-      .map((t) => {
-        const hay = t.title.toLowerCase();
-        let score = 0;
-        for (const term of terms) if (hay.includes(term)) score++;
-        return { t, score };
-      })
-      .filter((s) => s.score > 0)
-      .sort((a, b) => b.score - a.score);
-
-    return scored.map((s) => s.t).slice(0, cap);
+    // Success-path observability (prd 06-15): query + count only, no titles.
+    logger.info('searchExistingTasks: results', {
+      repoId,
+      query,
+      count: results.length,
+    });
+    return results;
   } catch (err) {
     logger.warn('searchExistingTasks failed; returning [] (best-effort)', {
       repoId,
