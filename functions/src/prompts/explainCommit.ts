@@ -1,4 +1,8 @@
 // Prompts for explainCommitFlow — the "tap a commit, explain the work" call.
+// Common rules (identity / grounding / no-fluff / language) come from the
+// top-level base (prompts/baseSystem.ts); this holds the output contract.
+//
+import { buildSystemPrompt } from './baseSystem';
 //
 // The flow is AGENTIC (a tool loop): the model gathers evidence itself —
 // searching the team's Discord for related discussion, listing the author's
@@ -53,15 +57,12 @@ const explainCommitFallbackBase = `You explain one git commit to a teammate who 
 ${explainCommitFallbackWriteRules}`;
 
 /**
- * Agentic system prompt (the main, doc-backed path). With `language` (W6, an
- * English language NAME like "Traditional Chinese") the explanation is forced
- * into the user's app language on an explicit recompute.
+ * Agentic system prompt (the main, doc-backed path). The common identity /
+ * grounding / no-fluff / language rules come from the top-level base; with
+ * `language` (W6) the explanation is forced into the user's app language.
  */
 export function explainCommitSystemPrompt(language?: string): string {
-  const lang = language?.trim();
-  return lang
-    ? `${explainCommitAgenticBase}\nWrite your entire response in ${lang}.`
-    : explainCommitAgenticBase;
+  return buildSystemPrompt({ agentBody: explainCommitAgenticBase, language });
 }
 
 /**
@@ -70,10 +71,7 @@ export function explainCommitSystemPrompt(language?: string): string {
  * tools to call). Same output contract as the agentic path.
  */
 export function explainCommitFallbackSystemPrompt(language?: string): string {
-  const lang = language?.trim();
-  return lang
-    ? `${explainCommitFallbackBase}\nWrite your entire response in ${lang}.`
-    : explainCommitFallbackBase;
+  return buildSystemPrompt({ agentBody: explainCommitFallbackBase, language });
 }
 
 /**

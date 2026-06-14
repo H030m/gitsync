@@ -15,6 +15,7 @@ import { logger } from 'firebase-functions/v2';
 
 import { db } from '../admin';
 import { getOpenAI, MODELS } from '../config';
+import { buildSystemPrompt } from '../prompts/baseSystem';
 import { readTeamState } from '../tools/assignTools';
 import {
   listCommitsForPath,
@@ -381,12 +382,14 @@ async function summarizeDiff(
       messages: [
         {
           role: 'system',
-          content:
-            'You summarize a GitHub pull request for teammates who need to ' +
-            'decide whether to review it. Reply with 3–5 short lines (plain ' +
-            "text, no bullets, no headers). Focus on the PR's INTENT and any " +
-            'unusual concerns. Do NOT restate the file list — the reader ' +
-            'already has it.',
+          content: buildSystemPrompt({
+            agentBody:
+              'Your task: summarize a GitHub pull request for teammates who ' +
+              'need to decide whether to review it. Reply with 3–5 short lines ' +
+              "(plain text, no bullets, no headers). Focus on the PR's INTENT " +
+              'and any unusual concerns. Do NOT restate the file list — the ' +
+              'reader already has it.',
+          }),
         },
         { role: 'user', content: prompt },
       ],

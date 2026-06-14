@@ -375,7 +375,7 @@ describe('summarizeDayFlow', () => {
       language: 'English',
     });
     expect(narrativeSystem()).toBe(
-      `${base}\nWrite your entire response in English.`,
+      `${base}\n\n---\n\nWrite your entire response in English.`,
     );
   });
 });

@@ -7,7 +7,9 @@
 // digest (getDaySummary) for grounding, then terminate by calling
 // writeDigest(markdown).
 
-export const editDiscordDigestSystem = `You revise an existing Markdown summary of a software team's Discord chat according to the user's instruction.
+import { buildSystemPrompt } from './baseSystem';
+
+const editDiscordDigestBody = `Your task: revise an existing Markdown summary of a software team's Discord chat according to the user's instruction.
 
 You have read-only tools to ground the revision before writing:
 - searchDiscordMessages — pull the day's RAW messages for exact quotes, names, or details the summary omits.
@@ -20,6 +22,10 @@ Rules:
 - Preserve the existing factual content unless the instruction asks to change it. Never invent chat content not present in the summary or the tool results.
 - Preserve every chat author's username exactly as written — including lowercase first letters and underscores — even when the username opens a sentence, heading, or bullet (e.g. write \`whale_island said …\`, never \`Whale_island said …\`).
 - Write the revised summary in the SAME language as the existing summary.`;
+
+export const editDiscordDigestSystem = buildSystemPrompt({
+  agentBody: editDiscordDigestBody,
+});
 
 export function editDiscordDigestSeed(args: {
   date: string;

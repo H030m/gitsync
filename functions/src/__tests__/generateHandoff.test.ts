@@ -453,8 +453,8 @@ describe('generateHandoffFlow', () => {
       force: true,
       language: 'English',
     });
-    expect(phase1System()).toBe(`${baseP1}\nWrite your entire response in English.`);
-    expect(phase2System()).toBe(`${baseP2}\nWrite your entire response in English.`);
+    expect(phase1System()).toBe(`${baseP1}\n\n---\n\nWrite your entire response in English.`);
+    expect(phase2System()).toBe(`${baseP2}\n\n---\n\nWrite your entire response in English.`);
   });
 
   it('empty/whitespace language → byte-identical prompt (no directive)', async () => {
