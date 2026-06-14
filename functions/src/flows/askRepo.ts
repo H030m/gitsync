@@ -20,8 +20,12 @@ import { logger } from 'firebase-functions/v2';
 import { HttpsError } from 'firebase-functions/v2/https';
 import type OpenAI from 'openai';
 
+import { zodResponseFormat } from 'openai/helpers/zod';
+
 import { getOpenAI, MODELS } from '../config';
 import { askRepoSystem } from '../prompts/askRepo';
+import { askRepoPlannerSystem, formatPlanForPrompt } from '../prompts/askRepoPlanner';
+import { AskRepoPlanSchema, type AskRepoPlan } from '../types';
 import { readProjectBrief, formatBriefForPrompt } from '../tools/projectBrief';
 import {
   listRangeCommits,
@@ -280,8 +284,19 @@ export async function askRepoFlow(input: AskRepoInput): Promise<AskRepoResult> {
   const briefPrefix = formatBriefForPrompt(await readProjectBrief(repoId));
 
   const openai = getOpenAI();
+
+  // ---- Planner pre-step: interpret intent BEFORE searching -----------------
+  // Restate the (often informal) question as a structured search intent so the
+  // agent searches with the right fuzzy params (resolved people, time window,
+  // semantic topics) instead of the literal wording. Best-effort: a failure
+  // leaves `planGuidance` empty and the flow runs exactly as before.
+  const planGuidance = await planQuery(openai, today, question, history);
+
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: 'system', content: askRepoSystem(today, DEFAULT_DAYS) + briefPrefix },
+    {
+      role: 'system',
+      content: askRepoSystem(today, DEFAULT_DAYS) + briefPrefix + planGuidance,
+    },
     ...history
       .slice(-MAX_HISTORY_TURNS)
       .filter((t) => t && (t.role === 'user' || t.role === 'assistant') && t.content)
@@ -501,6 +516,42 @@ async function runTool(
     }
     default:
       return { id: call.id, content: `unknown tool ${name}`, label: '' };
+  }
+}
+
+/**
+ * Planner pre-step: ask a cheap model to restate the question as a structured
+ * AskRepoPlan, then render it as a guidance block for the main loop. BEST-EFFORT
+ * — any failure (parse/network/empty) returns '' so the flow is unchanged. The
+ * planner sees the recent history too, so follow-ups ("and what about her?")
+ * resolve against context.
+ */
+async function planQuery(
+  openai: ReturnType<typeof getOpenAI>,
+  today: string,
+  question: string,
+  history: AskRepoTurn[],
+): Promise<string> {
+  try {
+    const completion = await openai.beta.chat.completions.parse({
+      model: MODELS.fast,
+      messages: [
+        { role: 'system', content: askRepoPlannerSystem(today) },
+        ...history
+          .slice(-MAX_HISTORY_TURNS)
+          .filter((t) => t && (t.role === 'user' || t.role === 'assistant') && t.content)
+          .map((t) => ({ role: t.role, content: t.content })),
+        { role: 'user', content: question },
+      ],
+      response_format: zodResponseFormat(AskRepoPlanSchema, 'queryPlan'),
+    });
+    const plan = (completion.choices[0]?.message?.parsed as AskRepoPlan | null) ?? null;
+    return plan ? formatPlanForPrompt(plan) : '';
+  } catch (err) {
+    logger.warn('askRepoFlow: planner failed (best-effort)', {
+      err: String(err),
+    });
+    return '';
   }
 }
 

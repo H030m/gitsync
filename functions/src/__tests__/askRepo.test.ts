@@ -81,8 +81,19 @@ const mockCreate = jest.fn(async () => {
   return { choices: [next] };
 });
 
+// Planner pre-step uses openai.beta.chat.completions.parse. Default to a null
+// plan → empty guidance → the main loop / system prompt is unchanged (so the
+// existing assertions hold). A test can push a plan to exercise the planner.
+const planQueue: Array<{ parsed: unknown }> = [];
+const mockPlan = jest.fn(async () => ({
+  choices: [{ message: { parsed: planQueue.shift()?.parsed ?? null } }],
+}));
+
 jest.mock('../config', () => ({
-  getOpenAI: () => ({ chat: { completions: { create: mockCreate } } }),
+  getOpenAI: () => ({
+    chat: { completions: { create: mockCreate } },
+    beta: { chat: { completions: { parse: mockPlan } } },
+  }),
   MODELS: { reasoning: 'gpt-4o', fast: 'gpt-4o-mini', embedding: 'text-embedding-3-small' },
 }));
 
@@ -136,6 +147,14 @@ function seedCommit(sha: string, data: Record<string, unknown>) {
     ...data,
   });
 }
+/** The `system` message content of the Nth main-loop OpenAI create() call. */
+function systemMessageOf(n: number): string {
+  const arg = (mockCreate.mock.calls[n] as unknown[])[0] as {
+    messages: Array<{ role: string; content: string }>;
+  };
+  return arg.messages.find((m) => m.role === 'system')!.content;
+}
+
 function toolTurn(calls: Array<{ name: string; args?: Record<string, unknown>; id?: string }>) {
   return {
     message: {
@@ -163,6 +182,8 @@ function firstCallMessages(): Array<{ role: string; content: string }> {
 beforeEach(() => {
   store.clear();
   createQueue.length = 0;
+  planQueue.length = 0;
+  mockPlan.mockClear();
   mockCreate.mockClear();
   mockSearchDiscord.mockClear();
   mockSearchDiscord.mockResolvedValue([]);
@@ -224,6 +245,34 @@ describe('askRepoFlow', () => {
     expect(res.commitGroups).toHaveLength(1);
     expect(res.commitGroups[0].label).toBe('Opal');
     expect(res.commitGroups[0].commits.map((c) => c.sha)).toEqual(['c1']);
+  });
+
+  it('injects the planner interpretation into the system prompt as guidance', async () => {
+    planQueue.push({
+      parsed: {
+        intent: 'What did Opal merge into main recently?',
+        people: ['opal'],
+        taskHints: [],
+        searchTopics: ['merge develop into main'],
+        timeWindowDays: 7,
+      },
+    });
+    createQueue.push(answerTurn('done'));
+
+    await askRepoFlow({ repoId: REPO, question: 'opal 剛剛 merge 了啥' });
+
+    expect(mockPlan).toHaveBeenCalledTimes(1);
+    expect(systemMessageOf(0)).toContain('Interpretation of the question');
+    expect(systemMessageOf(0)).toContain('opal');
+    expect(systemMessageOf(0)).toContain('days=7');
+  });
+
+  it('planner failure leaves the flow working (no guidance block)', async () => {
+    // null plan → empty guidance → system prompt has no interpretation block.
+    createQueue.push(answerTurn('still works'));
+    const res = await askRepoFlow({ repoId: REPO, question: 'hi' });
+    expect(res.answer).toBe('still works');
+    expect(systemMessageOf(0)).not.toContain('Interpretation of the question');
   });
 
   it('surfaces committedAt as an ISO string from the commit timestamp', async () => {
