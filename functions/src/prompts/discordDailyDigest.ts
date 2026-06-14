@@ -8,6 +8,7 @@ Output rules:
 - Group related points under short bold headers when it helps; otherwise a flat bullet list is fine.
 - Capture decisions, blockers, questions, and action items. Drop greetings and noise.
 - Attribute points to the author by name when it matters (e.g. "Kai: ...").
+- Preserve every chat author's username exactly as written — including lowercase first letters and underscores — even when the username opens a sentence, heading, or bullet (e.g. write \`whale_island said …\`, never \`Whale_island said …\`).
 - Be terse. If little of substance was said, say so in one line.`;
 
 export function discordDailyDigestUser(input: {

@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/commit.dart';
 import '../models/commit_graph.dart';
 import '../repositories/commit_repo.dart';
 import '../services/functions_service.dart';
+import 'agent_trace_mixin.dart';
 
 /// The Commits tab's two visualizations: real branch topology vs the flat,
 /// filterable commit list. (`author` is the legacy enum name kept for callers;
@@ -15,7 +17,7 @@ enum CommitsViewMode { branch, author }
 /// Streams the Commits tab's commit list (recent by default, or a user-picked
 /// inclusive day range) and serves the tree map's "tap a commit → AI explains
 /// the work" action, caching explanations per sha for the session.
-class CommitsViewModel with ChangeNotifier {
+class CommitsViewModel with ChangeNotifier, AgentTraceMixin {
   CommitsViewModel({
     required String repoId,
     CommitRepository? commitRepository,
@@ -24,9 +26,12 @@ class CommitsViewModel with ChangeNotifier {
        _repo = commitRepository ?? CommitRepository(),
        _functions = functionsService ?? FunctionsService() {
     _subscribe();
+    _loadViewModePref();
     // The branch view is the default visualization — fetch its data up front.
     loadGraph();
   }
+
+  static const _viewModePrefKey = 'commits_view_mode';
 
   final String _repoId;
   final CommitRepository _repo;
@@ -195,6 +200,26 @@ class CommitsViewModel with ChangeNotifier {
   CommitsViewMode _viewMode = CommitsViewMode.branch;
   CommitsViewMode get viewMode => _viewMode;
 
+  Future<void> _loadViewModePref() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final v = prefs.getString(_viewModePrefKey);
+      if (v != null) {
+        final mode = CommitsViewMode.values.where((e) => e.name == v);
+        if (mode.isNotEmpty) setViewMode(mode.first);
+      }
+    } catch (_) {
+      // No persistence available — keep the default.
+    }
+  }
+
+  Future<void> _saveViewModePref(CommitsViewMode mode) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_viewModePrefKey, mode.name);
+    } catch (_) {}
+  }
+
   CommitGraph? _graph;
   CommitGraph? get graph => _graph;
 
@@ -210,6 +235,7 @@ class CommitsViewModel with ChangeNotifier {
     if (mode == CommitsViewMode.branch && _graph == null && !_graphLoading) {
       loadGraph();
     }
+    _saveViewModePref(mode);
     notifyListeners();
   }
 
@@ -270,20 +296,27 @@ class CommitsViewModel with ChangeNotifier {
   Future<void> explain(String sha, {bool force = false, String? language}) async {
     if (_explaining.contains(sha)) return;
     if (!force && _explanations.containsKey(sha)) return;
+    final runId = newRunId('explain-');
     _explaining.add(sha);
     _explainError = null;
     notifyListeners();
+
+    // Stream the agent's live "thinking" steps while the callable runs.
+    beginTrace(_repoId, runId);
+
     try {
       final markdown = await _functions.explainCommit(
         repoId: _repoId,
         sha: sha,
         force: force,
         language: language,
+        runId: runId,
       );
       _explanations[sha] = markdown;
     } catch (e) {
       _explainError = '$e';
     } finally {
+      endTrace();
       _explaining.remove(sha);
       notifyListeners();
     }
@@ -292,6 +325,7 @@ class CommitsViewModel with ChangeNotifier {
   @override
   void dispose() {
     _sub?.cancel();
+    endTrace();
     super.dispose();
   }
 }

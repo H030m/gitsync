@@ -201,107 +201,173 @@ class AppStrings {
       '連到正式 Firebase 專案,執行破壞性操作請小心。');
 
   // ---- Daily ----
-  String get dailyTitle => _('Daily', 'Daily');
-  String get dailyTabSummary => _('Summary', 'Summary');
-  String get dailyTabCommits => _('Commits', 'Commits');
+  String get dailyTitle => _('Daily', '每日彙整');
+  String get dailyTabSummary => _('Summary', '摘要');
+  String get dailyTabCommits => _('Commits', '提交紀錄');
   String get dailyTabDiscord => _('Discord', 'Discord');
   String get refreshCurrentRange => _('Refresh current range', '重新整理目前範圍');
-  String get today => _('Today', 'Today');
-  String get resetRange => _('Reset range', 'Reset range');
+  String get today => _('Today', '今天');
+  String get resetRange => _('Reset range', '重設範圍');
   String get dailyReport => _('Daily report', '日報');
   String get noReportYet => _('No report yet', '尚未產生日報');
-  String get generating => _('Generating…', 'Generating…');
-  String get regenerateReport => _('Regenerate', 'Regenerate');
+  String get generating => _('Generating…', '產生中…');
+  String get regenerateReport => _('Regenerate', '重新產生');
   String get generateReport => _('Generate report', '產生日報');
   String get dayNoReportHint => _(
       'No report for this day yet. Tap "Generate report" to let the AI summarize the day\'s commits, tasks and chat.',
       '這天還沒有日報。點「產生日報」讓 AI 整理當天的 commits、任務與聊天。');
-  String get commitRollup => _('Commit rollup', 'Commit rollup');
-  String get contributions => _('Contributions', 'Contributions');
-  String get askAiAboutToday => _('Ask AI about today', 'Ask AI about today');
-  String get askAiAboutTodayHint => _('Ask AI about today…', 'Ask AI about today…');
+  String get highlights => _('Highlights', '重點');
+  String get commitRollup => _('Commit rollup', '提交彙總');
+  String get contributions => _('Contributions', '貢獻');
+  String generatingDayProgress(int done, int total) =>
+      _('Generating ($done/$total)', '產生中（$done/$total）');
+  String get askAiAboutToday => _('Ask AI about today', '問 AI 今天的事');
+  String get askAiAboutTodayHint => _('Ask AI about today…', '問 AI 今天的事…');
   String get briefHint => _(
       'e.g. "Which commits today are about OAuth?", "Did anyone mention a blocker?", "Who changed breakdownTask recently?"',
       'e.g. 「今天有哪些 commit 跟 OAuth 有關？」、「有沒有人提到 blocker？」、'
       '「breakdownTask 最近誰改的？」');
   String sourceCommits(int n) =>
-      _('Source commits ($n)', 'Source commits ($n)');
+      _('Source commits ($n)', '來源提交（$n）');
   String get newSession => _('New session', '開啟新 session');
   String get couldNotLoadCommits =>
-      _('Could not load commits', 'Could not load commits');
-  String get retry => _('Retry', 'Retry');
-  String get commitMap => _('Commit map', 'Commit map');
-  String get branchGraph => _('Branch graph', 'Branch graph');
-  String get listView => _('List', 'List');
-  String get recent50 => _('Recent 50', 'Recent 50');
-  String get dateRangeLabel => _('Date range', 'Date range');
-  String get saving => _('Saving…', 'Saving…');
-  String get noCommits => _('No commits', 'No commits');
+      _('Could not load commits', '無法載入提交紀錄');
+  String get retry => _('Retry', '重試');
+  String get commitMap => _('Commit map', '提交地圖');
+  String get branchGraph => _('Branch graph', '分支圖');
+  String get listView => _('List', '列表');
+  String get recent50 => _('Recent 50', '最近 50 筆');
+  String get dateRangeLabel => _('Date range', '日期範圍');
+  String get saving => _('Saving…', '儲存中…');
+  String get noCommits => _('No commits', '沒有提交紀錄');
   String get noCommitsInPeriod => _(
       'No commits in this period. Pick another range or go back to the recent commits.',
-      'No commits in this period. Pick another range or go back to the recent commits.');
+      '這段期間沒有提交紀錄。請選擇其他範圍或回到最近的提交。');
   String get noMatchingCommits =>
-      _('No matching commits', 'No matching commits');
+      _('No matching commits', '沒有符合的提交紀錄');
   String get noCommitsMatchFilters =>
-      _('No commits match the current filters.', 'No commits match the current filters.');
-  String get clearFilters => _('Clear filters', 'Clear filters');
-  String get author => _('Author', 'Author');
-  String authorCount(int n) => _('Author ($n)', 'Author ($n)');
-  String get branch => _('Branch', 'Branch');
-  String branchCount(int n) => _('Branch ($n)', 'Branch ($n)');
-  String get searchMessageHint => _('Search message…', 'Search message…');
-  String get clear => _('Clear', 'Clear');
+      _('No commits match the current filters.', '沒有符合目前篩選條件的提交紀錄。');
+  String get clearFilters => _('Clear filters', '清除篩選');
+  String get author => _('Author', '作者');
+  String authorCount(int n) => _('Author ($n)', '作者（$n）');
+  String get branch => _('Branch', '分支');
+  String branchCount(int n) => _('Branch ($n)', '分支（$n）');
+  String get searchMessageHint => _('Search message…', '搜尋訊息…');
+  String get clear => _('Clear', '清除');
   String get nothingToFilterBy =>
-      _('Nothing to filter by yet.', 'Nothing to filter by yet.');
+      _('Nothing to filter by yet.', '目前沒有可篩選的項目。');
   String get couldNotLoadBranchGraph =>
-      _('Could not load the branch graph', 'Could not load the branch graph');
+      _('Could not load the branch graph', '無法載入分支圖');
   String get largeHistoryNotice => _(
       'Large history — showing the most recent branches/commits.',
-      'Large history — showing the most recent branches/commits.');
+      '歷史紀錄較多 — 僅顯示最近的分支/提交。');
   String get branchesInRow => _('Branches in this row', '這一列的分支');
   String get noBranchInfo => _('No branch info', '沒有分支資訊');
-  String get aiWorkSummary => _('AI work summary', 'AI work summary');
+  String get aiWorkSummary => _('AI work summary', 'AI 工作摘要');
   String get couldNotGenerateSummary => _(
       'Could not generate the summary. Please try again.',
-      'Could not generate the summary. Please try again.');
-  String get updated => _('Updated ✓', 'Updated ✓');
-  String get discordDigest => _('Discord digest', 'Discord digest');
+      '無法產生摘要，請再試一次。');
+  String get updated => _('Updated ✓', '已更新 ✓');
+  String get discordDigest => _('Discord digest', 'Discord 摘要');
   String discordDigestForDate(String date) =>
-      _('Discord digest · $date', 'Discord digest · $date');
+      _('Discord digest · $date', 'Discord 摘要 · $date');
+  String digestSourceMessages(int n) =>
+      _('Referenced messages ($n)', '參考訊息（$n）');
   String get noDigestInRange => _(
       'No digest in this range. Use "Refresh current range" above to pull messages.',
       '這個範圍還沒有摘要。用上方的「重新整理目前範圍」拉取訊息。');
-  String get lockDigest => _('Lock digest', 'Lock digest');
-  String get unlockDigest => _('Unlock digest', 'Unlock digest');
+  String get lockDigest => _('Lock digest', '鎖定摘要');
+  String get unlockDigest => _('Unlock digest', '解鎖摘要');
   String get digestLockedHint => _(
       'Locked — unlock to let AI adjust this summary.',
-      'Locked — unlock to let AI adjust this summary.');
+      '已鎖定 — 解鎖後 AI 才能調整此摘要。');
   String get adjustSummaryHint => _(
-      'Ask AI to adjust this summary…', 'Ask AI to adjust this summary…');
-  String get adjustWithAi => _('Adjust with AI', 'Adjust with AI');
+      'Ask AI to adjust this summary…', '請 AI 調整此摘要…');
+  String get adjustWithAi => _('Adjust with AI', '用 AI 調整');
   String get couldNotUpdateDigest => _(
       'Could not update the digest. Please try again.',
-      'Could not update the digest. Please try again.');
-  String get askAiAboutChat => _('Ask AI about the chat', 'Ask AI about the chat');
+      '無法更新摘要，請再試一次。');
+  String get askAiAboutChat => _('Ask AI about the chat', '問 AI 聊天內容');
   String get askAiAboutChatHint => _(
       'e.g. "Where did the OAuth progress discussion get to?" — the AI finds the relevant Discord messages.',
-      'e.g. "OAuth 的進度討論到哪了？" — AI 會找出相關的 Discord 訊息。');
+      '例如「OAuth 的進度討論到哪了？」— AI 會找出相關的 Discord 訊息。');
   String get askAiDiscordHint =>
-      _('Ask AI about the Discord chat…', 'Ask AI about the Discord chat…');
-  String get unknownAuthor => _('Unknown', 'Unknown');
+      _('Ask AI about the Discord chat…', '問 AI 關於 Discord 的聊天…');
+  String get unknownAuthor => _('Unknown', '未知');
   String relatedConversations(int n) =>
-      _('Related conversations ($n)', 'Related conversations ($n)');
-  String get thinking => _('Thinking…', 'Thinking…');
+      _('Related conversations ($n)', '相關對話（$n）');
+  String get thinking => _('Thinking…', '思考中…');
+
+  String get askDiscordScope =>
+      _('Based on Discord messages', '基於 Discord 訊息');
 
   // ---- Ask GitSync (global repo-wide chat) ----
   String get askRepoTitle => _('Ask GitSync', '問 GitSync');
   String get askRepoTooltip => _('Ask GitSync', '問 GitSync');
   String get askRepoHint =>
       _('Ask GitSync about this repo…', '問問 GitSync 關於這個 repo…');
+  String get askRepoScope =>
+      _('Based on commits, tasks, and team discussion',
+        '基於 commit、任務與團隊討論');
   String get askRepoEmptyHint => _(
       'Ask anything about this repo — progress, people, code, commits, or team discussion.',
       '關於這個 repo 的任何事都可以問 —— 進度、成員、程式碼、commit，或團隊討論。');
   String get askRepoThinking => _('Thinking…', '思考中…');
+
+  /// Localizes one agent tool-trace step. The backend writes fixed ENGLISH
+  /// label constants (see functions/src/tools/agentTrace.ts); here we map each to
+  /// a more descriptive, app-language line so the user sees concretely what the
+  /// agent is doing (e.g. "查詢相關 Discord 訊息…") instead of a bare "思考中".
+  /// Unknown labels are shown verbatim.
+  String traceStep(String label) {
+    switch (label) {
+      // shared / askRepo + dailyBrief
+      case 'Listing recent commits…':
+        return _('Listing recent commits…', '列出近期 commit…');
+      case 'Listing completed tasks…':
+        return _('Listing completed tasks…', '列出已完成任務…');
+      case 'Reading Discord digests…':
+        return _('Reading Discord digests…', '讀取 Discord 摘要…');
+      case 'Searching commit history…':
+        return _('Searching commit history…', '搜尋 commit 歷史…');
+      case 'Searching Discord…':
+        return _('Searching related Discord messages…', '查詢相關 Discord 訊息…');
+      case 'Reading .trellis planning docs…':
+        return _('Reading .trellis planning docs…', '讀取 .trellis 規劃文件…');
+      case 'Checking task dependents…':
+        return _('Checking task dependents…', '檢查相依任務…');
+      case 'Reading team roster…':
+        return _('Reading the team roster…', '讀取團隊成員名單…');
+      // generateHandoff
+      case 'Listing related commits…':
+        return _('Listing related commits…', '列出相關 commit…');
+      case 'Reading a commit diff…':
+        return _('Reading the commit diff…', '讀取 commit 變更內容…');
+      case 'Drafting the handoff…':
+        return _('Drafting the handoff…', '撰寫交接文件…');
+      case 'Composing answer…':
+        return _('Composing the answer…', '彙整回答…');
+      // discordChat
+      case 'Listing day summaries…':
+        return _('Scanning daily summaries…', '掃描每日摘要…');
+      case 'Reading a day digest…':
+        return _("Reading a day's digest…", '讀取當日摘要…');
+      // explainCommit
+      case 'Listing nearby commits…':
+        return _("Listing the author's nearby commits…", '查詢作者鄰近 commit…');
+      case 'Writing the explanation…':
+        return _('Writing the explanation…', '撰寫說明…');
+      // editDiscordDigest
+      case 'Revising the digest…':
+        return _('Revising the digest…', '改寫摘要…');
+    }
+    // generateHandoff self-review carries a dynamic score, e.g.
+    // "Reviewing draft (score 4/5)…" — match by prefix.
+    if (label.startsWith('Reviewing draft')) {
+      return _('Reviewing the draft…', '自我審查草稿…');
+    }
+    return label;
+  }
   String get askRepoNewSession => _('New session', '開啟新 session');
   String askRepoCommitSources(int n) =>
       _('Source commits ($n)', '來源 commit（$n）');

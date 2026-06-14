@@ -367,6 +367,7 @@ class _TaskGraphTabState extends State<TaskGraphTab> {
               right: AppDimens.spacingMd,
               bottom: AppDimens.spacingMd,
               child: FloatingActionButton.small(
+                heroTag: 'task-graph-add-node-fab',
                 onPressed: _addNodeDialog,
                 tooltip: s.addTaskTooltip,
                 child: const Icon(Icons.add),

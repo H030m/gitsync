@@ -59,6 +59,7 @@ class _CapturingFunctionsService implements FunctionsService {
     required String sha,
     bool force = false,
     String? language,
+    String? runId,
   }) async {
     explainCalls++;
     lastForce = force;

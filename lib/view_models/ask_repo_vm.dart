@@ -105,7 +105,7 @@ class AskRepoViewModel with ChangeNotifier {
       _turns.add(AskRepoTurn(
         role: 'assistant',
         content: reply.answer,
-        commitSources: reply.commits,
+        commitGroups: reply.commitGroups,
         discordSources: reply.snippets,
         createdAt: DateTime.now(),
       ));

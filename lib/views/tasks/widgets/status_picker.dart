@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../l10n/app_strings.dart';
 import '../../../models/task.dart';
 import '../../../theme/app_dimens.dart';
+import '../../../theme/app_motion.dart';
 
 // Shared three-state status picker (task 06-13): one bottom sheet used by both
 // status-edit entry points — the details page's status chip and the phone
@@ -16,6 +17,9 @@ Future<TaskStatus?> showStatusPicker(
   return showModalBottomSheet<TaskStatus>(
     context: context,
     showDragHandle: true,
+    // Tune enter/exit to match the app's sheet timing (AppMotion.sheetStyle).
+    // Flutter owns the controller — no caller has to host a TickerProvider.
+    sheetAnimationStyle: AppMotion.sheetStyle,
     builder: (ctx) => _StatusPickerSheet(current: current),
   );
 }

@@ -60,19 +60,27 @@ class MembersViewModel with ChangeNotifier {
 
   void _resolveProfiles(List<Member> members) {
     for (final m in members) {
-      final uid = m.userId;
-      if (uid.isEmpty) continue;
-      if (_profiles.containsKey(uid) || _resolving.contains(uid)) continue;
-      _resolving.add(uid);
-      _userRepo.getUser(uid).then((user) {
-        if (user != null) _profiles[uid] = user;
-      }).catchError((_) {
-        // Tolerate lookup failure — leave uncached so a later refresh retries.
-      }).whenComplete(() {
-        _resolving.remove(uid);
-        notifyListeners();
-      });
+      ensureResolved(m.userId);
     }
+  }
+
+  /// Fetch [userId]'s profile if it isn't already cached / in flight, then
+  /// notify so labels refresh in place. Unlike [_resolveProfiles] this works for
+  /// ANY uid — including an assignee whose member doc lags the task, or one a
+  /// previous lookup missed — so the assignee card never gets stuck showing a
+  /// raw UID. Safe to call repeatedly and from a post-frame callback.
+  void ensureResolved(String userId) {
+    if (userId.isEmpty) return;
+    if (_profiles.containsKey(userId) || _resolving.contains(userId)) return;
+    _resolving.add(userId);
+    _userRepo.getUser(userId).then((user) {
+      if (user != null) _profiles[userId] = user;
+    }).catchError((_) {
+      // Tolerate lookup failure — leave uncached so a later refresh retries.
+    }).whenComplete(() {
+      _resolving.remove(userId);
+      notifyListeners();
+    });
   }
 
   @override

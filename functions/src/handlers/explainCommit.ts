@@ -19,11 +19,12 @@ export const explainCommit = onCall(
       throw new HttpsError('failed-precondition', 'Please log in first.');
     }
     const uid = request.auth.uid;
-    const { repoId, sha, force, language } = request.data as {
+    const { repoId, sha, force, language, runId } = request.data as {
       repoId?: string;
       sha?: string;
       force?: boolean;
       language?: string;
+      runId?: string;
     };
     if (!repoId || !sha) {
       throw new HttpsError('invalid-argument', 'repoId and sha are required');
@@ -33,6 +34,11 @@ export const explainCommit = onCall(
     // language; absent → unchanged behavior (the first tap omits it).
     if (language !== undefined && typeof language !== 'string') {
       throw new HttpsError('invalid-argument', 'language must be a string');
+    }
+    // Optional client-generated trace doc id; streams the agentic loop's live
+    // progress. Absent → the trace is a no-op.
+    if (runId !== undefined && !/^[A-Za-z0-9_-]{1,200}$/.test(runId)) {
+      throw new HttpsError('invalid-argument', 'runId has an invalid format');
     }
 
     // Best-effort fallback inputs: resolve owner/repo from the repo doc's `name`
@@ -56,6 +62,7 @@ export const explainCommit = onCall(
       sha,
       force: force === true,
       language,
+      runId,
       owner,
       repo,
       accessToken,

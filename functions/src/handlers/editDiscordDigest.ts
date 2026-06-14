@@ -13,10 +13,11 @@ export const editDiscordDigest = onCall(
     if (!request.auth) {
       throw new HttpsError('failed-precondition', 'Please log in first.');
     }
-    const { repoId, date, instruction } = request.data as {
+    const { repoId, date, instruction, runId } = request.data as {
       repoId?: string;
       date?: string;
       instruction?: string;
+      runId?: string;
     };
     if (!repoId || !date || !instruction || !instruction.trim()) {
       throw new HttpsError(
@@ -24,10 +25,14 @@ export const editDiscordDigest = onCall(
         'repoId, date and a non-empty instruction are required',
       );
     }
+    if (runId !== undefined && !/^[A-Za-z0-9_-]{1,200}$/.test(runId)) {
+      throw new HttpsError('invalid-argument', 'runId has an invalid format');
+    }
     return editDiscordDigestFlow({
       repoId,
       date,
       instruction: instruction.trim(),
+      runId,
     });
   },
 );

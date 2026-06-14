@@ -10,6 +10,7 @@ import '../repositories/discord_fetch_repo.dart';
 import '../repositories/discord_message_repo.dart';
 import '../repositories/repo_repo.dart';
 import '../services/functions_service.dart';
+import 'agent_trace_mixin.dart';
 
 /// Drives the Daily page's Discord tab: streams messages + the visible window's
 /// digests, and owns the Discord half of the shared Refresh ([refreshWindow]).
@@ -19,7 +20,7 @@ import '../services/functions_service.dart';
 /// deleted) AND mirrors into the display view range for instant feedback. The
 /// shared range CLEAR calls [clearViewRange] (display only, no callable). The
 /// visible window precedence stays view → saved → today.
-class DiscordMessagesViewModel with ChangeNotifier {
+class DiscordMessagesViewModel with ChangeNotifier, AgentTraceMixin {
   DiscordMessagesViewModel({
     required String repoId,
     DateTime? date,
@@ -332,18 +333,25 @@ class DiscordMessagesViewModel with ChangeNotifier {
   // updated markdown arrives via the digest stream, so we don't set it locally.
   Future<void> editDigest(String date, String instruction) async {
     if (_editingDates.contains(date) || instruction.trim().isEmpty) return;
+    final runId = newRunId('editdigest-');
     _editingDates.add(date);
     _digestError = null;
     notifyListeners();
+
+    // Stream the agent's live "thinking" steps while the callable runs.
+    beginTrace(_repoId, runId);
+
     try {
       await _functions.editDiscordDigest(
         repoId: _repoId,
         date: date,
         instruction: instruction.trim(),
+        runId: runId,
       );
     } catch (e) {
       _digestError = '$e';
     } finally {
+      endTrace();
       _editingDates.remove(date);
       notifyListeners();
     }
@@ -378,6 +386,7 @@ class DiscordMessagesViewModel with ChangeNotifier {
     _repoSub?.cancel();
     _fetchSub?.cancel();
     _fetchTimeout?.cancel();
+    endTrace();
     super.dispose();
   }
 }

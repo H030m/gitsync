@@ -3,8 +3,10 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/task.dart';
+import '../../router/shell_transitions.dart';
 import '../../services/authentication.dart';
 import '../../services/navigation.dart';
+import '../../theme/app_motion.dart';
 import '../../view_models/tasks_board_vm.dart';
 
 // Shared shell with bottom navigation for the per-repo routes
@@ -146,13 +148,20 @@ class _RepoShellState extends State<RepoShell> {
 
   @override
   Widget build(BuildContext context) {
+    final currentIndex = _selectedIndex(context);
+    // Page-swap animation lives at the route level via CustomTransitionPage +
+    // sharedAxisSlide (see lib/router/shell_transitions.dart). ShellNavSignal
+    // is updated below before navigating so the transition reads the
+    // right direction.
     return Scaffold(
       body: widget.child,
       bottomNavigationBar: _SlidingBottomNav(
         key: RepoShell._navKey,
-        selectedIndex: _selectedIndex(context),
+        selectedIndex: currentIndex,
         items: _items,
         onTap: (i) {
+          ShellNavSignal.goingRight = i >= ShellNavSignal.previousIndex;
+          ShellNavSignal.previousIndex = i;
           context.go('/repos/${widget.repoId}/${_items[i].segment}');
         },
       ),
@@ -181,7 +190,11 @@ class _SlidingBottomNavState extends State<_SlidingBottomNav>
   static const _height = 80.0;
   static const _pillHeight = 56.0;
   static const _pillWidth = 64.0;
-  static const _duration = Duration(milliseconds: 300);
+  // Indicator pill timing. AppMotion.nav matches the content swap so the pill
+  // and page slide settle together. Keep Curves.easeOut (below) — the pill's
+  // ease was deliberately tuned for the indicator, swapping to emphasized
+  // changes how it reads.
+  static const _duration = AppMotion.nav;
 
   late final AnimationController _controller;
   late int _activeIndex;

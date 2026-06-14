@@ -349,3 +349,37 @@ Live debug: onTaskUpdated auto-assignment left downstream assigneeId null. Logs 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: push 自動判定 task 完成並設為 done（AI judge + onCommitCompletesTask trigger）
+
+**Date**: 2026-06-14
+**Task**: push 自動判定 task 完成並設為 done（AI judge + onCommitCompletesTask trigger）
+**Branch**: `feature/push-auto-complete-task`
+
+### Summary
+
+新增 onCommitCompletesTask trigger：commit 推到預設分支且含 #N 時，由 LLM (judgeTaskCompletion) 判斷對應 task 是否完成，confidence>=0.8 則 markTaskDone。handlePush 以獨立 set(merge) 標記 onDefaultBranch 解決 first-seen/idempotency 限制。check 階段修掉 markIdempotent 搶 key 餓死 onCommitCreated 的 bug（guard 須排在 markIdempotent 前），spec 已記錄。377 tests 全綠。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4cc9a57` | (see git log) |
+| `2769a52` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -302,6 +302,48 @@ describe('githubWebhook', () => {
     expect(res.statusCode).toBe(200);
     const commit = store.get(`apps/gitsync/repos/${REPO_ID}/commits/abc123`);
     expect(commit).toMatchObject({ sha: 'abc123', branch: 'feature/x' });
+    // 06-14: non-default branch must NOT set onDefaultBranch.
+    expect(commit).not.toHaveProperty('onDefaultBranch');
+  });
+
+  it('push to default branch → onDefaultBranch:true marked on the commit (06-14)', async () => {
+    const req = makeReq({ body: pushBody(), event: 'push' });
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const commit = store.get(`apps/gitsync/repos/${REPO_ID}/commits/abc123`);
+    expect(commit?.onDefaultBranch).toBe(true);
+  });
+
+  it('merge re-push to default branch marks a pre-existing (feature-branch) doc (06-14)', async () => {
+    // First seen on a feature branch → no onDefaultBranch.
+    await handler(
+      makeReq({
+        body: pushBody({ ref: 'refs/heads/feature/x' }),
+        event: 'push',
+        delivery: 'd-feature',
+      }),
+      makeRes(),
+    );
+    const path = `apps/gitsync/repos/${REPO_ID}/commits/abc123`;
+    expect(store.get(path)).not.toHaveProperty('onDefaultBranch');
+    // onCommitCreated later enriched the doc.
+    store.set(path, { ...(store.get(path) ?? {}), aiSummary: 'enriched' });
+
+    // Same sha re-pushed via merge to main: create() is ALREADY_EXISTS, but the
+    // set(merge) flips onDefaultBranch without clobbering enrichment / branch.
+    await handler(
+      makeReq({ body: pushBody({ ref: 'refs/heads/main' }), event: 'push', delivery: 'd-main' }),
+      makeRes(),
+    );
+
+    const commit = store.get(path);
+    expect(commit).toMatchObject({
+      branch: 'feature/x',
+      aiSummary: 'enriched',
+      onDefaultBranch: true,
+    });
   });
 
   it('re-push of an existing sha (merge to main) does NOT overwrite the first doc', async () => {

@@ -187,6 +187,33 @@ describe('askRepoFlow', () => {
     expect(res.answer).toContain('Two commits');
   });
 
+  it('splits per-author listDayCommits calls into labeled windows', async () => {
+    seedCommit('c1', { message: 'A work', author: { login: 'alice', name: 'Alice' } });
+    seedCommit('c2', { message: 'B work', author: { login: 'bob', name: 'Bob' } });
+    // One round, two author-filtered calls → two labeled windows.
+    createQueue.push(toolTurn([
+      { name: 'listDayCommits', args: { authorLogin: 'alice' } },
+      { name: 'listDayCommits', args: { authorLogin: 'bob' } },
+    ]));
+    createQueue.push(answerTurn('Per person.'));
+
+    const res = await askRepoFlow({ repoId: REPO, question: 'who did what?' });
+    expect(res.commitGroups.map((g) => g.label).sort()).toEqual(['Alice', 'Bob']);
+    const alice = res.commitGroups.find((g) => g.label === 'Alice');
+    expect(alice?.commits.map((c) => c.sha)).toEqual(['c1']);
+    // The flat `commits` field is the union of every window (backward compat).
+    expect(res.commits.map((c) => c.sha).sort()).toEqual(['c1', 'c2']);
+  });
+
+  it('surfaces committedAt as an ISO string from the commit timestamp', async () => {
+    seedCommit('c1', { committedAt: { _seconds: 1718200000 } });
+    createQueue.push(toolTurn([{ name: 'listDayCommits' }]));
+    createQueue.push(answerTurn('done'));
+
+    const res = await askRepoFlow({ repoId: REPO, question: 'recent?' });
+    expect(res.commits[0].committedAt).toBe(new Date(1718200000 * 1000).toISOString());
+  });
+
   it('searchDiscordMessages snippets are collected and deduped by snippetKey', async () => {
     const snip = {
       channelId: 'ch1',

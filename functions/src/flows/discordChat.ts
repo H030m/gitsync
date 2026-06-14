@@ -21,6 +21,12 @@ import {
   type DiscordSnippet,
   type SearchRange,
 } from '../tools/discordSearch';
+import {
+  startRun,
+  appendStep,
+  finishRun,
+  TRACE_LABELS,
+} from '../tools/agentTrace';
 
 /** One prior conversation turn passed in from the client. */
 export interface ChatTurn {
@@ -35,6 +41,8 @@ export interface DiscordChatInput {
   /** Optional active window (both-or-neither, YYYY-MM-DD); scopes AI reads. */
   startDate?: string;
   endDate?: string;
+  /** Client-generated agent-trace doc id; absent → the trace is a no-op. */
+  runId?: string;
 }
 
 export interface DiscordChatResult {
@@ -159,105 +167,129 @@ export async function discordChatFlow(
   // first-seen order (the order the agent found them in).
   const surfaced = new Map<string, DiscordSnippet>();
 
-  for (let round = 0; round < MAX_ROUNDS; round++) {
-    logger.info('discordChatFlow: round', { repoId, round });
+  // Best-effort agent trace (no-op without a runId). Trace writes NEVER affect
+  // this flow's control flow or result; on any throw we still mark it errored.
+  await startRun(repoId, input.runId, 'discordChat');
+  try {
+    let answer: string | null = null;
 
-    const completion = await openai.chat.completions.create({
-      model: MODELS.fast,
-      messages,
-      tools: TOOLS,
-      tool_choice: 'auto',
-    });
+    for (let round = 0; round < MAX_ROUNDS && answer === null; round++) {
+      logger.info('discordChatFlow: round', { repoId, round });
 
-    const choice = completion.choices[0]?.message;
-    if (!choice) {
-      throw new HttpsError('internal', 'OpenAI returned no message');
-    }
-    messages.push(choice);
+      const completion = await openai.chat.completions.create({
+        model: MODELS.fast,
+        messages,
+        tools: TOOLS,
+        tool_choice: 'auto',
+      });
 
-    const toolCalls = choice.tool_calls ?? [];
-    if (toolCalls.length === 0) {
-      // Model answered — we're done.
-      return {
-        answer: choice.content ?? '',
-        snippets: [...surfaced.values()],
-      };
-    }
+      const choice = completion.choices[0]?.message;
+      if (!choice) {
+        throw new HttpsError('internal', 'OpenAI returned no message');
+      }
+      messages.push(choice);
 
-    // Execute the (search) tool calls and feed results back for the next round.
-    const results = await Promise.all(
-      toolCalls.map(async (call) => {
-        if (call.type !== 'function') {
-          return { tool_call_id: call.id, content: 'unsupported tool call' };
-        }
-        const args = safeParse(call.function.arguments);
-        switch (call.function.name) {
-          case 'listDaySummaries': {
-            const days = await listDaySummaries(repoId, range);
-            return { tool_call_id: call.id, content: JSON.stringify(days) };
+      const toolCalls = choice.tool_calls ?? [];
+      if (toolCalls.length === 0) {
+        // Model answered — we're done.
+        answer = choice.content ?? '';
+        break;
+      }
+
+      // Execute the (search) tool calls and feed results back for the next round.
+      const results = await Promise.all(
+        toolCalls.map(async (call) => {
+          if (call.type !== 'function') {
+            return { tool_call_id: call.id, content: 'unsupported tool call' };
           }
-          case 'getDaySummary': {
-            const date = String(args.date ?? '');
-            // Honor the active window — refuse out-of-scope day reads.
-            if (range && (date < range.startDate || date > range.endDate)) {
+          const args = safeParse(call.function.arguments);
+          switch (call.function.name) {
+            case 'listDaySummaries': {
+              const days = await listDaySummaries(repoId, range);
+              return { tool_call_id: call.id, content: JSON.stringify(days) };
+            }
+            case 'getDaySummary': {
+              const date = String(args.date ?? '');
+              // Honor the active window — refuse out-of-scope day reads.
+              if (range && (date < range.startDate || date > range.endDate)) {
+                return {
+                  tool_call_id: call.id,
+                  content: JSON.stringify({
+                    error: `out of scope: ${date} is outside ${range.startDate}..${range.endDate}`,
+                  }),
+                };
+              }
+              const day = await getDaySummary(repoId, date);
               return {
                 tool_call_id: call.id,
-                content: JSON.stringify({
-                  error: `out of scope: ${date} is outside ${range.startDate}..${range.endDate}`,
-                }),
+                content: JSON.stringify(day ?? { error: 'no digest for that day' }),
               };
             }
-            const day = await getDaySummary(repoId, date);
-            return {
-              tool_call_id: call.id,
-              content: JSON.stringify(day ?? { error: 'no digest for that day' }),
-            };
+            case 'searchDiscordMessages': {
+              const found = await searchDiscordMessages(
+                repoId,
+                String(args.query ?? ''),
+                typeof args.limit === 'number' ? args.limit : undefined,
+                range,
+              );
+              for (const s of found) surfaced.set(snippetKey(s), s);
+              return { tool_call_id: call.id, content: JSON.stringify(found) };
+            }
+            default:
+              return {
+                tool_call_id: call.id,
+                content: `Error: unknown tool ${call.function.name}`,
+              };
           }
-          case 'searchDiscordMessages': {
-            const found = await searchDiscordMessages(
-              repoId,
-              String(args.query ?? ''),
-              typeof args.limit === 'number' ? args.limit : undefined,
-              range,
-            );
-            for (const s of found) surfaced.set(snippetKey(s), s);
-            return { tool_call_id: call.id, content: JSON.stringify(found) };
-          }
-          default:
-            return {
-              tool_call_id: call.id,
-              content: `Error: unknown tool ${call.function.name}`,
-            };
-        }
-      }),
-    );
+        }),
+      );
 
-    for (const r of results) {
-      messages.push({
-        role: 'tool',
-        tool_call_id: r.tool_call_id,
-        content: r.content,
-      });
+      for (const r of results) {
+        messages.push({
+          role: 'tool',
+          tool_call_id: r.tool_call_id,
+          content: r.content,
+        });
+      }
+
+      // One batch trace write per tool round (best-effort, no-op without runId).
+      await appendStep(
+        repoId,
+        input.runId,
+        toolCalls.map((c) =>
+          c.type === 'function'
+            ? (TRACE_LABELS as Record<string, string>)[c.function.name] ?? c.function.name
+            : '',
+        ),
+      );
     }
-  }
 
-  // Ran out of rounds without a plain-text answer — ask once more, no tools.
-  logger.warn('discordChatFlow: round limit hit, forcing a final answer', { repoId });
-  const finalCompletion = await openai.chat.completions.create({
-    model: MODELS.fast,
-    messages: [
-      ...messages,
-      {
-        role: 'user',
-        content:
-          'Now answer my question using what you found above. Do not call any more tools.',
-      },
-    ],
-  });
-  return {
-    answer: finalCompletion.choices[0]?.message?.content ?? '',
-    snippets: [...surfaced.values()],
-  };
+    // Ran out of rounds without a plain-text answer — ask once more, no tools.
+    if (answer === null) {
+      logger.warn('discordChatFlow: round limit hit, forcing a final answer', {
+        repoId,
+      });
+      await appendStep(repoId, input.runId, TRACE_LABELS.composing);
+      const finalCompletion = await openai.chat.completions.create({
+        model: MODELS.fast,
+        messages: [
+          ...messages,
+          {
+            role: 'user',
+            content:
+              'Now answer my question using what you found above. Do not call any more tools.',
+          },
+        ],
+      });
+      answer = finalCompletion.choices[0]?.message?.content ?? '';
+    }
+
+    await finishRun(repoId, input.runId, 'done');
+    return { answer, snippets: [...surfaced.values()] };
+  } catch (err) {
+    await finishRun(repoId, input.runId, 'error');
+    throw err;
+  }
 }
 
 /** Parse a tool-call arguments JSON string, tolerating malformed input. */

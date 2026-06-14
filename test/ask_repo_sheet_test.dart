@@ -89,9 +89,10 @@ void main() {
     await tester.pump(); // user turn + sending
     await tester.pump(const Duration(milliseconds: 10)); // first trace emits
     expect(find.text('OAuth 進度?'), findsOneWidget);
-    expect(find.text('Reading .trellis planning docs…'), findsOneWidget);
+    // Trace step labels are localized for display (no LocaleNotifier → zhHant).
+    expect(find.text('讀取 .trellis 規劃文件…'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 10));
-    expect(find.text('Searching commit history…'), findsOneWidget);
+    expect(find.text('搜尋 commit 歷史…'), findsOneWidget);
 
     // Let the fake callable resolve (simulatedLatency * 5 = ~1.25s) → assistant
     // turn with sources. Pump explicit frames past the delay rather than
@@ -100,13 +101,14 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
     }
     // Trace strip is gone once sending completes.
-    expect(find.text('Reading .trellis planning docs…'), findsNothing);
-    // The assistant answer + a commit-sources panel are shown.
+    expect(find.text('讀取 .trellis 規劃文件…'), findsNothing);
+    // The assistant answer + at least one commit-sources panel are shown (the
+    // panels are now per-author windows, headed by name rather than a count).
     expect(find.textContaining('示範回覆'), findsOneWidget);
-    expect(find.textContaining('來源 commit'), findsWidgets);
+    expect(find.byIcon(Icons.commit_outlined), findsWidgets);
     expect(vm.turns.length, 2);
     expect(vm.turns.last.isUser, isFalse);
-    expect(vm.turns.last.commitSources, isNotEmpty);
+    expect(vm.turns.last.commitGroups, isNotEmpty);
   });
 
   testWidgets('new-session button clears the transcript', (tester) async {

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_strings.dart';
 import '../../models/agent_run.dart';
 import '../../models/ask_repo.dart';
-import '../../models/daily_brief.dart';
 import '../../models/discord_chat.dart';
 import '../../theme/app_dimens.dart';
 import '../../widgets/markdown_view.dart';
@@ -12,6 +11,16 @@ import '../../widgets/markdown_view.dart';
 // ([AskRepoViewModel]). Both the FAB-driven bottom sheet (`ask_repo_sheet.dart`)
 // and the Daily page's Summary tab (`daily_view_page.dart`) reuse these so the
 // transcript rendering stays identical across both entry points.
+
+/// `yyyy/MM/dd HH:mm` in local time for a source timestamp (commit time /
+/// Discord message time). Empty string when [dt] is null. Shared by the commit
+/// and Discord source panels so every cited source reads the same way.
+String formatStamp(DateTime? dt) {
+  if (dt == null) return '';
+  final d = dt.toLocal();
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${d.year}/${two(d.month)}/${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
+}
 
 /// One turn: a right-aligned user bubble, or an AI markdown answer with optional
 /// commit + Discord source panels.
@@ -70,9 +79,9 @@ class AskRepoTurnView extends StatelessWidget {
           ),
           const SizedBox(height: AppDimens.spacingSm),
           MarkdownView(data: turn.content),
-          if (turn.commitSources.isNotEmpty) ...[
+          for (final group in turn.commitGroups) ...[
             const SizedBox(height: AppDimens.spacingSm),
-            _CommitSourcesPanel(sources: turn.commitSources),
+            _CommitSourcesPanel(group: group),
           ],
           if (turn.discordSources.isNotEmpty) ...[
             const SizedBox(height: AppDimens.spacingSm),
@@ -119,7 +128,8 @@ class AskRepoLiveTraceStrip extends StatelessWidget {
     final s = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final labels = steps.map((e) => e.label).toList();
+    // Localize each backend step label to a descriptive, app-language line.
+    final labels = steps.map((e) => s.traceStep(e.label)).toList();
     // Until the first step arrives, show a generic "thinking" line.
     final lines = labels.isEmpty ? [s.askRepoThinking] : labels;
     return Padding(
@@ -255,16 +265,26 @@ class AskRepoInputBar extends StatelessWidget {
   }
 }
 
-// Scrollable panel of the commits the AI cited.
+// Scrollable panel of one commit window the AI cited. The header is the
+// window's label (a person / task / search); an unlabeled window falls back to
+// the localized "source commits" header. Each card shows the commit time to the
+// hour.
 class _CommitSourcesPanel extends StatelessWidget {
-  const _CommitSourcesPanel({required this.sources});
-  final List<DailyBriefSource> sources;
+  const _CommitSourcesPanel({required this.group});
+  final AskRepoCommitGroup group;
+
+  /// `yyyy/MM/dd HH:mm` in local time. Empty when absent.
+  static String _stamp(DateTime? dt) => formatStamp(dt);
 
   @override
   Widget build(BuildContext context) {
     final s = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final sources = group.commits;
+    final header = group.label.isNotEmpty
+        ? group.label
+        : s.askRepoCommitSources(sources.length);
     return Container(
       constraints: const BoxConstraints(maxHeight: 220),
       decoration: BoxDecoration(
@@ -287,10 +307,12 @@ class _CommitSourcesPanel extends StatelessWidget {
               children: [
                 Icon(Icons.commit_outlined, size: 16, color: scheme.tertiary),
                 const SizedBox(width: AppDimens.spacingXs),
-                Text(
-                  s.askRepoCommitSources(sources.length),
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                Expanded(
+                  child: Text(
+                    header,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
@@ -309,6 +331,12 @@ class _CommitSourcesPanel extends StatelessWidget {
               separatorBuilder: (_, _) => const Divider(height: 12),
               itemBuilder: (_, i) {
                 final src = sources[i];
+                final stamp = _stamp(src.committedAt);
+                final meta = [
+                  src.authorName.isEmpty ? src.authorLogin : src.authorName,
+                  if (stamp.isNotEmpty) stamp,
+                  src.shortSha,
+                ].join(' · ');
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -326,8 +354,7 @@ class _CommitSourcesPanel extends StatelessWidget {
                         ),
                       ),
                     Text(
-                      '${src.authorName.isEmpty ? src.authorLogin : src.authorName}'
-                      ' · ${src.shortSha}',
+                      meta,
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
@@ -413,6 +440,17 @@ class _DiscordSourcesPanel extends StatelessWidget {
                                   m.isMatch ? FontWeight.w600 : FontWeight.w400,
                             ),
                             children: [
+                              if (formatStamp(
+                                      DateTime.tryParse(m.timestamp ?? ''))
+                                  .isNotEmpty)
+                                TextSpan(
+                                  text:
+                                      '${formatStamp(DateTime.tryParse(m.timestamp!))}  ',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: scheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                ),
                               TextSpan(
                                 text: '${m.authorName}: ',
                                 style: const TextStyle(

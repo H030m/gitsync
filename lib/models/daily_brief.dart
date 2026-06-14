@@ -38,6 +38,10 @@ class DailyBriefSource {
   final String? aiSummary;
   final List<String> linkedTaskIds;
 
+  /// When the commit was committed (UTC, parsed from the backend ISO string).
+  /// Null for legacy payloads that predate the field.
+  final DateTime? committedAt;
+
   const DailyBriefSource({
     required this.sha,
     required this.message,
@@ -45,6 +49,7 @@ class DailyBriefSource {
     required this.authorLogin,
     this.aiSummary,
     this.linkedTaskIds = const [],
+    this.committedAt,
   });
 
   String get shortSha => sha.length >= 7 ? sha.substring(0, 7) : sha;
@@ -56,6 +61,8 @@ class DailyBriefSource {
         authorLogin: map['authorLogin'] as String? ?? '',
         aiSummary: map['aiSummary'] as String?,
         linkedTaskIds: List<String>.from(map['linkedTaskIds'] as List? ?? []),
+        committedAt: DateTime.tryParse(map['committedAt'] as String? ?? '')
+            ?.toLocal(),
       );
 }
 

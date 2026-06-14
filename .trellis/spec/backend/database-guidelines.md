@@ -70,6 +70,30 @@ From [`ARCHITECTURE.md §4.4`](../../../docs/ARCHITECTURE.md) — violating thes
     it runs on every task update — manual reassignment AND `assignTaskFlow`'s downstream
     auto-assign — while the done-only downstream logic stays gated below. Each folded-in concern
     gets its own `try/catch` so one failing on a given event never aborts the others.
+    - **D.1 exception — two triggers on the same path are safe ONLY IF the second consumes its
+      idempotency key on a write the first never observes — and that requires guard-before-mark
+      ordering.** `event.id` is shared across *all* functions bound to the **same** write; only
+      *distinct* writes get distinct ids. Concrete (06-14): `commits/{sha}` has both
+      `onCommitCreated` (`onDocumentCreated`, fires on the first-seen **create**, usually a
+      feature-branch push) and `onCommitCompletesTask` (`onDocumentWritten`, meant to run only on
+      the `onDefaultBranch` flag flipping `false→true`). The flag is set by a **dedicated**
+      `set({onDefaultBranch:true},{merge:true})` write in `handlePush`, *separate* from the
+      `.create()`.
+      - **The trap:** the feature-branch `.create()` is a SINGLE write, so it fires BOTH triggers
+        with the **same `event.id`**. If `onCommitCompletesTask` called `markIdempotent(event.id)`
+        *before* its transition guard, whichever trigger won the race would burn the shared key —
+        starving `onCommitCreated` of its linking/embedding run (silent `linkedTaskIds`/`aiSummary`
+        loss). They do NOT "never share an id"; they share one on every create.
+      - **The fix (load-bearing):** put the in-memory transition guard
+        (`!after` / `after.onDefaultBranch!==true` / `before?.onDefaultBranch===true`) **ahead of**
+        `markIdempotent`. Then `onCommitCompletesTask` returns early on the create (consuming
+        nothing) and only marks the key on the dedicated default-branch `set(merge)` write, which
+        `onCommitCreated` never observes. **General rule: when a second trigger shares a doc path,
+        its cheap in-memory guard MUST precede `markIdempotent` so it never consumes a key on a
+        write meant for the other trigger.**
+      - Why not just fold it into `onCommitCreated` (per D.1)? A merge re-push hits `ALREADY_EXISTS`
+        on `.create()`, so `onCommitCreated` never re-fires for the default-branch arrival — the
+        auto-complete concern genuinely needs its own trigger on a separate write (Rule E pattern).
 - **Rule E — match the trigger type to how the source doc is written.** If the producing
   write **creates** the doc already in its terminal state, `onDocumentUpdated` will **never
   fire** (it only fires on updates to an existing doc). The webhook's `handlePR` writes

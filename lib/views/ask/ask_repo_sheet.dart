@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../l10n/app_strings.dart';
 import '../../theme/app_dimens.dart';
+import '../../theme/app_motion.dart';
 import '../../view_models/ask_repo_vm.dart';
 import 'ask_repo_chat.dart';
 
@@ -28,6 +29,9 @@ class AskRepoSheet extends StatelessWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
+      // Tune enter/exit to match the app's sheet timing (Flutter owns the
+      // controller — no host widget needs to be promoted to stateful).
+      sheetAnimationStyle: AppMotion.sheetStyle,
       builder: (_) => ChangeNotifierProvider.value(
         value: vm,
         child: const AskRepoSheet(),
@@ -75,8 +79,8 @@ class _AskRepoBodyState extends State<_AskRepoBody> {
       if (!widget.scrollController.hasClients) return;
       widget.scrollController.animateTo(
         widget.scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOut,
+        duration: AppMotion.medium,
+        curve: AppMotion.emphasizedDecel,
       );
     });
   }
