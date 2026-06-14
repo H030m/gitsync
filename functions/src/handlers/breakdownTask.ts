@@ -12,9 +12,19 @@ export const breakdownTask = onCall(
     if (!request.auth) {
       throw new HttpsError('failed-precondition', 'Please log in first.');
     }
-    const { repoId, goal } = request.data as { repoId?: string; goal?: string };
+    const { repoId, goal, language } = request.data as {
+      repoId?: string;
+      goal?: string;
+      language?: string;
+    };
     if (!repoId || !goal) {
       throw new HttpsError('invalid-argument', 'repoId and goal are required');
+    }
+    // W6: optional language (a human-readable English language NAME the client
+    // derives from the app locale) forces the generated tasks into that
+    // language; absent → the model follows the spec's own language.
+    if (language !== undefined && typeof language !== 'string') {
+      throw new HttpsError('invalid-argument', 'language must be a string');
     }
 
     // Acquire the distributed lock atomically.
@@ -41,6 +51,7 @@ export const breakdownTask = onCall(
         repoId,
         goal,
         requestedBy: request.auth.uid,
+        language,
       });
     } finally {
       // Always release the lock, even on error. Swallow the unlock error so

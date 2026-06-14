@@ -42,9 +42,14 @@ abstract class FunctionsService {
 
   // ---- AI flows ----------------------------------------------------------
 
+  /// Breaks [goal] (typically a pasted SPEC.md) into a task list. [language] is
+  /// an English language NAME (e.g. "Traditional Chinese") derived from the app
+  /// locale so the generated tasks come back in the user's language (W6); omit
+  /// it to let the backend follow the spec's own language.
   Future<List<SubTask>> breakdownTask({
     required String repoId,
     required String goal,
+    String? language,
   });
   Future<void> forceUnlockBreakdown({required String repoId});
   Future<({String assigneeId, String reasoning})> assignTask({
@@ -246,10 +251,13 @@ class _LiveFunctionsService implements FunctionsService {
   Future<List<SubTask>> breakdownTask({
     required String repoId,
     required String goal,
+    String? language,
   }) async {
     final res = await _callable('breakdownTask').call({
       'repoId': repoId,
       'goal': goal,
+      // Only sent when present; absent → backend follows the spec's language.
+      'language': ?language,
     });
     final data = Map<String, dynamic>.from(res.data as Map);
     return (data['subtasks'] as List)

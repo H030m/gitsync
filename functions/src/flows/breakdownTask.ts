@@ -22,6 +22,13 @@ export interface BreakdownTaskInput {
   goal: string;
   /** Firebase Auth UID of the requester, for `createdBy`. */
   requestedBy: string;
+  /**
+   * W6: optional human-readable English language NAME (e.g. "Traditional
+   * Chinese") the client derives from the app locale. When set, the generated
+   * task titles/descriptions are forced into that language; absent/empty → the
+   * model follows the spec's own language (the base prompt rule).
+   */
+  language?: string;
 }
 
 export interface BreakdownTaskResult {
@@ -38,7 +45,7 @@ export interface BreakdownTaskResult {
 export async function breakdownTaskFlow(
   input: BreakdownTaskInput,
 ): Promise<BreakdownTaskResult> {
-  const { repoId, goal, requestedBy } = input;
+  const { repoId, goal, requestedBy, language } = input;
 
   // ---- Step 1: fetchProjectContext (Firestore only, NO GitHub) -------------
   // Context = the pasted SPEC.md (`goal`) + light repo info (name/desc).
@@ -77,7 +84,7 @@ export async function breakdownTaskFlow(
   logger.info('Step 2: call OpenAI for breakdown', { repoId });
   const openai = getOpenAI();
   const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-    { role: 'system', content: breakdownTaskSystem },
+    { role: 'system', content: breakdownTaskSystem(language) },
     { role: 'user', content: breakdownTaskUser({ projectContext, goal }) },
   ];
 
