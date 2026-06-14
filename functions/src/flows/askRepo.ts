@@ -295,7 +295,7 @@ export async function askRepoFlow(input: AskRepoInput): Promise<AskRepoResult> {
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     {
       role: 'system',
-      content: askRepoSystem(today, DEFAULT_DAYS) + briefPrefix + planGuidance,
+      content: askRepoSystem(today, DEFAULT_DAYS, briefPrefix + planGuidance),
     },
     ...history
       .slice(-MAX_HISTORY_TURNS)
