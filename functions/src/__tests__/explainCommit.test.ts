@@ -366,7 +366,7 @@ describe('explainCommitFlow', () => {
       language: 'English',
     });
     expect(systemContent()).toBe(
-      `${base}\nWrite your entire response in English.`,
+      `${base}\n\n---\n\nWrite your entire response in English.`,
     );
   });
 

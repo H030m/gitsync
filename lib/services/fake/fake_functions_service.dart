@@ -44,6 +44,7 @@ class FakeFunctionsService implements FunctionsService {
   Future<List<SubTask>> breakdownTask({
     required String repoId,
     required String goal,
+    String? language,
   }) async {
     await Future.delayed(AppConfig.simulatedLatency * 6);
     // Pretend the LLM split the goal into 4 generic subtasks.
@@ -82,6 +83,12 @@ class FakeFunctionsService implements FunctionsService {
   @override
   Future<void> forceUnlockBreakdown({required String repoId}) async {
     await Future.delayed(AppConfig.simulatedLatency);
+  }
+
+  @override
+  Future<int> deleteAllTasks({required String repoId}) async {
+    await Future.delayed(AppConfig.simulatedLatency);
+    return 0;
   }
 
   @override

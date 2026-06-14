@@ -32,7 +32,8 @@ export interface SearchRange {
 export interface DiscordMessageHit {
   messageId: string;
   channelId: string;
-  authorName: string;
+  authorName: string; // display name (guild nickname → global → @handle)
+  authorUsername?: string; // raw @handle (for author-filter matching)
   content: string;
   timestamp: string | null; // ISO 8601, or null if missing
   isMatch: boolean; // true if it matched the query (vs. surrounding context)
@@ -199,8 +200,33 @@ export async function searchDiscordMessages(
   query: string,
   limit = DEFAULT_SNIPPETS,
   range?: SearchRange,
+  author?: string,
 ): Promise<DiscordSnippet[]> {
   try {
+    // ---- Author-scoped path: "what did <person> say" -----------------------
+    // When an author is named, retrieval is BY AUTHOR (display name OR @handle,
+    // fuzzy), not by content vector — querying a person's name semantically
+    // doesn't surface their messages. Optionally AND-filtered by query terms.
+    const authorTerm = author?.trim().toLowerCase();
+    if (authorTerm) {
+      const docs = await scanRecentMessages(repoId, range);
+      const queryTerms = new Set(tokenize(query));
+      const byAuthor = (m: DiscordMessageHit): boolean => {
+        const name = m.authorName.toLowerCase();
+        const handle = (m.authorUsername ?? '').toLowerCase();
+        if (!name.includes(authorTerm) && !handle.includes(authorTerm)) return false;
+        if (queryTerms.size === 0) return true;
+        const hay = m.content.toLowerCase();
+        for (const t of queryTerms) if (hay.includes(t)) return true;
+        return false;
+      };
+      // Honest empty: if this person has no matching message in the window,
+      // return [] (NOT a recent-messages fallback) so the agent says "nothing
+      // from X here" instead of summarizing unrelated recent chatter.
+      if (!docs.some(byAuthor)) return [];
+      return groupByMatches(docs, byAuthor, { maxSnippets: limit });
+    }
+
     // ---- Vector-first path (skip when the query has no usable terms) -------
     const hasTerms = tokenize(query).length > 0;
     if (hasTerms) {
@@ -300,6 +326,7 @@ async function scanRecentMessages(
       messageId: d.id,
       channelId: (data.channelId as string | undefined) ?? '',
       authorName: (data.authorName as string | undefined) ?? '',
+      authorUsername: (data.authorUsername as string | undefined) ?? undefined,
       content: (data.content as string | undefined) ?? '',
       isMatch: false,
       timestamp: tsToIso(data.timestamp),

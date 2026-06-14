@@ -20,8 +20,12 @@ import { logger } from 'firebase-functions/v2';
 import { HttpsError } from 'firebase-functions/v2/https';
 import type OpenAI from 'openai';
 
+import { zodResponseFormat } from 'openai/helpers/zod';
+
 import { getOpenAI, MODELS } from '../config';
 import { askRepoSystem } from '../prompts/askRepo';
+import { askRepoPlannerSystem, formatPlanForPrompt } from '../prompts/askRepoPlanner';
+import { AskRepoPlanSchema, type AskRepoPlan } from '../types';
 import { readProjectBrief, formatBriefForPrompt } from '../tools/projectBrief';
 import {
   listRangeCommits,
@@ -36,6 +40,7 @@ import {
 } from '../tools/discordSearch';
 import { readRepoPlanningDocs } from '../tools/repoDocs';
 import { getTaskDependents, readTeamState } from '../tools/assignTools';
+import { getCommitDiff } from '../tools/handoffTools';
 import {
   startRun,
   appendStep,
@@ -120,8 +125,10 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           authorLogin: {
             type: 'string',
             description:
-              "Only this author's commits (a GitHub login from readTeamState). " +
-              'The window is labeled with this person.',
+              "Only this author's commits. Matched fuzzily: pass a GitHub login " +
+              'OR a partial / informal name (e.g. "opal" matches the login ' +
+              '"opaL1022", and a display name also matches), so you do not need ' +
+              'the exact login. The window is labeled with this person.',
           },
           taskId: {
             type: 'string',
@@ -190,6 +197,33 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
+      name: 'getCommitDiff',
+      description:
+        'Fetch the ACTUAL unified diff (per-file patches + add/del line stats) ' +
+        'of ONE commit by its sha, so you can explain what TRULY changed instead ' +
+        'of paraphrasing its one-line summary. Use it when the user asks "what ' +
+        'did this commit/PR change", "what did X actually do", or to verify a ' +
+        'concrete claim. NOTE: a MERGE commit usually has an empty diff — do NOT ' +
+        'call this on a merge; instead summarize the individual commits the merge ' +
+        'brought in (from listDayCommits / searchPastCommits). Call sparingly ' +
+        '(1–3 well-chosen shas). GitHub-backed, best-effort (null when ' +
+        'unavailable — e.g. no repo token / private repo).',
+      parameters: {
+        type: 'object',
+        properties: {
+          sha: {
+            type: 'string',
+            description: 'Full or short commit sha from a commit window.',
+          },
+        },
+        required: ['sha'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'readRepoPlanningDocs',
       description:
         "Read the repo's in-repo planning context (.trellis tasks/prd, " +
@@ -250,8 +284,19 @@ export async function askRepoFlow(input: AskRepoInput): Promise<AskRepoResult> {
   const briefPrefix = formatBriefForPrompt(await readProjectBrief(repoId));
 
   const openai = getOpenAI();
+
+  // ---- Planner pre-step: interpret intent BEFORE searching -----------------
+  // Restate the (often informal) question as a structured search intent so the
+  // agent searches with the right fuzzy params (resolved people, time window,
+  // semantic topics) instead of the literal wording. Best-effort: a failure
+  // leaves `planGuidance` empty and the flow runs exactly as before.
+  const planGuidance = await planQuery(openai, today, question, history);
+
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: 'system', content: askRepoSystem(today, DEFAULT_DAYS) + briefPrefix },
+    {
+      role: 'system',
+      content: askRepoSystem(today, DEFAULT_DAYS, briefPrefix + planGuidance),
+    },
     ...history
       .slice(-MAX_HISTORY_TURNS)
       .filter((t) => t && (t.role === 'user' || t.role === 'assistant') && t.content)
@@ -389,9 +434,20 @@ async function runTool(
       let cs = all;
       let label = '';
       if (authorLogin) {
-        cs = all.filter(
-          (c) => c.authorLogin.toLowerCase() === authorLogin.toLowerCase(),
-        );
+        // FUZZY author match: GitHub logins often carry a suffix (e.g. the user
+        // says "opal" but the login is "opaL1022"), and people refer to others
+        // by display name. Match case-insensitively, preferring an exact login
+        // hit but falling back to a substring of EITHER login or display name so
+        // a partial / informal name still resolves.
+        const q = authorLogin.toLowerCase();
+        const exact = all.filter((c) => c.authorLogin.toLowerCase() === q);
+        cs = exact.length
+          ? exact
+          : all.filter(
+              (c) =>
+                c.authorLogin.toLowerCase().includes(q) ||
+                c.authorName.toLowerCase().includes(q),
+            );
         // Prefer the human name (from the matched commits) for the window label.
         label = cs.find((c) => c.authorName)?.authorName || authorLogin;
       } else if (taskId) {
@@ -425,6 +481,17 @@ async function runTool(
       collect.collectSnippets(ss);
       return { id: call.id, content: JSON.stringify(ss), label: TRACE_LABELS.searchDiscordMessages };
     }
+    case 'getCommitDiff': {
+      // Real per-file diff for ONE commit, so the agent can ground "what changed"
+      // in the actual patch instead of paraphrasing the one-line aiSummary.
+      // best-effort (null → diff unavailable); not collected into a source panel.
+      const diff = await getCommitDiff(repoId, String(args.sha ?? '').trim());
+      return {
+        id: call.id,
+        content: JSON.stringify(diff ?? { error: 'diff unavailable for this sha' }),
+        label: TRACE_LABELS.getCommitDiff,
+      };
+    }
     case 'readRepoPlanningDocs': {
       const docs = await readRepoPlanningDocs(repoId);
       return { id: call.id, content: JSON.stringify(docs.content), label: TRACE_LABELS.readRepoPlanningDocs };
@@ -449,6 +516,42 @@ async function runTool(
     }
     default:
       return { id: call.id, content: `unknown tool ${name}`, label: '' };
+  }
+}
+
+/**
+ * Planner pre-step: ask a cheap model to restate the question as a structured
+ * AskRepoPlan, then render it as a guidance block for the main loop. BEST-EFFORT
+ * — any failure (parse/network/empty) returns '' so the flow is unchanged. The
+ * planner sees the recent history too, so follow-ups ("and what about her?")
+ * resolve against context.
+ */
+async function planQuery(
+  openai: ReturnType<typeof getOpenAI>,
+  today: string,
+  question: string,
+  history: AskRepoTurn[],
+): Promise<string> {
+  try {
+    const completion = await openai.beta.chat.completions.parse({
+      model: MODELS.fast,
+      messages: [
+        { role: 'system', content: askRepoPlannerSystem(today) },
+        ...history
+          .slice(-MAX_HISTORY_TURNS)
+          .filter((t) => t && (t.role === 'user' || t.role === 'assistant') && t.content)
+          .map((t) => ({ role: t.role, content: t.content })),
+        { role: 'user', content: question },
+      ],
+      response_format: zodResponseFormat(AskRepoPlanSchema, 'queryPlan'),
+    });
+    const plan = (completion.choices[0]?.message?.parsed as AskRepoPlan | null) ?? null;
+    return plan ? formatPlanForPrompt(plan) : '';
+  } catch (err) {
+    logger.warn('askRepoFlow: planner failed (best-effort)', {
+      err: String(err),
+    });
+    return '';
   }
 }
 

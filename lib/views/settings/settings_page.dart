@@ -5,6 +5,7 @@ import '../../config/app_config.dart';
 import '../../l10n/app_locale.dart';
 import '../../l10n/app_strings.dart';
 import '../../services/authentication.dart';
+import '../../services/functions_service.dart';
 import '../../services/local_notifications.dart';
 import '../../services/locale_notifier.dart';
 import '../../services/navigation.dart';
@@ -62,6 +63,17 @@ class SettingsPage extends StatelessWidget {
             },
           ),
           const SizedBox(height: AppDimens.spacingSm),
+          _SectionLabel(s.dangerZone),
+          ListTile(
+            leading: Icon(Icons.delete_sweep_outlined,
+                color: Theme.of(context).colorScheme.error),
+            title: Text(s.deleteAllTasks),
+            subtitle: Text(s.deleteAllTasksSubtitle),
+            textColor: Theme.of(context).colorScheme.error,
+            iconColor: Theme.of(context).colorScheme.error,
+            onTap: () => _confirmDeleteAllTasks(context),
+          ),
+          const SizedBox(height: AppDimens.spacingSm),
           _SectionLabel(s.account),
           ListTile(
             title: Text(s.signOut),
@@ -80,6 +92,45 @@ class SettingsPage extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  // Confirm, then delete every task in this repo (demo reset). Captures the
+  // messenger/service before awaiting and guards on context.mounted after.
+  Future<void> _confirmDeleteAllTasks(BuildContext context) async {
+    final s = context.l10n;
+    final messenger = ScaffoldMessenger.of(context);
+    final functions = Provider.of<FunctionsService>(context, listen: false);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(s.deleteAllTasksConfirmTitle),
+        content: Text(s.deleteAllTasksConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(s.cancel),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(s.delete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      final n = await functions.deleteAllTasks(repoId: repoId);
+      messenger.showSnackBar(SnackBar(content: Text(s.deleteAllTasksDone(n))));
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('${s.deleteAllTasksFailed}: $e')),
+      );
+    }
   }
 }
 

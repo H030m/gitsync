@@ -81,8 +81,19 @@ const mockCreate = jest.fn(async () => {
   return { choices: [next] };
 });
 
+// Planner pre-step uses openai.beta.chat.completions.parse. Default to a null
+// plan → empty guidance → the main loop / system prompt is unchanged (so the
+// existing assertions hold). A test can push a plan to exercise the planner.
+const planQueue: Array<{ parsed: unknown }> = [];
+const mockPlan = jest.fn(async () => ({
+  choices: [{ message: { parsed: planQueue.shift()?.parsed ?? null } }],
+}));
+
 jest.mock('../config', () => ({
-  getOpenAI: () => ({ chat: { completions: { create: mockCreate } } }),
+  getOpenAI: () => ({
+    chat: { completions: { create: mockCreate } },
+    beta: { chat: { completions: { parse: mockPlan } } },
+  }),
   MODELS: { reasoning: 'gpt-4o', fast: 'gpt-4o-mini', embedding: 'text-embedding-3-small' },
 }));
 
@@ -100,6 +111,12 @@ jest.mock('../tools/assignTools', () => ({
     { userId: 'u1', name: 'Alice', githubLogin: 'alice-dev' },
   ]),
 }));
+// handoffTools pulls in githubClient → @octokit/rest (ESM jest can't parse);
+// mock it so getCommitDiff is scriptable and octokit stays out of the test.
+const mockGetCommitDiff = jest.fn(async (..._a: unknown[]) => null as unknown);
+jest.mock('../tools/handoffTools', () => ({
+  getCommitDiff: (...a: unknown[]) => mockGetCommitDiff(...a),
+}));
 
 // ---- Mocked agent-trace (assert cadence) -----------------------------------
 const startRun = jest.fn(async (..._a: unknown[]) => {});
@@ -113,6 +130,7 @@ jest.mock('../tools/agentTrace', () => ({
     listDayCommits: 'Listing recent commits…',
     searchPastCommits: 'Searching commit history…',
     searchDiscordMessages: 'Searching Discord…',
+    getCommitDiff: 'Reading a commit diff…',
     composing: 'Composing answer…',
   },
 }));
@@ -129,6 +147,14 @@ function seedCommit(sha: string, data: Record<string, unknown>) {
     ...data,
   });
 }
+/** The `system` message content of the Nth main-loop OpenAI create() call. */
+function systemMessageOf(n: number): string {
+  const arg = (mockCreate.mock.calls[n] as unknown[])[0] as {
+    messages: Array<{ role: string; content: string }>;
+  };
+  return arg.messages.find((m) => m.role === 'system')!.content;
+}
+
 function toolTurn(calls: Array<{ name: string; args?: Record<string, unknown>; id?: string }>) {
   return {
     message: {
@@ -156,6 +182,8 @@ function firstCallMessages(): Array<{ role: string; content: string }> {
 beforeEach(() => {
   store.clear();
   createQueue.length = 0;
+  planQueue.length = 0;
+  mockPlan.mockClear();
   mockCreate.mockClear();
   mockSearchDiscord.mockClear();
   mockSearchDiscord.mockResolvedValue([]);
@@ -203,6 +231,48 @@ describe('askRepoFlow', () => {
     expect(alice?.commits.map((c) => c.sha)).toEqual(['c1']);
     // The flat `commits` field is the union of every window (backward compat).
     expect(res.commits.map((c) => c.sha).sort()).toEqual(['c1', 'c2']);
+  });
+
+  it('matches authorLogin fuzzily (partial login / suffix)', async () => {
+    // The user says "opal" but the real login carries a suffix.
+    seedCommit('c1', { message: 'merge', author: { login: 'opaL1022', name: 'Opal' } });
+    seedCommit('c2', { message: 'other', author: { login: 'bob', name: 'Bob' } });
+    createQueue.push(toolTurn([{ name: 'listDayCommits', args: { authorLogin: 'opal' } }]));
+    createQueue.push(answerTurn('found it'));
+
+    const res = await askRepoFlow({ repoId: REPO, question: "opal's merge?" });
+    // Only opaL1022's commit, labeled by display name; bob excluded.
+    expect(res.commitGroups).toHaveLength(1);
+    expect(res.commitGroups[0].label).toBe('Opal');
+    expect(res.commitGroups[0].commits.map((c) => c.sha)).toEqual(['c1']);
+  });
+
+  it('injects the planner interpretation into the system prompt as guidance', async () => {
+    planQueue.push({
+      parsed: {
+        intent: 'What did Opal merge into main recently?',
+        people: ['opal'],
+        taskHints: [],
+        searchTopics: ['merge develop into main'],
+        timeWindowDays: 7,
+      },
+    });
+    createQueue.push(answerTurn('done'));
+
+    await askRepoFlow({ repoId: REPO, question: 'opal 剛剛 merge 了啥' });
+
+    expect(mockPlan).toHaveBeenCalledTimes(1);
+    expect(systemMessageOf(0)).toContain('Interpretation of the question');
+    expect(systemMessageOf(0)).toContain('opal');
+    expect(systemMessageOf(0)).toContain('days=7');
+  });
+
+  it('planner failure leaves the flow working (no guidance block)', async () => {
+    // null plan → empty guidance → system prompt has no interpretation block.
+    createQueue.push(answerTurn('still works'));
+    const res = await askRepoFlow({ repoId: REPO, question: 'hi' });
+    expect(res.answer).toBe('still works');
+    expect(systemMessageOf(0)).not.toContain('Interpretation of the question');
   });
 
   it('surfaces committedAt as an ISO string from the commit timestamp', async () => {

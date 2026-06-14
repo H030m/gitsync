@@ -12,7 +12,8 @@ export interface IngestPayload {
   messageId: string;
   channelId: string;
   authorId: string;
-  authorName: string;
+  authorName: string; // display name (guild nickname → global → @handle)
+  authorUsername?: string; // the raw @handle, for username-based matching
   content: string;
   mentionedUserIds: string[];
   timestamp: string; // ISO 8601

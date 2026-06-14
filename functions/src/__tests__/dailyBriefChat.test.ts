@@ -84,6 +84,13 @@ jest.mock('../config', () => ({
   MODELS: { reasoning: 'gpt-4o', fast: 'gpt-4o-mini', embedding: 'text-embedding-3-small' },
 }));
 
+// handoffTools pulls in githubClient → @octokit/rest (ESM jest can't parse);
+// mock it so getCommitDiff is scriptable and octokit stays out of the test.
+const mockGetCommitDiff = jest.fn(async (..._a: unknown[]) => null as unknown);
+jest.mock('../tools/handoffTools', () => ({
+  getCommitDiff: (...a: unknown[]) => mockGetCommitDiff(...a),
+}));
+
 import { dailyBriefChatFlow } from '../flows/dailyBriefChat';
 
 const REPO = 'team17_gitsync';

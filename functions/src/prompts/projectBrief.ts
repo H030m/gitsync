@@ -8,8 +8,11 @@
 // MAX_BRIEF_CHARS truncation in tools/projectBrief.ts).
 //
 // Keep the system prompt a stable string so OpenAI's automatic prompt caching
-// applies across daily merges.
-export const projectBriefMergeSystem = `You maintain a SINGLE living "project brief" for one software repo: the durable knowledge a new teammate (or an AI agent) needs to act well on this project. You are given the CURRENT brief and the LATEST daily report. Produce the UPDATED brief.
+// applies across daily merges. Common rules (identity / grounding) come from the
+// top-level base (prompts/baseSystem.ts).
+import { buildSystemPrompt } from './baseSystem';
+
+const projectBriefMergeBody = `Your task: maintain a SINGLE living "project brief" for this repo — the durable knowledge a new teammate (or an AI agent) needs to act well on this project. You are given the CURRENT brief and the LATEST daily report. Produce the UPDATED brief.
 
 KEEP (these are the brief's whole purpose):
 - Architecture decisions and the reasoning behind them.
@@ -28,6 +31,10 @@ HARD RULES:
 - Do NOT invent facts. Every line must be grounded in the current brief or the latest report. When unsure whether something is durable, leave it OUT.
 - If the latest report adds nothing durable, return the current brief essentially unchanged.
 - Prefer terse bullet points grouped under short headings.`;
+
+export const projectBriefMergeSystem = buildSystemPrompt({
+  agentBody: projectBriefMergeBody,
+});
 
 export function projectBriefMergeUser(input: {
   oldBrief: string;

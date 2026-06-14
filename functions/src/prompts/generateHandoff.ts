@@ -15,14 +15,7 @@
 // non-English draft. When absent/empty the system prompts are byte-identical to
 // before (zero behavior change for the auto/scheduled single-language path).
 
-/**
- * Appends the W6 language directive to a system prompt when `language` is a
- * non-empty string; otherwise returns the prompt unchanged (byte-identical).
- */
-function withLanguage(systemPrompt: string, language?: string): string {
-  const lang = language?.trim();
-  return lang ? `${systemPrompt}\nWrite your entire response in ${lang}.` : systemPrompt;
-}
+import { buildSystemPrompt } from './baseSystem';
 
 const generateHandoffSystemBase = `You are a senior engineer writing a concise handoff document so the next engineer can pick up a task whose prerequisites just finished.
 
@@ -48,7 +41,7 @@ Rules:
  * that language; without it the prompt is byte-identical to the base.
  */
 export function generateHandoffSystemPrompt(language?: string): string {
-  return withLanguage(generateHandoffSystemBase, language);
+  return buildSystemPrompt({ agentBody: generateHandoffSystemBase, language });
 }
 
 export interface HandoffSeedInput {
@@ -99,7 +92,7 @@ Judge grounding and completeness, not prose polish.`;
  * prompt is byte-identical to the base.
  */
 export function handoffReviewSystemPrompt(language?: string): string {
-  return withLanguage(handoffReviewSystemBase, language);
+  return buildSystemPrompt({ agentBody: handoffReviewSystemBase, language });
 }
 
 export interface HandoffReviewContextInput {

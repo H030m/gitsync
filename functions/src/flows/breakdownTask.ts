@@ -50,6 +50,13 @@ export interface BreakdownTaskInput {
   goal: string;
   /** Firebase Auth UID of the requester, for `createdBy`. */
   requestedBy: string;
+  /**
+   * W6: optional human-readable English language NAME (e.g. "Traditional
+   * Chinese") the client derives from the app locale. When set, the generated
+   * task titles/descriptions are forced into that language; absent/empty → the
+   * model follows the spec's own language (the base prompt rule).
+   */
+  language?: string;
 }
 
 export interface BreakdownTaskResult {
@@ -75,7 +82,7 @@ interface ResolvedSubtask {
 export async function breakdownTaskFlow(
   input: BreakdownTaskInput,
 ): Promise<BreakdownTaskResult> {
-  const { repoId, goal, requestedBy } = input;
+  const { repoId, goal, requestedBy, language } = input;
 
   // ---- Step 1: fetchProjectContext (Firestore only, NO GitHub) -------------
   // Context = the pasted SPEC.md (`goal`) + light repo info (name/desc).
@@ -102,7 +109,7 @@ export async function breakdownTaskFlow(
     resolved = await incrementalBreakdown(repoId, goal);
   } else {
     logger.info('breakdownTaskFlow: first-pass path (empty repo)', { repoId });
-    resolved = await firstPassBreakdown(repoId, goal, repo);
+    resolved = await firstPassBreakdown(repoId, goal, repo, language);
   }
 
   // ---- Final: transactional batch write ------------------------------------
@@ -152,6 +159,7 @@ async function firstPassBreakdown(
   repoId: string,
   goal: string,
   repo: Record<string, unknown>,
+  language?: string,
 ): Promise<ResolvedSubtask[]> {
   // Best-effort: pull the repo's in-repo planning docs (.trellis / AGENTS.md /
   // CLAUDE.md / .claude / docs) so the breakdown knows what work already exists
@@ -180,7 +188,7 @@ async function firstPassBreakdown(
   logger.info('Step 2: call OpenAI for breakdown', { repoId });
   const openai = getOpenAI();
   const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-    { role: 'system', content: breakdownTaskSystem },
+    { role: 'system', content: breakdownTaskSystem(language) },
     { role: 'user', content: breakdownTaskUser({ projectContext, goal }) },
   ];
 

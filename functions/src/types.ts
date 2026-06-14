@@ -53,6 +53,40 @@ export const IncrementalBreakdownSchema = z.object({
 export type IncrementalSubtask = z.infer<typeof IncrementalSubtaskSchema>;
 export type IncrementalBreakdown = z.infer<typeof IncrementalBreakdownSchema>;
 
+// ---- askRepoFlow query planner ---------------------------------------------
+//
+// The planner is a cheap pre-step that reads the developer's (often informal)
+// question and restates it as a structured search intent, so the main agentic
+// loop searches with the RIGHT fuzzy parameters instead of taking the literal
+// wording. All fields are best-effort hints — the agent still verifies via
+// tools and may ignore them.
+export const AskRepoPlanSchema = z.object({
+  intent: z
+    .string()
+    .describe('One sentence: what the user really wants to know, de-jargoned.'),
+  people: z
+    .array(z.string())
+    .describe(
+      'Names/logins the user referred to, however informal (e.g. "opal"). ' +
+        'Pass each to listDayCommits.authorLogin — it matches fuzzily.',
+    ),
+  taskHints: z
+    .array(z.string())
+    .describe('Tasks/features the user described in words (not ids).'),
+  searchTopics: z
+    .array(z.string())
+    .describe('Semantic search phrases for searchPastCommits / searchDiscordMessages.'),
+  timeWindowDays: z
+    .number()
+    .int()
+    .describe(
+      'Look-back window the phrasing implies: "剛剛/just now/recent"→7, ' +
+        '"this week/上週"→14, "this month"→30, none stated→30. Max 92.',
+    ),
+});
+
+export type AskRepoPlan = z.infer<typeof AskRepoPlanSchema>;
+
 // ---- assignTaskFlow ---------------------------------------------------------
 
 export const AssignmentDecisionSchema = z.object({

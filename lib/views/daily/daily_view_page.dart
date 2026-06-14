@@ -79,9 +79,10 @@ class _DailyViewPageState extends State<DailyViewPage> {
       chat.setRange(now, now);
       commits.clearRange();
       // Clears only the Discord display scope (no callable — additive store
-      // keeps everything). The chat returns to an unscoped (recent) read.
+      // keeps everything). The chat is scoped to today (matching the displayed
+      // "today" window) so it doesn't pull messages from unrelated past days.
       discord.clearViewRange();
-      discordChat.clearRange();
+      discordChat.setRange(now, now);
     }
   }
 

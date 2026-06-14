@@ -112,7 +112,17 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
         properties: {
           query: {
             type: 'string',
-            description: 'Natural-language search terms drawn from the question.',
+            description:
+              'Natural-language search terms drawn from the question. Pass an ' +
+              'empty string when you only want a person\'s messages (use author).',
+          },
+          author: {
+            type: 'string',
+            description:
+              "Restrict to ONE person's messages. Matched fuzzily against the " +
+              "Discord display name (e.g. \"鯨魚島麻糬\") OR the @handle (e.g. " +
+              '"whale_island") — pass whatever name the user used. Use this for ' +
+              '"what did X say", "list X\'s messages", or "X 說了什麼".',
           },
           limit: {
             type: 'number',
@@ -132,21 +142,23 @@ export async function discordChatFlow(
   const { repoId, question } = input;
   const history = Array.isArray(input.history) ? input.history : [];
 
-  // Time-scope: when the client passes the active window, every read tool is
-  // restricted to it (messages now accumulate forever — additive-only storage).
+  // Time-scope: every read tool is restricted to the active window. When the
+  // client passes one, use it; when it DOESN'T (older app builds that left the
+  // chat unscoped), default to TODAY (Asia/Taipei) so the chat matches the
+  // displayed "today" window instead of pulling unrelated past days.
   let range: SearchRange | undefined;
-  if (input.startDate && input.endDate) {
-    try {
-      const { start, end } = taipeiRangeBounds(input.startDate, input.endDate);
-      range = { start, end, startDate: input.startDate, endDate: input.endDate };
-    } catch (err) {
-      logger.warn('discordChatFlow: bad range, ignoring (unscoped)', {
-        repoId,
-        startDate: input.startDate,
-        endDate: input.endDate,
-        err: String(err),
-      });
-    }
+  const startDate = input.startDate || taipeiTodayKey();
+  const endDate = input.endDate || taipeiTodayKey();
+  try {
+    const { start, end } = taipeiRangeBounds(startDate, endDate);
+    range = { start, end, startDate, endDate };
+  } catch (err) {
+    logger.warn('discordChatFlow: bad range, ignoring (unscoped)', {
+      repoId,
+      startDate,
+      endDate,
+      err: String(err),
+    });
   }
 
   const systemPrompt = range
@@ -231,6 +243,7 @@ export async function discordChatFlow(
                 String(args.query ?? ''),
                 typeof args.limit === 'number' ? args.limit : undefined,
                 range,
+                typeof args.author === 'string' ? args.author : undefined,
               );
               for (const s of found) surfaced.set(snippetKey(s), s);
               return { tool_call_id: call.id, content: JSON.stringify(found) };
@@ -290,6 +303,11 @@ export async function discordChatFlow(
     await finishRun(repoId, input.runId, 'error');
     throw err;
   }
+}
+
+/** Today's date (YYYY-MM-DD) in Asia/Taipei (UTC+8), without a tz library. */
+function taipeiTodayKey(): string {
+  return new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 /** Parse a tool-call arguments JSON string, tolerating malformed input. */

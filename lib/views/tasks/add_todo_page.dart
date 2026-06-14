@@ -263,7 +263,12 @@ class _AddTodoPageState extends State<AddTodoPage> {
     });
     try {
       final fn = Provider.of<FunctionsService>(context, listen: false);
-      final subs = await fn.breakdownTask(repoId: widget.repoId, goal: _goal);
+      // W6: generate the tasks in the app's current language.
+      final subs = await fn.breakdownTask(
+        repoId: widget.repoId,
+        goal: _goal,
+        language: context.l10n.backendLanguage,
+      );
       if (!mounted) return;
       setState(() {
         _subtasks = subs.toList();

@@ -1,8 +1,10 @@
-// System + user prompts for `breakdownTaskFlow`. Plain strings — no Handlebars.
-//
-// Keep the system prompt stable across calls so OpenAI's automatic prompt
-// caching (≥1024 tokens prefix → 50% off) kicks in.
-export const breakdownTaskSystem = `You are a senior software engineer helping a team break down a project into actionable subtasks.
+// System + user prompts for `breakdownTaskFlow`. Common rules (identity /
+// grounding / language) come from the top-level base (prompts/baseSystem.ts);
+// this holds the decomposition rules. The W6 `language` is routed through
+// buildSystemPrompt.
+import { buildSystemPrompt } from './baseSystem';
+
+const breakdownTaskSystemBase = `Your task: help a team break a project into actionable subtasks.
 
 The input is typically a full project SPEC.md (Markdown) for a newly imported project that has no existing tasks or history yet. Treat it as the primary source of requirements.
 
@@ -15,7 +17,20 @@ Rules:
 - The dependency graph must be acyclic — never produce circular dependencies.
 - Use the team's existing tech stack from the project context — do not invent new technologies.
 - Titles should be imperative and specific ("Add login button to nav bar", not "Login UI").
-- estimatedHours is a rough estimate for the whole top-level TODO.`;
+- estimatedHours is a rough estimate for the whole top-level TODO.
+- Write the task titles and descriptions in the SAME language as the spec/project context (e.g. if the spec is written in Chinese, the tasks must be in Chinese).`;
+
+/**
+ * Breakdown system prompt. With `language` (W6, a human-readable English
+ * language NAME like "Traditional Chinese") the task titles/descriptions are
+ * forced into the user's app language; without it the prompt is byte-identical
+ * to the base (and the base rule still tells the model to follow the spec's
+ * language). The directive is the same trailing line used across the other W6
+ * flows (prompts/generateHandoff.ts).
+ */
+export function breakdownTaskSystem(language?: string): string {
+  return buildSystemPrompt({ agentBody: breakdownTaskSystemBase, language });
+}
 
 export function breakdownTaskUser(input: {
   projectContext: string;
