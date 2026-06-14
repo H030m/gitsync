@@ -132,21 +132,23 @@ export async function discordChatFlow(
   const { repoId, question } = input;
   const history = Array.isArray(input.history) ? input.history : [];
 
-  // Time-scope: when the client passes the active window, every read tool is
-  // restricted to it (messages now accumulate forever — additive-only storage).
+  // Time-scope: every read tool is restricted to the active window. When the
+  // client passes one, use it; when it DOESN'T (older app builds that left the
+  // chat unscoped), default to TODAY (Asia/Taipei) so the chat matches the
+  // displayed "today" window instead of pulling unrelated past days.
   let range: SearchRange | undefined;
-  if (input.startDate && input.endDate) {
-    try {
-      const { start, end } = taipeiRangeBounds(input.startDate, input.endDate);
-      range = { start, end, startDate: input.startDate, endDate: input.endDate };
-    } catch (err) {
-      logger.warn('discordChatFlow: bad range, ignoring (unscoped)', {
-        repoId,
-        startDate: input.startDate,
-        endDate: input.endDate,
-        err: String(err),
-      });
-    }
+  const startDate = input.startDate || taipeiTodayKey();
+  const endDate = input.endDate || taipeiTodayKey();
+  try {
+    const { start, end } = taipeiRangeBounds(startDate, endDate);
+    range = { start, end, startDate, endDate };
+  } catch (err) {
+    logger.warn('discordChatFlow: bad range, ignoring (unscoped)', {
+      repoId,
+      startDate,
+      endDate,
+      err: String(err),
+    });
   }
 
   const systemPrompt = range
@@ -290,6 +292,11 @@ export async function discordChatFlow(
     await finishRun(repoId, input.runId, 'error');
     throw err;
   }
+}
+
+/** Today's date (YYYY-MM-DD) in Asia/Taipei (UTC+8), without a tz library. */
+function taipeiTodayKey(): string {
+  return new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 /** Parse a tool-call arguments JSON string, tolerating malformed input. */
