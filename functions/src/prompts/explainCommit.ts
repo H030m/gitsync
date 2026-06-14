@@ -17,9 +17,16 @@ const explainCommitWhatWhy = `1. **What was done** — one or two plain sentence
 const explainCommitAgenticWriteRules = `Write a skimmable markdown explanation:
 
 ${explainCommitWhatWhy}
-3. **Changes** — call getCommitDiff and read the patch, then list the files that meaningfully changed, ONE bullet per file, each as: \`path — what changed, from <old> to <new>\`. Be concrete and trace-like about the before→after (e.g. "exact-match author filter → fuzzy substring match", "added a guard before markIdempotent", "renamed field X to Y", "new section in the prompt"), NOT vague ("updated X", "improved Y", "adjusted logic"). Collapse generated / trivial files into a single closing bullet. If it is a MERGE commit (empty diff), say so in one line and instead summarize the work the merged branch brought in (use listNeighborCommits), one bullet per theme.
+3. **Changes** — call getCommitDiff, read the patch, then explain it GROUPED BY FEATURE / AREA, not file-by-file. Output real GitHub-flavored markdown: each group is a top-level \`- \` bullet whose lead is a **bold area label**, followed by a concrete trace-like before→after (e.g. "exact-match author filter → fuzzy substring match", "added a guard before markIdempotent", "new planner step before the search loop"), naming the key file(s) inline in \`code\`. NOT vague ("updated X", "adjusted logic"). Put several files that serve one feature in the SAME bullet.
 
-Rules: ground every bullet in the actual patch — never invent a change the diff does not show. If a file's change is unclear from the patch, say what it is at most. No hard length limit, but stay tight: one bullet per file, no filler, no closing pleasantry. Bold labels only.`;
+Which files to mention:
+- SKIP low-signal files entirely: docs / *.md, generated files, lock files. Do NOT list them.
+- Do NOT enumerate test files one by one — at most one short bullet "tests: added/updated for <feature>".
+- Focus on the files that change behavior.
+
+If it is a MERGE commit (empty diff), say so in one line, then summarize the work the merged branch brought in (use listNeighborCommits) — still grouped by feature, one bullet per theme.
+
+Rules: ground every bullet in the actual patch — never invent a change the diff does not show. No hard length limit, but stay tight: one bullet per feature (not per file), no filler, no closing pleasantry. Use markdown bullets so it renders; bold for the area labels only.`;
 
 // Fallback path: no diff tool — it only has the commit message + file names, so
 // it cannot give before→after; keep the short "Where" line.
