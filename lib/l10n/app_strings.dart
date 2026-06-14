@@ -65,6 +65,20 @@ class AppStrings {
 
   // ---- Tasks board ----
   String get tasksTitle => _('Tasks', '任務');
+  String get dangerZone => _('Danger zone', '危險操作');
+  String get deleteAllTasks => _('Delete all tasks', '刪除所有任務');
+  String get deleteAllTasksSubtitle =>
+      _('Remove every task in this repo (e.g. to reset before a demo).',
+          '移除這個 repo 的所有任務（例如 demo 前重置）。');
+  String get deleteAllTasksConfirmTitle =>
+      _('Delete all tasks?', '刪除所有任務？');
+  String get deleteAllTasksConfirmBody => _(
+      'This permanently removes every task in this repo. This cannot be undone.',
+      '這會永久刪除這個 repo 的所有任務，且無法復原。');
+  String deleteAllTasksDone(int n) =>
+      _('Deleted $n task(s)', '已刪除 $n 個任務');
+  String get deleteAllTasksFailed =>
+      _('Failed to delete tasks', '刪除任務失敗');
   String get boardTab => _('Board', '看板');
   String get graphTab => _('Graph', '關聯圖');
   String get emptyBoardTitle =>
