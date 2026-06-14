@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 12
+- **Total Sessions**: 13
 - **Last Active**: 2026-06-15
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~419 | Active |
+| `journal-1.md` | ~452 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 13 | 2026-06-15 | 增量拆解 prompt 對齊 baseSystem + W6 多語 | `259d42f` | `feature/align-incremental-prompt` |
 | 12 | 2026-06-15 | agentic 增量式 task 拆解(grounded in existing tasks + repo 記憶隔離) | `eb3707d`, `ff730d8` | `feature/incremental-breakdown` |
 | 11 | 2026-06-14 | push 自動判定 task 完成並設為 done（AI judge + onCommitCompletesTask trigger） | `4cc9a57`, `2769a52` | `feature/push-auto-complete-task` |
 | 10 | 2026-06-03 | Fix: dynamic assignment hard-failed on missing commits vector index | `aae8c7e` | `feature/assign-commit-search-resilient` |

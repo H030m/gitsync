@@ -106,7 +106,7 @@ export async function breakdownTaskFlow(
   let resolved: ResolvedSubtask[];
   if (hasExistingTasks) {
     logger.info('breakdownTaskFlow: incremental path (repo has tasks)', { repoId });
-    resolved = await incrementalBreakdown(repoId, goal);
+    resolved = await incrementalBreakdown(repoId, goal, language);
   } else {
     logger.info('breakdownTaskFlow: first-pass path (empty repo)', { repoId });
     resolved = await firstPassBreakdown(repoId, goal, repo, language);
@@ -382,13 +382,14 @@ const INCREMENTAL_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
 async function incrementalBreakdown(
   repoId: string,
   goal: string,
+  language?: string,
 ): Promise<ResolvedSubtask[]> {
   // Best-effort project-brief prefix (stable; empty → '' → no behavior change).
   const briefPrefix = formatBriefForPrompt(await readProjectBrief(repoId));
 
   const openai = getOpenAI();
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: 'system', content: incrementalBreakdownSystem + briefPrefix },
+    { role: 'system', content: incrementalBreakdownSystem(language) + briefPrefix },
     { role: 'user', content: incrementalBreakdownUser(goal) },
   ];
 
