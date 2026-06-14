@@ -220,6 +220,10 @@ export async function searchDiscordMessages(
         for (const t of queryTerms) if (hay.includes(t)) return true;
         return false;
       };
+      // Honest empty: if this person has no matching message in the window,
+      // return [] (NOT a recent-messages fallback) so the agent says "nothing
+      // from X here" instead of summarizing unrelated recent chatter.
+      if (!docs.some(byAuthor)) return [];
       return groupByMatches(docs, byAuthor, { maxSnippets: limit });
     }
 
