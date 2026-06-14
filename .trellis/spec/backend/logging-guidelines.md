@@ -33,6 +33,26 @@ logger.error('breakdownTaskFlow failed', { repoId, err });
 The AI-flow step logging style (`logger.info('Step 1: fetch project context')`) from
 [`COURSE_METHODS.md §8.6`](../../../docs/COURSE_METHODS.md) is the expected pattern inside `flows/`.
 
+### Agentic-loop per-round observability (counts only)
+
+For agentic function-calling flows (e.g. `incrementalBreakdown` in `flows/breakdownTask.ts`),
+log enough to reconstruct what the agent did each round WITHOUT dumping content — so cloud logs
+answer "did the agent call the explore tools and what came back?". Established field shapes:
+
+- **Per tool call** — one `logger.info` per `tool_call` the model makes, at the dispatch site:
+  `{ message: 'incrementalBreakdown: tool call', repoId, round, tool, args: <compact summary>, resultCount }`.
+  `args` carries only the meaningful bits (`{ query, limit }`, `{ status, hasCursor }`), never full
+  content; `resultCount` is the array/page length the tool returned.
+- **Terminator submit** — `{ message: 'incrementalBreakdown: submit', repoId, round, subtaskCount,
+  totalDependsOnNew, totalDependsOnExisting }` (sum the dep-array lengths) so "did new tasks depend
+  on existing ones" is directly visible.
+- **Tool success path** — read tools log their own `count` on success too
+  (`listExistingTaskTitles: page` → `{ repoId, count, hasMore }`; `searchExistingTasks: results` →
+  `{ repoId, query, count }`), keeping the existing failure `logger.warn`.
+
+These logs are **best-effort**: counts/summaries only (never task lists, descriptions, or commit
+content), wrapped so they can never throw or change control flow.
+
 ---
 
 ## What to log
