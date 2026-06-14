@@ -112,7 +112,17 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
         properties: {
           query: {
             type: 'string',
-            description: 'Natural-language search terms drawn from the question.',
+            description:
+              'Natural-language search terms drawn from the question. Pass an ' +
+              'empty string when you only want a person\'s messages (use author).',
+          },
+          author: {
+            type: 'string',
+            description:
+              "Restrict to ONE person's messages. Matched fuzzily against the " +
+              "Discord display name (e.g. \"鯨魚島麻糬\") OR the @handle (e.g. " +
+              '"whale_island") — pass whatever name the user used. Use this for ' +
+              '"what did X say", "list X\'s messages", or "X 說了什麼".',
           },
           limit: {
             type: 'number',
@@ -233,6 +243,7 @@ export async function discordChatFlow(
                 String(args.query ?? ''),
                 typeof args.limit === 'number' ? args.limit : undefined,
                 range,
+                typeof args.author === 'string' ? args.author : undefined,
               );
               for (const s of found) surfaced.set(snippetKey(s), s);
               return { tool_call_id: call.id, content: JSON.stringify(found) };
