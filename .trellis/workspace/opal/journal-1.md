@@ -383,3 +383,37 @@ Live debug: onTaskUpdated auto-assignment left downstream assigneeId null. Logs 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: agentic 增量式 task 拆解(grounded in existing tasks + repo 記憶隔離)
+
+**Date**: 2026-06-15
+**Task**: agentic 增量式 task 拆解(grounded in existing tasks + repo 記憶隔離)
+**Branch**: `feature/incremental-breakdown`
+
+### Summary
+
+breakdownTask 改成資料狀態自動分流:repo 有 task → 多輪 function-calling loop,模型用 repo-scoped 分頁工具(listExistingTaskTitles/searchExistingTasks)+ searchPastCommits/readRepoPlanningDocs grounding 按需查詢,只補缺漏、context 不隨任務數成長、去重 by construction;新任務可依賴既有 taskId,cycle 檢查跨既有+新混合圖;empty repo 維持原單發拆解。check 修掉 dangling tool_call(同輪 read+submit 漏回覆 → 真實 OpenAI 400)的 live-only bug,並把這條通用 agentic 陷阱寫回 error-handling spec。391 tests 全綠。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `eb3707d` | (see git log) |
+| `ff730d8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
