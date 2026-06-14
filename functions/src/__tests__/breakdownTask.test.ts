@@ -188,6 +188,8 @@ import {
   listExistingTaskTitles,
   searchExistingTasks,
 } from '../tools/breakdownTools';
+import { incrementalBreakdownSystem } from '../prompts/breakdownTask';
+import { GITSYNC_BASE_SYSTEM } from '../prompts/baseSystem';
 
 function seedRepo(repoId: string, data: Record<string, unknown>) {
   store.set(`apps/gitsync/repos/${repoId}`, data);
@@ -845,5 +847,72 @@ describe('breakdownTaskFlow incremental path', () => {
     ).rejects.toMatchObject({ code: 'internal' });
     expect(mockCreate).toHaveBeenCalledTimes(5);
     expect(batchWrites).toHaveLength(0);
+  });
+
+  it('threads `language` into the incremental system prompt (W6)', async () => {
+    seedNonEmptyRepo();
+    createQueue.push(
+      submitTurn([
+        {
+          title: 'Add password reset',
+          description: 'reset flow',
+          estimatedHours: 4,
+          dependsOnNew: [],
+          dependsOnExisting: ['existing1'],
+        },
+      ]),
+    );
+
+    await breakdownTaskFlow({
+      repoId: 'x_y',
+      goal: 'spec',
+      requestedBy: 'u1',
+      language: 'Traditional Chinese',
+    });
+
+    const system = allCreateMessages().find((m) => m.role === 'system');
+    expect(String(system?.content)).toContain(
+      'Write your entire response in Traditional Chinese.',
+    );
+    // Still routed through the shared base (buildSystemPrompt prefix).
+    expect(String(system?.content)).toContain(GITSYNC_BASE_SYSTEM);
+  });
+});
+
+// ---- incrementalBreakdownSystem prompt (buildSystemPrompt + W6 language) ----
+
+describe('incrementalBreakdownSystem', () => {
+  it('routes through buildSystemPrompt (carries the shared GITSYNC_BASE_SYSTEM prefix)', () => {
+    const prompt = incrementalBreakdownSystem();
+    expect(prompt.startsWith(GITSYNC_BASE_SYSTEM)).toBe(true);
+  });
+
+  it('keeps the incremental-specific semantics in the agent body', () => {
+    const prompt = incrementalBreakdownSystem();
+    // No dump — explore via tools.
+    expect(prompt).toContain('do NOT dump the task list');
+    expect(prompt).toContain('listExistingTaskTitles');
+    // Real taskIds, never invented.
+    expect(prompt).toContain('never invent ids');
+    // dependsOn two columns + DAG + terminator + shallow.
+    expect(prompt).toContain('dependsOnNew');
+    expect(prompt).toContain('dependsOnExisting');
+    expect(prompt).toContain('MUST be acyclic');
+    expect(prompt).toContain('SHALLOW');
+    expect(prompt).toContain('submitBreakdown');
+  });
+
+  it('appends the language directive only when `language` is given (cache-friendly)', () => {
+    const base = incrementalBreakdownSystem();
+    expect(base).not.toContain('Write your entire response in');
+
+    const zh = incrementalBreakdownSystem('Traditional Chinese');
+    expect(zh).toContain('Write your entire response in Traditional Chinese.');
+    // The language run is exactly the base plus the one trailing directive line.
+    expect(zh).toBe(`${base}\n\n---\n\nWrite your entire response in Traditional Chinese.`);
+  });
+
+  it('treats empty/whitespace language as no directive', () => {
+    expect(incrementalBreakdownSystem('   ')).toBe(incrementalBreakdownSystem());
   });
 });
