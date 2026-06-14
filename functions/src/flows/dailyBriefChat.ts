@@ -21,6 +21,7 @@ import {
   searchPastCommits,
   type DayCommit,
 } from '../tools/dailyIntel';
+import { getCommitDiff } from '../tools/handoffTools';
 
 /** One prior conversation turn from the client. */
 export interface BriefChatTurn {
@@ -88,6 +89,26 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           limit: { type: 'number', description: 'Max commits (default 8).' },
         },
         required: ['query'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'getCommitDiff',
+      description:
+        'Fetch the ACTUAL per-file diff (patches + add/del line stats) of ONE ' +
+        'commit by its sha, to explain what TRULY changed instead of paraphrasing ' +
+        'its one-line summary. A MERGE commit has an empty diff — do NOT call it on ' +
+        'a merge; instead summarize the individual commits it brought in. Call ' +
+        'sparingly (1–3 shas). Best-effort (null when unavailable).',
+      parameters: {
+        type: 'object',
+        properties: {
+          sha: { type: 'string', description: 'Full or short commit sha.' },
+        },
+        required: ['sha'],
         additionalProperties: false,
       },
     },
@@ -167,6 +188,14 @@ export async function dailyBriefChatFlow(
             );
             collect(cs);
             return { id: call.id, content: JSON.stringify(cs) };
+          }
+          case 'getCommitDiff': {
+            // Real per-file diff for ONE commit (best-effort; null → unavailable).
+            const diff = await getCommitDiff(repoId, String(args.sha ?? '').trim());
+            return {
+              id: call.id,
+              content: JSON.stringify(diff ?? { error: 'diff unavailable for this sha' }),
+            };
           }
           default:
             return { id: call.id, content: `unknown tool ${call.function.name}` };

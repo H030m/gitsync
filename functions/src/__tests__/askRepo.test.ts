@@ -100,6 +100,12 @@ jest.mock('../tools/assignTools', () => ({
     { userId: 'u1', name: 'Alice', githubLogin: 'alice-dev' },
   ]),
 }));
+// handoffTools pulls in githubClient → @octokit/rest (ESM jest can't parse);
+// mock it so getCommitDiff is scriptable and octokit stays out of the test.
+const mockGetCommitDiff = jest.fn(async (..._a: unknown[]) => null as unknown);
+jest.mock('../tools/handoffTools', () => ({
+  getCommitDiff: (...a: unknown[]) => mockGetCommitDiff(...a),
+}));
 
 // ---- Mocked agent-trace (assert cadence) -----------------------------------
 const startRun = jest.fn(async (..._a: unknown[]) => {});
@@ -113,6 +119,7 @@ jest.mock('../tools/agentTrace', () => ({
     listDayCommits: 'Listing recent commits…',
     searchPastCommits: 'Searching commit history…',
     searchDiscordMessages: 'Searching Discord…',
+    getCommitDiff: 'Reading a commit diff…',
     composing: 'Composing answer…',
   },
 }));
@@ -203,6 +210,20 @@ describe('askRepoFlow', () => {
     expect(alice?.commits.map((c) => c.sha)).toEqual(['c1']);
     // The flat `commits` field is the union of every window (backward compat).
     expect(res.commits.map((c) => c.sha).sort()).toEqual(['c1', 'c2']);
+  });
+
+  it('matches authorLogin fuzzily (partial login / suffix)', async () => {
+    // The user says "opal" but the real login carries a suffix.
+    seedCommit('c1', { message: 'merge', author: { login: 'opaL1022', name: 'Opal' } });
+    seedCommit('c2', { message: 'other', author: { login: 'bob', name: 'Bob' } });
+    createQueue.push(toolTurn([{ name: 'listDayCommits', args: { authorLogin: 'opal' } }]));
+    createQueue.push(answerTurn('found it'));
+
+    const res = await askRepoFlow({ repoId: REPO, question: "opal's merge?" });
+    // Only opaL1022's commit, labeled by display name; bob excluded.
+    expect(res.commitGroups).toHaveLength(1);
+    expect(res.commitGroups[0].label).toBe('Opal');
+    expect(res.commitGroups[0].commits.map((c) => c.sha)).toEqual(['c1']);
   });
 
   it('surfaces committedAt as an ISO string from the commit timestamp', async () => {

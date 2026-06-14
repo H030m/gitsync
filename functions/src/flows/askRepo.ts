@@ -36,6 +36,7 @@ import {
 } from '../tools/discordSearch';
 import { readRepoPlanningDocs } from '../tools/repoDocs';
 import { getTaskDependents, readTeamState } from '../tools/assignTools';
+import { getCommitDiff } from '../tools/handoffTools';
 import {
   startRun,
   appendStep,
@@ -120,8 +121,10 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           authorLogin: {
             type: 'string',
             description:
-              "Only this author's commits (a GitHub login from readTeamState). " +
-              'The window is labeled with this person.',
+              "Only this author's commits. Matched fuzzily: pass a GitHub login " +
+              'OR a partial / informal name (e.g. "opal" matches the login ' +
+              '"opaL1022", and a display name also matches), so you do not need ' +
+              'the exact login. The window is labeled with this person.',
           },
           taskId: {
             type: 'string',
@@ -183,6 +186,33 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           query: { type: 'string', description: 'Natural-language search terms.' },
         },
         required: ['query'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'getCommitDiff',
+      description:
+        'Fetch the ACTUAL unified diff (per-file patches + add/del line stats) ' +
+        'of ONE commit by its sha, so you can explain what TRULY changed instead ' +
+        'of paraphrasing its one-line summary. Use it when the user asks "what ' +
+        'did this commit/PR change", "what did X actually do", or to verify a ' +
+        'concrete claim. NOTE: a MERGE commit usually has an empty diff — do NOT ' +
+        'call this on a merge; instead summarize the individual commits the merge ' +
+        'brought in (from listDayCommits / searchPastCommits). Call sparingly ' +
+        '(1–3 well-chosen shas). GitHub-backed, best-effort (null when ' +
+        'unavailable — e.g. no repo token / private repo).',
+      parameters: {
+        type: 'object',
+        properties: {
+          sha: {
+            type: 'string',
+            description: 'Full or short commit sha from a commit window.',
+          },
+        },
+        required: ['sha'],
         additionalProperties: false,
       },
     },
@@ -389,9 +419,20 @@ async function runTool(
       let cs = all;
       let label = '';
       if (authorLogin) {
-        cs = all.filter(
-          (c) => c.authorLogin.toLowerCase() === authorLogin.toLowerCase(),
-        );
+        // FUZZY author match: GitHub logins often carry a suffix (e.g. the user
+        // says "opal" but the login is "opaL1022"), and people refer to others
+        // by display name. Match case-insensitively, preferring an exact login
+        // hit but falling back to a substring of EITHER login or display name so
+        // a partial / informal name still resolves.
+        const q = authorLogin.toLowerCase();
+        const exact = all.filter((c) => c.authorLogin.toLowerCase() === q);
+        cs = exact.length
+          ? exact
+          : all.filter(
+              (c) =>
+                c.authorLogin.toLowerCase().includes(q) ||
+                c.authorName.toLowerCase().includes(q),
+            );
         // Prefer the human name (from the matched commits) for the window label.
         label = cs.find((c) => c.authorName)?.authorName || authorLogin;
       } else if (taskId) {
@@ -424,6 +465,17 @@ async function runTool(
       const ss = await searchDiscordMessages(repoId, String(args.query ?? ''));
       collect.collectSnippets(ss);
       return { id: call.id, content: JSON.stringify(ss), label: TRACE_LABELS.searchDiscordMessages };
+    }
+    case 'getCommitDiff': {
+      // Real per-file diff for ONE commit, so the agent can ground "what changed"
+      // in the actual patch instead of paraphrasing the one-line aiSummary.
+      // best-effort (null → diff unavailable); not collected into a source panel.
+      const diff = await getCommitDiff(repoId, String(args.sha ?? '').trim());
+      return {
+        id: call.id,
+        content: JSON.stringify(diff ?? { error: 'diff unavailable for this sha' }),
+        label: TRACE_LABELS.getCommitDiff,
+      };
     }
     case 'readRepoPlanningDocs': {
       const docs = await readRepoPlanningDocs(repoId);
