@@ -1,0 +1,6 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/index.md", "reason": "後端 spec 入口 + pre-dev checklist"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "flow/tool/prompt 檔案擺放慣例"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Firestore repo-scoped 讀寫/查詢/分頁/隔離慣例"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "agentic loop/OpenAI best-effort、未 submit 報錯慣例"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "結構化 log(截斷/round/cycle 等)慣例"}
