@@ -118,8 +118,9 @@ try {
 
 Two flow shapes exist; pick by how the flow is invoked:
 
-- **Agentic function-calling loop** (`assignTaskFlow`, `summarizeDay`, `dailyBriefChat`) — for
-  user-initiated callables that benefit from the model drilling into data over several rounds.
+- **Agentic function-calling loop** (`assignTaskFlow`, `summarizeDay`, `dailyBriefChat`,
+  `breakdownTask`'s incremental path) — for user-initiated callables that benefit from the model
+  drilling into data over several rounds.
 - **Single-completion with pre-gathered context** (`explainCommit`, `discordDailyDigest`, and
   06-06 `generateHandoff`) — deterministically fetch all context, make ONE completion. **This is
   the required shape when the flow runs best-effort from a trigger** (e.g. `onTaskUpdated` calls
@@ -127,6 +128,65 @@ Two flow shapes exist; pick by how the flow is invoked:
   and easy to unit-test (seed Firestore + scripted OpenAI). Keep every context-gather in its own
   `try/catch → []/null` (commit query may need an undeployed composite index; Discord search and
   roster reads are optional signals) so the one OpenAI call still runs on partial context.
+
+### Gotcha: answer EVERY tool_call in a turn before the next completion (all agentic loops)
+
+A single assistant turn can batch **multiple** `tool_calls` — including a *supporting* read tool AND the **terminator** tool (`submitBreakdown` / `finalizeAssignment` / …) in the same turn. The OpenAI API contract: *the next* `chat.completions.create` rejects with **400** if any prior `tool_call` id lacks a matching `role:'tool'` reply ("an assistant message with tool_calls must be followed by tool messages responding to each tool_call_id").
+
+The trap is the `continue` paths (malformed terminator args → retry; cycle detected → re-prompt): if you handle only the terminator's `tool_call` and `continue`, the sibling read calls are left **unanswered**, and the loop's next round 400s. This is **live-only** — fake-OpenAI unit mocks don't enforce the contract, so it passes CI and breaks in production.
+
+**Rule:** every round, push a `role:'tool'` reply for **all** non-terminator tool calls FIRST, then handle the terminator (mirrors `assignTaskFlow`'s invalid-finalize path). Lock it with an invariant test (`assertNoDanglingToolCalls`) that checks every assistant `tool_call` id (except the loop-ending submit) got a tool reply.
+
+```typescript
+// WRONG — sibling read call dangles when submit args are malformed / cyclic
+for (const call of toolCalls) {
+  if (call.function.name === 'submitBreakdown') {
+    if (!valid) { messages.push(errReply(call.id)); continue; } // ← read call never answered → next create() 400s
+    return finalize(...);
+  }
+}
+// CORRECT — answer all read calls first, then the terminator
+for (const call of toolCalls.filter(c => c.function.name !== 'submitBreakdown')) {
+  messages.push({ role: 'tool', tool_call_id: call.id, content: await runTool(call) });
+}
+const submit = toolCalls.find(c => c.function.name === 'submitBreakdown');
+if (submit) { /* validate → reply-or-retry → finalize */ }
+```
+
+### Convention: one flow, two shapes auto-split by data state (incremental breakdown)
+
+`breakdownTaskFlow` picks its shape from a cheap probe of repo state, NOT a caller flag (prd
+06-15). A single `.limit(1).get()` on `repos/{repoId}/tasks` decides:
+
+- **Empty repo → single-completion** `beta.chat.completions.parse` first pass (unchanged, low risk).
+- **Non-empty repo → agentic function-calling loop** so the model EXPLORES the existing tasks +
+  real project state via repo-scoped TOOLS and adds only the missing subtasks.
+
+Load-bearing rules this established:
+
+- **Never dump the queried set into the prompt when it grows unbounded.** The incremental path must
+  not embed the existing task list in any system/user message — that would make context grow with
+  task count. Existing tasks are reached only through paginated/limited tools
+  (`listExistingTaskTitles` page size 25 + cursor; `searchExistingTasks` keyword, small limit) that
+  return the minimal fields (`{taskId,title,status[,dependsOn]}`, prd D4 — no descriptions). The
+  unit test asserts the flow-authored messages do NOT contain existing titles.
+- **Terminator tool carries the structured output.** The loop ends on a `submitBreakdown({subtasks})`
+  tool call whose args are Zod-validated (`IncrementalBreakdownSchema`); malformed args feed the
+  error back for a retry. Running out of `MAX_ROUNDS` WITHOUT a valid submit **throws** — never
+  silently write a partial/empty breakdown.
+- **Cross-entity `dependsOn` is resolved at the write boundary.** A subtask may depend on other NEW
+  subtasks (`dependsOnNew`: 0-based indices into the batch) AND on EXISTING tasks
+  (`dependsOnExisting`: real taskIds). Pre-generate the new Firestore ids, translate both kinds into
+  one `dependsOn: string[]`, and DROP unknown `dependsOnExisting` refs with a `logger.warn` (don't
+  trust the model's ids).
+- **Cycle detection spans the COMBINED graph.** Build `existing tasks (stored dependsOn) + new
+  tasks (resolved deps)` keyed by taskId (`hasCycleById`) — the index-only `detectCycles` is for the
+  first-pass path. A cycle re-prompts ONCE with feedback appended; a second cycle throws. The graph
+  read (`readExistingTaskGraph`) is NOT best-effort — a failed read must not let us write on an
+  unverified graph.
+- **Repo isolation is the test contract.** Every tool path is `apps/gitsync/repos/{repoId}/tasks/…`;
+  a test seeds two repos and asserts the tools only return the requested repo's tasks. Member
+  expertise (`users/{uid}.expertiseTags`) stays deliberately cross-repo (prd D2) — untouched here.
 
 ### Convention: `force` flag splits manual-regenerate from auto-cache
 
