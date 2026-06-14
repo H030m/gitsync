@@ -417,3 +417,36 @@ breakdownTask 改成資料狀態自動分流:repo 有 task → 多輪 function-c
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: 增量拆解 prompt 對齊 baseSystem + W6 多語
+
+**Date**: 2026-06-15
+**Task**: 增量拆解 prompt 對齊 baseSystem + W6 多語
+**Branch**: `feature/align-incremental-prompt`
+
+### Summary
+
+incrementalBreakdownSystem 由獨立 const 改為 incrementalBreakdownSystem(language)=buildSystemPrompt({agentBody,language}),對齊 main 的共用 prompt 架構;language 從 handler→breakdownTaskFlow→incrementalBreakdown→prompt 全程貫通。無演算法變更,no-arg byte-stable,增量語意(工具探索不 dump、真實 taskId、混合圖 DAG、submit 一次)保留。399 tests 綠。順手還原被 flutterfire 誤刪 macos/windows + 壓平的 firebase.json。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `259d42f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
