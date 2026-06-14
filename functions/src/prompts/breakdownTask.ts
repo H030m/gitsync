@@ -1,10 +1,10 @@
-// System + user prompts for `breakdownTaskFlow`. Plain strings — no Handlebars.
-//
-// Keep the BASE system prompt stable across calls so OpenAI's automatic prompt
-// caching (≥1024 tokens prefix → 50% off) kicks in. The optional W6 language
-// directive is appended as a single trailing line (same convention as
-// prompts/generateHandoff.ts) so the cache-friendly prefix is unchanged.
-const breakdownTaskSystemBase = `You are a senior software engineer helping a team break down a project into actionable subtasks.
+// System + user prompts for `breakdownTaskFlow`. Common rules (identity /
+// grounding / language) come from the top-level base (prompts/baseSystem.ts);
+// this holds the decomposition rules. The W6 `language` is routed through
+// buildSystemPrompt.
+import { buildSystemPrompt } from './baseSystem';
+
+const breakdownTaskSystemBase = `Your task: help a team break a project into actionable subtasks.
 
 The input is typically a full project SPEC.md (Markdown) for a newly imported project that has no existing tasks or history yet. Treat it as the primary source of requirements.
 
@@ -29,10 +29,7 @@ Rules:
  * flows (prompts/generateHandoff.ts).
  */
 export function breakdownTaskSystem(language?: string): string {
-  const lang = language?.trim();
-  return lang
-    ? `${breakdownTaskSystemBase}\nWrite the task titles and descriptions in ${lang}.`
-    : breakdownTaskSystemBase;
+  return buildSystemPrompt({ agentBody: breakdownTaskSystemBase, language });
 }
 
 export function breakdownTaskUser(input: {
