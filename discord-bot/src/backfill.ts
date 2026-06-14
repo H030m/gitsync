@@ -183,7 +183,15 @@ async function processRequest(client: Client, cfg: BotConfig, claim: ClaimRespon
           messageId: msg.id,
           channelId: msg.channelId,
           authorId: msg.author.id,
-          authorName: msg.author.username,
+          // The name humans see in Discord: guild nickname → global display
+          // name → @handle. Stored as authorName so panels/search use the
+          // recognizable name (e.g. "鯨魚島麻糬"), not the raw username.
+          authorName:
+            msg.member?.displayName ??
+            msg.author.globalName ??
+            msg.author.username,
+          // Keep the @handle too, so a search by username still matches.
+          authorUsername: msg.author.username,
           content: msg.content,
           mentionedUserIds: [...msg.mentions.users.keys()],
           timestamp: msg.createdAt.toISOString(),

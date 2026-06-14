@@ -7,6 +7,7 @@ export { addRepo } from './handlers/addRepo';
 export { removeRepo } from './handlers/removeRepo';
 export { breakdownTask } from './handlers/breakdownTask';
 export { forceUnlockBreakdown } from './handlers/forceUnlockBreakdown';
+export { deleteAllTasks } from './handlers/deleteAllTasks';
 export { assignTask } from './handlers/assignTask';
 export { generateHandoff } from './handlers/generateHandoff';
 export { importCollaborators } from './handlers/importCollaborators';

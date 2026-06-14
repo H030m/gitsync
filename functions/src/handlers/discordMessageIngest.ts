@@ -16,7 +16,8 @@ interface IngestPayload {
   messageId: string;
   channelId: string;
   authorId: string;
-  authorName: string;
+  authorName: string; // display name (guild nickname → global → @handle)
+  authorUsername?: string; // raw @handle (optional; older bots omit it)
   content: string;
   mentionedUserIds: string[];
   timestamp: string; // ISO 8601
@@ -41,6 +42,11 @@ function parsePayload(body: unknown): IngestPayload | null {
   ] as const;
   for (const f of strFields) {
     if (typeof b[f] !== 'string') return null;
+  }
+  // authorUsername is optional (older bot builds omit it); if present it must
+  // be a string.
+  if (b.authorUsername !== undefined && typeof b.authorUsername !== 'string') {
+    return null;
   }
   if (!isStringArray(b.mentionedUserIds)) return null;
   // repoId / messageId must be non-empty (they become the Firestore path).
@@ -93,6 +99,7 @@ export const discordMessageIngest = onRequest(
         channelId: payload.channelId,
         authorId: payload.authorId,
         authorName: payload.authorName,
+        authorUsername: payload.authorUsername ?? payload.authorName,
         content: payload.content,
         mentionedUserIds: payload.mentionedUserIds,
         linkedTaskIds: [], // filled later by onDiscordMessageCreated

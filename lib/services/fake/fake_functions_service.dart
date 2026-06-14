@@ -86,6 +86,12 @@ class FakeFunctionsService implements FunctionsService {
   }
 
   @override
+  Future<int> deleteAllTasks({required String repoId}) async {
+    await Future.delayed(AppConfig.simulatedLatency);
+    return 0;
+  }
+
+  @override
   Future<({String assigneeId, String reasoning})> assignTask({
     required String repoId,
     required String taskId,

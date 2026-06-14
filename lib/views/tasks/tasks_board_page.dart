@@ -38,6 +38,14 @@ class TasksBoardPage extends StatelessWidget {
       length: 2,
       child: Scaffold(
         appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            tooltip: s.backToRepos,
+            onPressed: () => Provider.of<NavigationService>(
+              context,
+              listen: false,
+            ).goRepos(),
+          ),
           title: Text(s.tasksTitle),
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(kTextTabBarHeight + 1),

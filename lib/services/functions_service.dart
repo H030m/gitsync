@@ -52,6 +52,10 @@ abstract class FunctionsService {
     String? language,
   });
   Future<void> forceUnlockBreakdown({required String repoId});
+
+  /// Deletes EVERY task in [repoId] (resets the board, e.g. before a demo).
+  /// Returns how many were removed.
+  Future<int> deleteAllTasks({required String repoId});
   Future<({String assigneeId, String reasoning})> assignTask({
     required String repoId,
     required String taskId,
@@ -268,6 +272,13 @@ class _LiveFunctionsService implements FunctionsService {
   @override
   Future<void> forceUnlockBreakdown({required String repoId}) async {
     await _callable('forceUnlockBreakdown').call({'repoId': repoId});
+  }
+
+  @override
+  Future<int> deleteAllTasks({required String repoId}) async {
+    final res = await _callable('deleteAllTasks').call({'repoId': repoId});
+    final data = Map<String, dynamic>.from(res.data as Map);
+    return (data['deleted'] as num?)?.toInt() ?? 0;
   }
 
   @override
