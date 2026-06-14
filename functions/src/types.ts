@@ -23,6 +23,36 @@ export const BreakdownOutputSchema = z.object({
 
 export type BreakdownOutput = z.infer<typeof BreakdownOutputSchema>;
 
+// ---- breakdownTaskFlow (INCREMENTAL agentic path) --------------------------
+//
+// When a repo ALREADY has tasks, the breakdown runs as a function-calling
+// agentic loop and ends by calling `submitBreakdown` with this shape. Unlike
+// the first-pass schema above, an incremental subtask may depend on TWO kinds
+// of prerequisite:
+//   - `dependsOnNew`      → 0-based indices into THIS batch (same as the
+//                           first-pass `dependsOn`); and
+//   - `dependsOnExisting` → REAL existing taskIds (Firestore doc ids) the model
+//                           discovered via the read tools.
+// The backend resolves both into a single `dependsOn: string[]` before writing.
+export const IncrementalSubtaskSchema = z.object({
+  title: z.string().describe('Short, imperative title'),
+  description: z.string(),
+  estimatedHours: z.number(),
+  dependsOnNew: z
+    .array(z.number().int())
+    .describe('0-based indices of prerequisite subtasks in this same batch'),
+  dependsOnExisting: z
+    .array(z.string())
+    .describe('Real taskIds of EXISTING tasks this subtask depends on'),
+});
+
+export const IncrementalBreakdownSchema = z.object({
+  subtasks: z.array(IncrementalSubtaskSchema),
+});
+
+export type IncrementalSubtask = z.infer<typeof IncrementalSubtaskSchema>;
+export type IncrementalBreakdown = z.infer<typeof IncrementalBreakdownSchema>;
+
 // ---- assignTaskFlow ---------------------------------------------------------
 
 export const AssignmentDecisionSchema = z.object({
