@@ -1,6 +1,7 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 
+import '../config/app_config.dart';
 import '../repositories/user_repo.dart';
 import 'local_notifications.dart';
 import 'navigation.dart';
@@ -67,7 +68,20 @@ class PushMessagingService {
     final initial = await _fcm.getInitialMessage();
     if (initial != null) _handleTap(initial);
 
-    final token = await _fcm.getToken();
+    String? token;
+    if (kIsWeb) {
+      final vapidKey = AppConfig.fcmVapidKey;
+      if (vapidKey.isEmpty) {
+        debugPrint(
+          '[FCM web] FCM_VAPID_KEY not set — token fetch skipped. '
+          'See docs/SETUP.md (or README) for how to obtain one.',
+        );
+      } else {
+        token = await _fcm.getToken(vapidKey: vapidKey);
+      }
+    } else {
+      token = await _fcm.getToken();
+    }
     if (token != null) {
       await _userRepository.updateFcmToken(userId, token);
     }
