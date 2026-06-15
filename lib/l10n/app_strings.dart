@@ -255,6 +255,18 @@ class AppStrings {
     'No report for this day yet. Tap "Generate report" to let the AI summarize the day\'s commits, tasks and chat.',
     '這天還沒有日報。點「產生日報」讓 AI 整理當天的 commits、任務與聊天。',
   );
+  // 06-16: empty-state strings for the Daily tab. [rangeNoActivityTitle] heads
+  // the single empty state shown when EVERY day in the range is blank;
+  // [adjustDateRange] is its CTA (re-opens the shared range picker).
+  // [dayNoActivity] is the muted label on a collapsed blank-day row.
+  String get rangeNoActivityTitle =>
+      _('No activity in this range', '這段期間沒有活動');
+  String get rangeNoActivityMessage => _(
+    'No reports or Discord digests for the selected dates.',
+    '所選日期範圍內沒有日報或 Discord digest。',
+  );
+  String get adjustDateRange => _('Adjust date range', '調整日期範圍');
+  String get dayNoActivity => _('No activity', '無活動');
   // D8: the "Key activity" card holds highlights + blockers (the commit rollup
   // sub-section was dropped, so `commitRollup` is gone too).
   String get keyActivity => _('Key activity', '活動重點');
