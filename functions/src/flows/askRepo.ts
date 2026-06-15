@@ -258,8 +258,11 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: 'readTeamState',
       description:
-        'List repo members (name + GitHub login) so you can refer to people ' +
-        'by real name.',
+        'List repo members with their real name, GitHub login, learned skill ' +
+        'tags (expertiseTags — skills the system inferred from their ACTUAL ' +
+        'completed work) and current workload (activeIssueCount). Use it to ' +
+        'refer to people by real name AND to answer who is skilled at what / ' +
+        'who would likely be assigned the next task.',
       parameters: { type: 'object', properties: {}, additionalProperties: false },
     },
   },
@@ -526,7 +529,16 @@ async function runTool(
     }
     case 'readTeamState': {
       const roster = await readTeamState(repoId)
-        .then((rs) => rs.map((m) => ({ name: m.name, githubLogin: m.githubLogin })))
+        .then((rs) =>
+          rs.map((m) => ({
+            name: m.name,
+            githubLogin: m.githubLogin,
+            // Learned skills (inferred from completed work) + current load, so
+            // the agent can answer "who's good at what / who gets the next task".
+            expertiseTags: m.expertiseTags,
+            activeIssueCount: m.activeIssueCount,
+          })),
+        )
         .catch((err) => {
           logger.warn('askRepoFlow: readTeamState failed (best-effort)', { repoId, err: String(err) });
           return [];
