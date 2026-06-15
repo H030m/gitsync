@@ -10,6 +10,7 @@ export { forceUnlockBreakdown } from './handlers/forceUnlockBreakdown';
 export { deleteAllTasks } from './handlers/deleteAllTasks';
 export { assignTask } from './handlers/assignTask';
 export { generateHandoff } from './handlers/generateHandoff';
+export { saveTaskSnapshot, restoreTaskSnapshot } from './handlers/taskSnapshot';
 export { importCollaborators } from './handlers/importCollaborators';
 export { summarizeDay } from './handlers/summarizeDay';
 export { dailyBrief } from './handlers/dailyBrief';

@@ -88,6 +88,31 @@ class AppStrings {
   );
   String deleteAllTasksDone(int n) => _('Deleted $n task(s)', '已刪除 $n 個任務');
   String get deleteAllTasksFailed => _('Failed to delete tasks', '刪除任務失敗');
+
+  // ---- Task snapshot (save / restore the board for reproducible demos) ----
+  String get snapshotSection => _('Task snapshot', '任務存檔');
+  String get saveSnapshot => _('Save snapshot', '存檔');
+  String get saveSnapshotSubtitle => _(
+    'Save the current tasks, assignees, dependencies and member workload/tags.',
+    '儲存目前的任務、指派、依賴與每位成員的活躍數/技能標籤。',
+  );
+  String saveSnapshotDone(int tasks) =>
+      _('Saved snapshot ($tasks task(s))', '已存檔（$tasks 個任務）');
+  String get saveSnapshotFailed => _('Failed to save snapshot', '存檔失敗');
+  String get restoreSnapshot => _('Restore snapshot', '回復存檔');
+  String get restoreSnapshotSubtitle => _(
+    'Replace the current board with the saved snapshot.',
+    '用已存的存檔覆蓋目前的任務看板。',
+  );
+  String get restoreSnapshotConfirmTitle => _('Restore snapshot?', '回復存檔？');
+  String get restoreSnapshotConfirmBody => _(
+    'This replaces every current task with the saved snapshot and restores member workload/tags. This cannot be undone.',
+    '這會用存檔覆蓋目前所有任務，並還原成員的活躍數/技能標籤，且無法復原。',
+  );
+  String restoreSnapshotDone(int tasks) =>
+      _('Restored $tasks task(s)', '已回復 $tasks 個任務');
+  String get restoreSnapshotFailed => _('Failed to restore snapshot', '回復存檔失敗');
+  String get restoreSnapshotNone => _('No saved snapshot yet', '尚未有存檔');
   String get boardTab => _('Board', '看板');
   String get graphTab => _('Graph', '關聯圖');
   String get emptyBoardTitle => _('No project structure yet', '您還未輸入專案架構');
