@@ -229,6 +229,12 @@ class CommitsViewModel with ChangeNotifier, AgentTraceMixin {
   String? _graphError;
   String? get graphError => _graphError;
 
+  /// True when the last graph load failed because the stored GitHub token is
+  /// rejected (backend marker `github-token-invalid`, task 06-16 D3). The view
+  /// shows a "Reconnect GitHub" CTA instead of a plain retry.
+  bool get graphTokenInvalid =>
+      _graphError != null && _graphError!.contains('github-token-invalid');
+
   void setViewMode(CommitsViewMode mode) {
     if (_viewMode == mode) return;
     _viewMode = mode;

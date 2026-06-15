@@ -197,11 +197,42 @@ if absent, so re-firing on each newly-landed prerequisite doesn't redo work). Mi
 `explainCommit`'s cache. The cache write-back is best-effort (Rule D) — log + return the markdown
 even if the `update()` fails, so the caller still gets the result.
 
+### Convention: GitHub OAuth token capture + the 401 "reconnect" marker (06-16)
+
+The `users/{uid}.githubAccessToken` (a `gho_` token, scopes `repo`+`read:user`) powers all
+GitHub-calling backend code (`getCommitGraph`, `onTaskCreated` createIssue, `explainCommit` diff
+fallback). It is captured **two ways**, because of a Firebase platform gap:
+
+- **Web** — `firebase_auth` `signInWithPopup(GithubAuthProvider)` returns an `OAuthCredential`
+  whose `.accessToken` is the token; stored at sign-in (`authentication.dart`).
+- **Android** — `signInWithProvider` returns a **base `AuthCredential`, NOT `OAuthCredential`**, so
+  `.accessToken` is null — the GitHub token is **unobtainable from `firebase_auth` on Android**
+  (platform limitation, not an app bug). So Android (and any token refresh) uses a **secondary
+  OAuth code flow**: `flutter_web_auth_2` runs GitHub's authorize URL (with a CSRF `state`) →
+  `code` → the **`exchangeGitHubCode` `onCall`** swaps it for the token and writes it back.
+
+**Rules this established:**
+- **client_secret lives ONLY in a Cloud Function**, via `defineSecret('GITHUB_OAUTH_CLIENT_SECRET')`
+  read with `.value()` inside `exchangeGitHubCode`. NEVER in Dart / AppConfig / the APK (the client
+  holds only the public `client_id` and sends `{code, redirectUri}`). The token-exchange helper must
+  not put the secret in any thrown message or log.
+- **The exchange CF returns `{ok:true}`, never the token.** It validates `request.auth`, that the
+  granted scope contains `repo`+`read:user`, and writes `apps/gitsync/users/{request.auth.uid}.githubAccessToken` (merge).
+- **Stale-token marker:** a GitHub `401 Bad credentials` from a token consumer (e.g.
+  `getCommitGraph`) must map to a **distinct** `HttpsError('failed-precondition', 'github-token-invalid: …')`
+  (only 401 — other failures stay `unavailable`/`internal`). The app matches the `github-token-invalid`
+  marker and surfaces a "Reconnect GitHub" CTA that re-runs the OAuth code flow. Owner config:
+  GitHub OAuth App callback `gitsync://oauth/github` + `firebase functions:secrets:set GITHUB_OAUTH_CLIENT_SECRET`.
+
 ---
 
 ## Common mistakes
 
 - Returning a plain object on error instead of throwing `HttpsError` (client can't distinguish).
+- Putting a third-party `client_secret` anywhere client-side (Dart/AppConfig/APK) — it belongs in a
+  Cloud Function `defineSecret` only; the client does the user-facing OAuth and posts the `code`.
+- Assuming `firebase_auth` gives you the GitHub provider token on Android — it does not (see the
+  GitHub OAuth convention above); use the `exchangeGitHubCode` flow.
 - Adding a second Firestore trigger on a path another trigger already watches — the shared
   `event.id` makes `markIdempotent` swallow it (see database-guidelines Rule D.1); fold the concern
   into the existing trigger instead.

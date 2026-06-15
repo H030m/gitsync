@@ -215,6 +215,26 @@ class AppStrings {
   String get language => _('Language', '語言');
   String get account => _('Account', '帳號');
   String get signOut => _('Sign out', '登出');
+
+  // ---- GitHub connection (manual OAuth, task 06-16) ----
+  String get githubConnection => _('GitHub connection', 'GitHub 連結');
+  String get connectGitHub => _('Connect GitHub', '連結 GitHub');
+  String get reconnectGitHub => _('Reconnect GitHub', '重新連結 GitHub');
+  String get connectGitHubSubtitle => _(
+    'Authorize GitHub access (branch graph, issues). '
+        'Reconnect if your token has expired.',
+    '授權 GitHub 存取(分支圖、Issue)。Token 失效時請重新連結。',
+  );
+  String get githubConnected =>
+      _('GitHub connected.', '已連結 GitHub。');
+  String get githubConnectCancelled =>
+      _('GitHub connection cancelled.', '已取消 GitHub 連結。');
+  String githubConnectFailed(String err) =>
+      _('GitHub connection failed: $err', 'GitHub 連結失敗:$err');
+  String get githubTokenExpired => _(
+    'Your GitHub authorization has expired. Reconnect GitHub to continue.',
+    'GitHub 授權已失效。請重新連結 GitHub 以繼續。',
+  );
   String get notifications => _('Notifications', '通知');
   String get sendTestNotification => _('Send test notification', '傳送測試通知');
   String get testNotificationTitle => _('GitSync', 'GitSync');

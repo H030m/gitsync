@@ -44,6 +44,13 @@ class _FakeFunctionsService implements FunctionsService {
       throw UnimplementedError();
 
   @override
+  Future<void> exchangeGitHubCode({
+    required String code,
+    required String redirectUri,
+  }) =>
+      throw UnimplementedError();
+
+  @override
   Future<({int added, int alreadyMembers, List<String> pending})>
       importCollaborators({required String repoId}) =>
           throw UnimplementedError();

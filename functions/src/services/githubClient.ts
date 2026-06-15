@@ -9,6 +9,65 @@ export function getOctokit(userAccessToken: string): Octokit {
   return new Octokit({ auth: userAccessToken });
 }
 
+export interface OAuthTokenResult {
+  accessToken: string;
+  /** Space-separated granted scopes, e.g. "repo read:user". */
+  scope: string;
+  tokenType: string;
+}
+
+/**
+ * Exchanges a GitHub authorization `code` for a user access token
+ * (POST https://github.com/login/oauth/access_token). The client_secret is
+ * supplied by the caller (a Cloud Function secret) and NEVER leaves the server.
+ *
+ * GitHub returns HTTP 200 even on logical failures, carrying `{ error,
+ * error_description }` instead of `access_token`; this surfaces that as a thrown
+ * Error (the handler maps it to an HttpsError). Network/transport errors throw
+ * too. The secret is never included in any thrown message. All GitHub API access
+ * stays in this file (ARCHITECTURE.md §6.4).
+ */
+export async function exchangeOAuthCode(args: {
+  clientId: string;
+  clientSecret: string;
+  code: string;
+  redirectUri: string;
+}): Promise<OAuthTokenResult> {
+  const res = await fetch('https://github.com/login/oauth/access_token', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      client_id: args.clientId,
+      client_secret: args.clientSecret,
+      code: args.code,
+      redirect_uri: args.redirectUri,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`GitHub token endpoint returned HTTP ${res.status}`);
+  }
+  const data = (await res.json()) as {
+    access_token?: string;
+    scope?: string;
+    token_type?: string;
+    error?: string;
+    error_description?: string;
+  };
+  if (!data.access_token) {
+    // error_description is safe to surface; it never contains the secret.
+    const detail = data.error_description || data.error || 'no access_token';
+    throw new Error(`GitHub OAuth exchange failed: ${detail}`);
+  }
+  return {
+    accessToken: data.access_token,
+    scope: data.scope ?? '',
+    tokenType: data.token_type ?? '',
+  };
+}
+
 export interface RecentCommit {
   sha: string;
   message: string;

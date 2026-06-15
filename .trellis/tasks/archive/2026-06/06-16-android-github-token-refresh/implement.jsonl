@@ -1,0 +1,9 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/index.md", "reason": "後端 spec 入口(新 CF)"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "onCall 錯誤/HttpsError、secret、best-effort"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "handler 檔案擺放"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "前端 spec 入口(client 流程)"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "service/VM 接法"}
+{"file": ".trellis/tasks/06-16-android-github-token-refresh/research/android-github-token.md", "reason": "方案分析"}
+{"file": ".trellis/tasks/06-16-android-github-token-refresh/research/android-github-token-internal-map.md", "reason": "取/存/消費 token 的程式碼位置"}
+{"file": ".trellis/tasks/06-16-android-github-token-refresh/research/android-github-token-recommendation.md", "reason": "方案 A 建議細節"}

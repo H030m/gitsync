@@ -11,6 +11,7 @@ import '../../services/locale_notifier.dart';
 import '../../services/navigation.dart';
 import '../../services/theme_mode_notifier.dart';
 import '../../theme/app_dimens.dart';
+import '../../view_models/auth_vm.dart';
 
 // SettingsPage — language + theme selectors, backend-mode indicator, sign-out.
 class SettingsPage extends StatelessWidget {
@@ -73,6 +74,9 @@ class SettingsPage extends StatelessWidget {
             iconColor: Theme.of(context).colorScheme.error,
             onTap: () => _confirmDeleteAllTasks(context),
           ),
+          const SizedBox(height: AppDimens.spacingSm),
+          _SectionLabel(s.githubConnection),
+          const _ConnectGitHubTile(),
           const SizedBox(height: AppDimens.spacingSm),
           _SectionLabel(s.account),
           ListTile(
@@ -216,6 +220,51 @@ class _ThemeSelector extends StatelessWidget {
         onSelectionChanged: (sel) => theme.setMode(sel.first),
       ),
     );
+  }
+}
+
+// "Connect / Reconnect GitHub" — runs the manual OAuth flow so Android (and any
+// stale-token) users can (re)obtain a valid githubAccessToken (task 06-16).
+class _ConnectGitHubTile extends StatelessWidget {
+  const _ConnectGitHubTile();
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.l10n;
+    final auth = context.watch<AuthViewModel>();
+    final busy = auth.isConnectingGitHub;
+    return ListTile(
+      leading: const Icon(Icons.link),
+      title: Text(s.connectGitHub),
+      subtitle: Text(s.connectGitHubSubtitle),
+      trailing: busy
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.chevron_right),
+      onTap: busy ? null : () => _connect(context),
+    );
+  }
+
+  Future<void> _connect(BuildContext context) async {
+    final s = context.l10n;
+    final messenger = ScaffoldMessenger.of(context);
+    final auth = Provider.of<AuthViewModel>(context, listen: false);
+    final ok = await auth.connectGitHub();
+    if (!context.mounted) return;
+    if (ok) {
+      messenger.showSnackBar(SnackBar(content: Text(s.githubConnected)));
+    } else if (auth.lastError == null) {
+      // No error recorded → the user dismissed the browser tab.
+      messenger
+          .showSnackBar(SnackBar(content: Text(s.githubConnectCancelled)));
+    } else {
+      messenger.showSnackBar(
+        SnackBar(content: Text(s.githubConnectFailed(auth.lastError!))),
+      );
+    }
   }
 }
 

@@ -11,6 +11,21 @@ import OpenAI from 'openai';
 
 export const openaiKey = defineSecret('OPENAI_API_KEY');
 export const discordIngestSecret = defineSecret('DISCORD_INGEST_SECRET');
+// GitHub OAuth App client secret — used by `exchangeGitHubCode` to swap an
+// authorization code for a user access token. Set once with:
+//   firebase functions:secrets:set GITHUB_OAUTH_CLIENT_SECRET
+// NEVER ships in the Flutter APK; only the (public) client_id does.
+export const githubOAuthClientSecret = defineSecret(
+  'GITHUB_OAUTH_CLIENT_SECRET',
+);
+
+// The GitHub OAuth App client_id is public (it travels in the authorize URL the
+// app opens) so it lives in code, not a secret. Overridable via the
+// GITHUB_OAUTH_CLIENT_ID env var for a different OAuth App without a code change.
+// The Flutter client sends the SAME id in its authorize URL — keep them in sync
+// with the GitHub OAuth App you registered (see the task PRD Technical Notes).
+export const GITHUB_OAUTH_CLIENT_ID =
+  process.env.GITHUB_OAUTH_CLIENT_ID ?? 'Ov23liwPB1WZPu35k5hT';
 
 let _openai: OpenAI | null = null;
 

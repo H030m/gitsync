@@ -33,6 +33,29 @@ class AuthViewModel with ChangeNotifier {
     }
   }
 
+  bool _isConnectingGitHub = false;
+  bool get isConnectingGitHub => _isConnectingGitHub;
+
+  /// Runs the manual GitHub OAuth connect/reconnect flow to refresh the stored
+  /// access token (Android path + the 401 "Reconnect GitHub" action). Returns
+  /// true on success; on failure sets [lastError] and returns false. A user
+  /// cancelling the browser tab is treated as a (non-error) false.
+  Future<bool> connectGitHub() async {
+    if (_isConnectingGitHub) return false;
+    _isConnectingGitHub = true;
+    _lastError = null;
+    notifyListeners();
+    try {
+      return await _auth.connectGitHub();
+    } catch (e) {
+      _lastError = e.toString();
+      return false;
+    } finally {
+      _isConnectingGitHub = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> signOut() async {
     await _auth.logOut();
     notifyListeners();

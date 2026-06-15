@@ -47,6 +47,7 @@ dependencies:
 
   # Open GitHub issue/PR links from the task detail page
   url_launcher: ^6.3.0
+  flutter_web_auth_2: ^5.0.3
 
 dev_dependencies:
   flutter_test:
