@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 
@@ -40,8 +42,10 @@ class PushMessagingService {
 
     // Local-notification channel so foreground FCM can surface as a real OS
     // notification (Android otherwise swallows them while the app is open).
+    // Tapping a foreground notification routes via its JSON payload, the same
+    // way a backgrounded tap routes via RemoteMessage.data.
     await LocalNotificationsService.instance.init(
-      onTap: (_) => _navigation?.goNotify(),
+      onTap: (payload) => _routeFromData(decodeNotificationPayload(payload)),
     );
 
     // Foreground messages: redraw as a visible local notification, in addition
@@ -54,7 +58,9 @@ class PushMessagingService {
       LocalNotificationsService.instance.show(
         title: title,
         body: body,
-        payload: m.data['taskId'],
+        // Carry the full routing payload (repoId + taskId + type) so a tap can
+        // deep-link — m.data['taskId'] alone lacks the repoId to build the route.
+        payload: jsonEncode(m.data),
       );
     });
 
@@ -91,21 +97,51 @@ class PushMessagingService {
     return true;
   }
 
-  // Deep-link a tapped notification to its task when the data payload carries
-  // repoId + taskId; otherwise land on the generic /notify screen.
-  void _handleTap(RemoteMessage m) {
+  // Deep-link a backgrounded / cold-start tap via its RemoteMessage.data.
+  void _handleTap(RemoteMessage m) => _routeFromData(m.data);
+
+  // Single routing decision shared by background taps (RemoteMessage.data) and
+  // foreground taps (the local notification's decoded JSON payload): a valid
+  // repoId + taskId deep-links to the task, anything else lands on /notify.
+  void _routeFromData(Map<String, dynamic>? data) {
     final nav = _navigation;
     if (nav == null) return;
-    final repoId = m.data['repoId'];
-    final taskId = m.data['taskId'];
-    if (repoId != null &&
-        repoId.isNotEmpty &&
-        taskId != null &&
-        taskId.isNotEmpty) {
-      nav.goTaskDetails(repoId, taskId);
+    final route = taskRouteFromData(data);
+    if (route != null) {
+      nav.goTaskDetails(route.repoId, route.taskId);
     } else {
       nav.goNotify();
     }
+  }
+}
+
+/// Parses a notification data map into a task deep-link target, or null when it
+/// lacks a usable repoId + taskId. Pure + side-effect free for unit testing.
+@visibleForTesting
+({String repoId, String taskId})? taskRouteFromData(Map<String, dynamic>? data) {
+  if (data == null) return null;
+  final repoId = data['repoId'];
+  final taskId = data['taskId'];
+  if (repoId is String &&
+      repoId.isNotEmpty &&
+      taskId is String &&
+      taskId.isNotEmpty) {
+    return (repoId: repoId, taskId: taskId);
+  }
+  return null;
+}
+
+/// Decodes a local-notification JSON string payload back into a data map.
+/// Returns null for a null/empty/non-object/malformed payload (caller then
+/// falls back to /notify). Pure + side-effect free for unit testing.
+@visibleForTesting
+Map<String, dynamic>? decodeNotificationPayload(String? payload) {
+  if (payload == null || payload.isEmpty) return null;
+  try {
+    final decoded = jsonDecode(payload);
+    return decoded is Map<String, dynamic> ? decoded : null;
+  } catch (_) {
+    return null;
   }
 }
 
