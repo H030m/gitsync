@@ -211,10 +211,17 @@ class AppStrings {
 
   // ---- Settings ----
   String get settingsTitle => _('Settings', '設定');
+  String get general => _('General', '一般');
   String get appearance => _('Appearance', '外觀');
   String get language => _('Language', '語言');
   String get account => _('Account', '帳號');
   String get signOut => _('Sign out', '登出');
+  String get signOutConfirmTitle => _('Sign out?', '確定要登出？');
+  String get signOutConfirmBody =>
+      _('You will need to sign in again to access your repos.',
+          '登出後需要重新登入才能存取你的 Repo。');
+  String get testNotificationSent =>
+      _('Test notification sent', '測試通知已送出');
 
   // ---- GitHub connection (manual OAuth, task 06-16) ----
   String get githubConnection => _('GitHub connection', 'GitHub 連結');
@@ -435,4 +442,8 @@ class AppStrings {
     "Each author's commit share and AI work summary",
     '每位作者的 commit 佔比與 AI 工作統整',
   );
+  String authorCommitStats(int count, int pct) =>
+      _('$count commits · $pct%', '$count commits · $pct%');
+  String totalCommits(int n) => _('$n commits', '$n commits');
+  String totalTasks(int n) => _('$n tasks', '$n 任務');
 }
