@@ -115,6 +115,8 @@ class AppStrings {
   String generatedNSubtasks(int n) =>
       _('Generated $n subtasks', '產生了 $n 個子任務');
   String get reBreakdown => _('Re-breakdown', '重新拆解');
+  String get swipeToDelete =>
+      _('Swipe left on a task to remove it', '向左滑動可移除不需要的任務');
   String get taskAdded => _('Task added.', '已新增任務。');
   String taskAddedWithTitle(String title) =>
       _('Added: $title', '已新增：$title');

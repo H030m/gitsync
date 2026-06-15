@@ -514,6 +514,12 @@ class _AddTodoPageState extends State<AddTodoPage> {
             ),
           ],
         ),
+        Text(
+          s.swipeToDelete,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
         const SizedBox(height: AppDimens.spacingSm),
         Expanded(
           child: ListView.builder(
