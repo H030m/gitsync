@@ -271,6 +271,7 @@ describe('onTaskUpdated', () => {
       repoId: REPO_ID,
       taskId: 'B',
       force: false,
+      language: 'Traditional Chinese',
     });
     expect(mockSend).toHaveBeenCalledTimes(1);
   });
