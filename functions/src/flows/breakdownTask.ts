@@ -32,6 +32,7 @@ import {
 } from '../prompts/breakdownTask';
 import { readRepoPlanningDocs } from '../tools/repoDocs';
 import { readProjectBrief, formatBriefForPrompt } from '../tools/projectBrief';
+import { recallForPrompt } from '../tools/memorySearch';
 import { searchPastCommits } from '../tools/dailyIntel';
 import {
   listExistingTaskTitles,
@@ -170,10 +171,18 @@ async function firstPassBreakdown(
 
   // Best-effort: prepend the accumulated project brief as a stable, cache-friendly
   // prefix (empty brief → '' → byte-identical prompt).
-  const briefPrefix = formatBriefForPrompt(await readProjectBrief(repoId));
+  const brief = await readProjectBrief(repoId);
+  const briefPrefix = formatBriefForPrompt(brief);
+
+  // Best-effort active recall using the goal text (empty when no observations exist).
+  const memoryContext = await recallForPrompt(repoId, {
+    query: goal,
+    briefContent: brief?.content,
+  });
 
   const projectContext = [
     briefPrefix || undefined,
+    memoryContext || undefined,
     hasDocs ? repoDocs.content : undefined,
     `Repository: ${repo.name ?? repoId}`,
     repo.description ? `Description: ${repo.description}` : undefined,
@@ -385,11 +394,18 @@ async function incrementalBreakdown(
   language?: string,
 ): Promise<ResolvedSubtask[]> {
   // Best-effort project-brief prefix (stable; empty → '' → no behavior change).
-  const briefPrefix = formatBriefForPrompt(await readProjectBrief(repoId));
+  const brief = await readProjectBrief(repoId);
+  const briefPrefix = formatBriefForPrompt(brief);
+
+  // Best-effort active recall using the goal text (empty when no observations exist).
+  const memoryContext = await recallForPrompt(repoId, {
+    query: goal,
+    briefContent: brief?.content,
+  });
 
   const openai = getOpenAI();
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: 'system', content: incrementalBreakdownSystem(language) + briefPrefix },
+    { role: 'system', content: incrementalBreakdownSystem(language) + briefPrefix + memoryContext },
     { role: 'user', content: incrementalBreakdownUser(goal) },
   ];
 

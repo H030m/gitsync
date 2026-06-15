@@ -14,6 +14,7 @@ import type OpenAI from 'openai';
 import { getOpenAI, MODELS } from '../config';
 import { dailyBriefSystem } from '../prompts/dailyBrief';
 import { readProjectBrief, formatBriefForPrompt } from '../tools/projectBrief';
+import { recallForPrompt } from '../tools/memorySearch';
 import {
   listRangeCommits,
   listRangeCompletedTasks,
@@ -124,11 +125,18 @@ export async function dailyBriefChatFlow(
 
   // Best-effort: append the accumulated project brief to the system message
   // (stable prefix, before history + question). Empty brief → '' → unchanged.
-  const briefPrefix = formatBriefForPrompt(await readProjectBrief(repoId));
+  const brief = await readProjectBrief(repoId);
+  const briefPrefix = formatBriefForPrompt(brief);
+
+  // Best-effort active recall (empty when no observations exist).
+  const memoryContext = await recallForPrompt(repoId, {
+    query: question,
+    briefContent: brief?.content,
+  });
 
   const openai = getOpenAI();
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: 'system', content: dailyBriefSystem(date, endDate) + briefPrefix },
+    { role: 'system', content: dailyBriefSystem(date, endDate) + briefPrefix + memoryContext },
     ...history
       .slice(-MAX_HISTORY_TURNS)
       .filter((t) => t && (t.role === 'user' || t.role === 'assistant') && t.content)

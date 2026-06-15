@@ -19,6 +19,7 @@ import {
   mergeLearnedTags,
 } from '../tools/assignTools';
 import { readProjectBrief, formatBriefForPrompt } from '../tools/projectBrief';
+import { recallForPrompt } from '../tools/memorySearch';
 import { applyAssignment } from '../tools/taskStatus';
 import { db } from '../admin';
 
@@ -160,7 +161,16 @@ export async function assignTaskFlow(
 
   // Best-effort: the accumulated project brief, prepended (as a stable prefix)
   // to the user message — the system prompt stays byte-identical for caching.
-  const briefPrefix = formatBriefForPrompt(await readProjectBrief(repoId));
+  const brief = await readProjectBrief(repoId);
+  const briefPrefix = formatBriefForPrompt(brief);
+
+  // Best-effort active recall using task title + description.
+  const taskTitle = (task.title as string | undefined) ?? '';
+  const taskDesc = (task.description as string | undefined) ?? '';
+  const memoryContext = await recallForPrompt(repoId, {
+    query: `${taskTitle} ${taskDesc}`.trim(),
+    briefContent: brief?.content,
+  });
 
   // ---- Agentic function-calling loop (>=2 members) -------------------------
   const openai = getOpenAI();
@@ -168,7 +178,7 @@ export async function assignTaskFlow(
     { role: 'system', content: assignTaskSystem },
     {
       role: 'user',
-      content: briefPrefix + buildTaskBrief(repoId, taskId, task, members),
+      content: briefPrefix + memoryContext + buildTaskBrief(repoId, taskId, task, members),
     },
   ];
 
