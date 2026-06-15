@@ -442,4 +442,8 @@ class AppStrings {
     "Each author's commit share and AI work summary",
     '每位作者的 commit 佔比與 AI 工作統整',
   );
+  String authorCommitStats(int count, int pct) =>
+      _('$count commits · $pct%', '$count commits · $pct%');
+  String totalCommits(int n) => _('$n commits', '$n commits');
+  String totalTasks(int n) => _('$n tasks', '$n 任務');
 }
