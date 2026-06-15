@@ -26,7 +26,7 @@ import '_helpers/locale.dart';
 
 const _repoId = DummyData.demoRepoId;
 
-Widget _harness() {
+Widget _harness({DailyReportViewModel? report}) {
   return pinLocale(
     AppLocale.en,
     child: MaterialApp(
@@ -39,7 +39,7 @@ Widget _harness() {
             create: (_) => DiscordMessagesViewModel(repoId: _repoId),
           ),
           ChangeNotifierProvider(
-            create: (_) => DailyReportViewModel(repoId: _repoId),
+            create: (_) => report ?? DailyReportViewModel(repoId: _repoId),
           ),
           ChangeNotifierProvider(
             create: (_) => AskRepoViewModel(repoId: _repoId),
@@ -155,4 +155,45 @@ void main() {
     },
   );
 
+  testWidgets(
+    'on INITIAL load the Discord window follows the report range '
+    '(no manual range change needed)',
+    (tester) async {
+      // Regression (06-15): the per-day cards span the report VM's range, but
+      // the Discord digest window defaulted independently (saved Discord range
+      // / today). When they diverge, a past day's digest was missing until the
+      // user manually changed the range. Here the report VM opens on a
+      // multi-day range that does NOT include today; the digest for a past day
+      // in that range must surface on first open, WITHOUT touching
+      // IntelRangeViewModel.
+      tester.view.physicalSize = const Size(1200, 3000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      _seed('2026-06-03');
+      _seed('2026-06-04');
+
+      // Report VM already scoped to a past multi-day range before the page
+      // wires up — the shared IntelRangeViewModel stays null (the default,
+      // "no manual range change" path).
+      final report = DailyReportViewModel(repoId: _repoId)
+        ..setRange(DateTime(2026, 6, 3), DateTime(2026, 6, 5));
+
+      await tester.pumpWidget(_harness(report: report));
+      await tester.pumpAndSettle();
+
+      final ctx = tester.element(find.byType(DailyViewPage));
+      // The shared range was never set — the alignment came purely from the
+      // page's initial sync in didChangeDependencies.
+      expect(ctx.read<IntelRangeViewModel>().range, isNull);
+
+      final vm = ctx.read<DiscordMessagesViewModel>();
+      // The Discord window now tracks the report's range, so past-day digests
+      // are returned on initial load.
+      expect(vm.digestForDate('2026-06-04')?.date, '2026-06-04');
+      expect(vm.digestForDate('2026-06-03')?.date, '2026-06-03');
+      expect(vm.digests.length, 2);
+    },
+  );
 }

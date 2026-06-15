@@ -87,6 +87,24 @@ class _DailyViewPageState extends State<DailyViewPage> {
       _rangeVm?.removeListener(_onRangeChanged);
       _rangeVm = vm;
       _rangeVm!.addListener(_onRangeChanged);
+      // Initial alignment: the shared range starts null, so [_onRangeChanged]
+      // never fires on first open and the two VMs keep their independent
+      // defaults — the report cards span the report VM's range while the
+      // Discord digest window falls back to the saved Discord range / today.
+      // When those differ, a day card's digest is missing until the user
+      // manually changes the range. Point the Discord display window at the
+      // report VM's current range so digests align with the rendered day cards
+      // from the start. Use [setViewRange] (display-only) — NOT [setRange],
+      // which would persist a Discord backfill range to Firestore on mere page
+      // load and overwrite the user's saved range. Deferred to a post-frame
+      // callback because [setViewRange] calls notifyListeners, which can't run
+      // synchronously while the provider tree is still building.
+      final report = context.read<DailyReportViewModel>();
+      final discord = context.read<DiscordMessagesViewModel>();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        discord.setViewRange(report.rangeStart, report.rangeEnd);
+      });
     }
   }
 
