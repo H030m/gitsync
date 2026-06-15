@@ -104,9 +104,16 @@ export const onTaskUpdated = onDocumentUpdated(
         // Generate the AI handoff doc for this now-ready task from the real
         // commits + Discord behind its finished prerequisites. Best-effort:
         // force=false (skip if one already exists) and a failure must not block
-        // the assignment/notify path.
+        // the assignment/notify path. Auto-generated handoffs default to
+        // Traditional Chinese (the team's language); an explicit regenerate from
+        // the client can still override via its own language arg.
         try {
-          await generateHandoffFlow({ repoId, taskId: doc.id, force: false });
+          await generateHandoffFlow({
+            repoId,
+            taskId: doc.id,
+            force: false,
+            language: 'Traditional Chinese',
+          });
         } catch (e) {
           logger.warn('onTaskUpdated: handoff generation failed (best-effort)', {
             repoId,
