@@ -365,7 +365,6 @@ class _SectionTaskRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final isDone = task.status == TaskStatus.done;
 
     return InkWell(
       onTap: () => Provider.of<NavigationService>(
@@ -380,17 +379,9 @@ class _SectionTaskRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            InkResponse(
-              radius: 18,
-              // Done rows absorb the tap so the circle stays a no-op instead
-              // of falling through to the row's navigation.
-              onTap: isDone ? () {} : () => _markDone(context),
-              child: Icon(
-                isDone ? Icons.check_circle : Icons.radio_button_unchecked,
-                size: 22,
-                color: isDone ? accent : scheme.outline,
-              ),
-            ),
+            // Assignee avatar leads the row; status changes happen via
+            // long-press (see [_pickStatus]) so there is no status circle.
+            _AssigneeCircle(assigneeId: task.assigneeId, accent: accent),
             const SizedBox(width: AppDimens.spacingSm + AppDimens.spacingXs),
             Expanded(
               child: Text(
@@ -404,8 +395,6 @@ class _SectionTaskRow extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(width: AppDimens.spacingSm),
-            _AssigneeCircle(assigneeId: task.assigneeId, accent: accent),
           ],
         ),
       ),
@@ -423,20 +412,6 @@ class _SectionTaskRow extends StatelessWidget {
     if (picked == null || picked == task.status) return;
     try {
       await vm.updateStatus(task.id, picked);
-    } catch (e) {
-      messenger
-        ..clearSnackBars()
-        ..showSnackBar(SnackBar(content: Text(s.updateStatusFailed(e))));
-    }
-  }
-
-  // Stateless row: capture the messenger + strings BEFORE the await so no
-  // BuildContext is used after the async gap (there is no `mounted` here).
-  Future<void> _markDone(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final s = context.l10n;
-    try {
-      await vm.updateStatus(task.id, TaskStatus.done);
     } catch (e) {
       messenger
         ..clearSnackBars()
