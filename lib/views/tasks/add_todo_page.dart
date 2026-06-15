@@ -243,11 +243,24 @@ class _AddTodoPageState extends State<AddTodoPage> {
     super.dispose();
   }
 
+  // Leave the add page back to the task board. The page is opened ON TOP of the
+  // board (go('/repos/:id/tasks/add')), so popping reliably returns there;
+  // calling go() to the parent can leave the nested 'add' page on screen under
+  // a ShellRoute, which is why the buttons appeared to "do nothing". Fall back
+  // to an explicit go() only when there is nothing to pop.
+  void _leaveToBoard() {
+    final nav = Provider.of<NavigationService>(context, listen: false);
+    if (nav.router.canPop()) {
+      nav.router.pop();
+    } else {
+      nav.goTasks(widget.repoId);
+    }
+  }
+
   Future<void> _addManual() async {
     final title = _titleCtrl.text.trim();
     if (title.isEmpty || _busy) return;
     final vm = Provider.of<TasksBoardViewModel>(context, listen: false);
-    final nav = Provider.of<NavigationService>(context, listen: false);
     final uid =
         Provider.of<AuthenticationService>(context, listen: false).currentUid;
     setState(() {
@@ -266,7 +279,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(context.l10n.taskAddedWithTitle(title))),
       );
-      nav.goTasks(widget.repoId);
+      _leaveToBoard();
     } catch (_) {
       if (!mounted) return;
       setState(() => _error = context.l10n.couldNotAddTask);
@@ -547,11 +560,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
           ),
         ),
         FilledButton(
-          onPressed: _subtasks.isEmpty
-              ? null
-              : () =>
-                  Provider.of<NavigationService>(context, listen: false)
-                      .goTasks(widget.repoId),
+          onPressed: _subtasks.isEmpty ? null : _leaveToBoard,
           child: Text(s.done),
         ),
       ],
