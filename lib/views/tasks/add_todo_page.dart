@@ -540,9 +540,6 @@ class _AddTodoPageState extends State<AddTodoPage> {
                   child: ListTile(
                     title: Text(sub.title),
                     subtitle: Text(sub.description),
-                    trailing: Text(
-                      '${sub.estimatedHours.toStringAsFixed(1)}h',
-                    ),
                   ),
                 ),
               );
