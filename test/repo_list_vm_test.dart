@@ -169,23 +169,6 @@ class _FakeFunctionsService implements FunctionsService {
       throw UnimplementedError();
 
   @override
-  Future<String> editDiscordDigest({
-    required String repoId,
-    required String date,
-    required String instruction,
-    String? runId,
-  }) =>
-      throw UnimplementedError();
-
-  @override
-  Future<void> setDigestLock({
-    required String repoId,
-    required String date,
-    required bool locked,
-  }) =>
-      throw UnimplementedError();
-
-  @override
   Future<DiscordChatReply> discordChat({
     required String repoId,
     required String question,

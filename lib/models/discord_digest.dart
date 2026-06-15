@@ -10,10 +10,6 @@ class DiscordDigest {
   final String markdown;
   final int messageCount;
 
-  /// When true the digest is pinned: no backend path (auto-regen or AI edit)
-  /// will change it. Toggled via `setDigestLock`.
-  final bool locked;
-
   /// The messages this digest was built from, with timestamps, so the card can
   /// show "referenced what, and when" rather than only the outline. Empty for
   /// legacy digests written before this field existed.
@@ -26,7 +22,6 @@ class DiscordDigest {
     required this.date,
     required this.markdown,
     required this.messageCount,
-    this.locked = false,
     this.sourceMessages = const [],
     Timestamp? generatedAt,
   }) : _generatedAt = generatedAt;
@@ -36,7 +31,6 @@ class DiscordDigest {
       date: map['date'] as String? ?? id,
       markdown: map['markdown'] as String? ?? '',
       messageCount: map['messageCount'] as int? ?? 0,
-      locked: map['locked'] as bool? ?? false,
       sourceMessages: (map['sourceMessages'] as List? ?? const [])
           .map((m) =>
               DiscordDigestSource.fromMap(Map<String, dynamic>.from(m as Map)))

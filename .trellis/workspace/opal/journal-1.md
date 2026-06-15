@@ -518,3 +518,38 @@ Daily 頁把 Summary/Discord 兩分頁合成單一每日視圖(每天:摘要+重
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: 每日彙整精簡:移除 count chip/鎖/AI調整/locked + 修 digest 初始範圍
+
+**Date**: 2026-06-15
+**Task**: 每日彙整精簡:移除 count chip/鎖/AI調整/locked + 修 digest 初始範圍
+**Branch**: `feature/remove-daily-chips-lock`
+
+### Summary
+
+移除日報 count chip 與 Discord digest 鎖 UI;整個移除 locked(digest 凍結)+ editDiscordDigest(AI 調整)功能,跨 functions(刪 setDigestLock/editDiscordDigest/botEditDigest + flow 的 locked 防護)、Flutter(model/VM/service/UI)、discord-bot(/gitsync-digest 指令)三套件,digest 改為永遠重生。修 Discord 摘要初始載入不顯示的 bug:didChangeDependencies 用 post-frame setViewRange 把 discord 視窗對齊日報範圍(display-only 不寫 Firestore)。functions 416 / flutter 104 / bot tsc 全綠。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `91a7968` | (see git log) |
+| `6f130cd` | (see git log) |
+| `e550e92` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

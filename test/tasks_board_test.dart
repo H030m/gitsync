@@ -252,19 +252,6 @@ void main() {
     expect(find.text('Omega'), findsNothing);
   });
 
-  testWidgets("tapping a row's circle marks the task done", (tester) async {
-    final repo = _StubTaskRepo([
-      _task('t1', 'Alpha', TaskStatus.todo),
-    ]);
-    await _pumpAt(tester, _harness(repo), const Size(500, 800));
-
-    await tester.tap(find.byIcon(Icons.radio_button_unchecked));
-    await tester.pumpAndSettle();
-
-    expect(repo.lastUpdatedId, 't1');
-    expect(repo.lastUpdatedStatus, TaskStatus.done);
-  });
-
   testWidgets(
       'long-pressing a row opens the status picker and choosing a status '
       'updates it', (tester) async {

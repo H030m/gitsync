@@ -45,27 +45,19 @@ class FakeAgentRunRepository implements AgentRunRepository {
     'Writing the explanation…',
   ];
 
-  /// The demo `editDiscordDigest` agent: pull evidence, then revise.
-  static const _cannedEditDigestSteps = <String>[
-    'Searching Discord…',
-    'Reading a day digest…',
-    'Revising the digest…',
-  ];
-
   // runId prefix → (flow name, canned steps). The first matching prefix wins;
   // unprefixed ids fall through to the askRepo chat default.
   static const _byPrefix = <String, (String, List<String>)>{
     'handoff-': ('generateHandoff', _cannedHandoffSteps),
     'chat-': ('discordChat', _cannedChatSteps),
     'explain-': ('explainCommit', _cannedExplainSteps),
-    'editdigest-': ('editDiscordDigest', _cannedEditDigestSteps),
   };
 
   @override
   Stream<AgentRun?> watch(String repoId, String runId) async* {
     // The trace-driving screens prefix their runId by flow (handoff- / chat- /
-    // explain- / editdigest-); everything else is the askRepo chat. Pick the
-    // matching canned trace so the demo lines fit what the user is watching.
+    // explain-); everything else is the askRepo chat. Pick the matching canned
+    // trace so the demo lines fit what the user is watching.
     var flow = 'askRepo';
     var cannedSteps = _cannedAskSteps;
     for (final entry in _byPrefix.entries) {

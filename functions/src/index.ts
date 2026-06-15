@@ -23,8 +23,6 @@ export { setDiscordStartDate } from './handlers/setDiscordStartDate';
 export { setDiscordRange } from './handlers/setDiscordRange';
 export { discordChat } from './handlers/discordChat';
 export { askRepo } from './handlers/askRepo';
-export { editDiscordDigest } from './handlers/editDiscordDigest';
-export { setDigestLock } from './handlers/setDigestLock';
 export { backfillEmbeddings } from './handlers/backfillEmbeddings';
 
 // ---- HTTP (webhooks + Cloud Tasks workers) -------------------------------
@@ -34,7 +32,6 @@ export { dailyReportWorker } from './handlers/dailyReportWorker';
 export { claimDiscordFetch } from './handlers/claimDiscordFetch';
 export { completeDiscordFetch } from './handlers/completeDiscordFetch';
 export { setRepoChannel } from './handlers/setRepoChannel';
-export { botEditDigest } from './handlers/botEditDigest';
 
 // ---- Firestore triggers --------------------------------------------------
 export { onTaskCreated } from './triggers/onTaskCreated';
