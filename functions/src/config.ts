@@ -25,7 +25,7 @@ export const githubOAuthClientSecret = defineSecret(
 // The Flutter client sends the SAME id in its authorize URL — keep them in sync
 // with the GitHub OAuth App you registered (see the task PRD Technical Notes).
 export const GITHUB_OAUTH_CLIENT_ID =
-  process.env.GITHUB_OAUTH_CLIENT_ID ?? 'Ov23liGitSyncClientId';
+  process.env.GITHUB_OAUTH_CLIENT_ID ?? 'Ov23liwPB1WZPu35k5hT';
 
 let _openai: OpenAI | null = null;
 
