@@ -314,33 +314,40 @@ class _SummaryTabState extends State<_SummaryTab> {
   @override
   Widget build(BuildContext context) {
     final s = context.l10n;
-    return Consumer2<DailyReportViewModel, AskRepoViewModel>(
-      builder: (ctx, report, chat, _) {
+    // Split into two independent Consumers so the (potentially expensive) day
+    // report list only rebuilds when DailyReportViewModel changes, NOT when
+    // AskRepoViewModel fires notifyListeners (which happens frequently during
+    // live trace streaming).
+    return Consumer<DailyReportViewModel>(
+      builder: (ctx, report, _) {
         if (report.loading) {
           return const Center(child: CircularProgressIndicator());
         }
-        // Last assistant message for the preview bar.
-        final lastAssistant = chat.turns
-            .where((t) => !t.isUser)
-            .toList();
-        final lastMsg = lastAssistant.isEmpty
-            ? null
-            : lastAssistant.last.content;
         return Column(
           children: [
-            // ---- Day report cards: full-space, scrollable list (no height cap).
+            // ---- Day report cards: only rebuilds on report changes.
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.all(AppDimens.spacingMd),
                 children: _dayCards(report),
               ),
             ),
-            // ---- Chat preview bar: tap to open full-screen Ask GitSync chat.
-            ChatPreviewBar(
-              title: s.askRepoTitle,
-              lastMessage: lastMsg,
-              sending: chat.sending,
-              onTap: () => _openAskChat(ctx, chat),
+            // ---- Chat preview bar: only rebuilds on chat VM changes.
+            Consumer<AskRepoViewModel>(
+              builder: (ctx2, chat, _) {
+                final lastAssistant = chat.turns
+                    .where((t) => !t.isUser)
+                    .toList();
+                final lastMsg = lastAssistant.isEmpty
+                    ? null
+                    : lastAssistant.last.content;
+                return ChatPreviewBar(
+                  title: s.askRepoTitle,
+                  lastMessage: lastMsg,
+                  sending: chat.sending,
+                  onTap: () => _openAskChat(ctx2, chat),
+                );
+              },
             ),
           ],
         );
@@ -2400,8 +2407,11 @@ class _DiscordTabState extends State<_DiscordTab> {
   @override
   Widget build(BuildContext context) {
     final s = context.l10n;
-    return Consumer2<DiscordMessagesViewModel, DiscordChatViewModel>(
-      builder: (ctx, vm, chatVm, _) {
+    // Split into two independent Consumers so the digest list only rebuilds
+    // when DiscordMessagesViewModel changes, not on every DiscordChatViewModel
+    // notify (which fires frequently during live trace streaming).
+    return Consumer<DiscordMessagesViewModel>(
+      builder: (ctx, vm, _) {
         if (vm.loading) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -2415,16 +2425,9 @@ class _DiscordTabState extends State<_DiscordTab> {
             ).showSnackBar(SnackBar(content: Text(s.updated)));
           });
         }
-        // Last assistant message for the preview bar.
-        final lastAssistant = chatVm.turns
-            .where((t) => !t.isUser)
-            .toList();
-        final lastMsg = lastAssistant.isEmpty
-            ? null
-            : lastAssistant.last.content;
         return Column(
           children: [
-            // ---- Digest content: full-space, scrollable list (no height cap).
+            // ---- Digest content: only rebuilds on digest VM changes.
             Expanded(
               child: vm.digests.isEmpty
                   ? Center(
@@ -2450,12 +2453,22 @@ class _DiscordTabState extends State<_DiscordTab> {
                       ],
                     ),
             ),
-            // ---- Chat preview bar: tap to open full-screen Discord chat.
-            ChatPreviewBar(
-              title: s.askAiAboutChat,
-              lastMessage: lastMsg,
-              sending: chatVm.sending,
-              onTap: () => _openDiscordChat(ctx, chatVm),
+            // ---- Chat preview bar: only rebuilds on chat VM changes.
+            Consumer<DiscordChatViewModel>(
+              builder: (ctx2, chatVm, _) {
+                final lastAssistant = chatVm.turns
+                    .where((t) => !t.isUser)
+                    .toList();
+                final lastMsg = lastAssistant.isEmpty
+                    ? null
+                    : lastAssistant.last.content;
+                return ChatPreviewBar(
+                  title: s.askAiAboutChat,
+                  lastMessage: lastMsg,
+                  sending: chatVm.sending,
+                  onTap: () => _openDiscordChat(ctx2, chatVm),
+                );
+              },
             ),
           ],
         );
