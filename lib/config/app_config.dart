@@ -68,7 +68,7 @@ class AppConfig {
   /// `--dart-define=GITHUB_OAUTH_CLIENT_ID=...`. The secret is NEVER here.
   static const String githubOAuthClientId = String.fromEnvironment(
     'GITHUB_OAUTH_CLIENT_ID',
-    defaultValue: 'Ov23liwPB1WZPu35k5hT',
+    defaultValue: 'Ov23lisKm2PkG4Q4V45e',
   );
 
   /// Custom URL scheme for the OAuth redirect capture (`flutter_web_auth_2`).
