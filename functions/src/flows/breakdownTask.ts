@@ -234,6 +234,11 @@ async function firstPassBreakdown(
   }
 
   // ---- Step 3 / 3b: cycle detection + single re-prompt ---------------------
+  // Strip self-references / out-of-range indices first: a task depending on its
+  // OWN index is the model's most common (and trivially removable) DAG
+  // violation — treat it as noise, not a fatal cycle (mirrors the incremental
+  // path's `idx !== i` filter). Only genuine multi-node cycles re-prompt.
+  sanitizeDependsOn(parsed.subtasks);
   let cycles = detectCycles(parsed.subtasks);
   if (cycles.length > 0) {
     logger.warn('Step 3: cycle detected, re-prompting once', { repoId, cycles });
@@ -262,6 +267,7 @@ async function firstPassBreakdown(
         'AI did not return a valid breakdown on re-prompt.',
       );
     }
+    sanitizeDependsOn(parsed.subtasks);
     cycles = detectCycles(parsed.subtasks);
     if (cycles.length > 0) {
       throw new HttpsError('internal', 'AI produced cyclic dependencies twice');
@@ -782,6 +788,27 @@ function safeParse(raw: string | undefined): Record<string, unknown> {
 }
 
 // ---- Helpers (exported so tests can unit-test them in isolation) -----------
+
+/**
+ * Normalize each subtask's `dependsOn` IN PLACE: drop out-of-range indices,
+ * remove self-references (a task can never depend on itself), and dedupe.
+ * Self-loops are the model's most common DAG violation; stripping them keeps an
+ * otherwise-valid breakdown from failing the cycle check. Mirrors the
+ * incremental path's `idx !== i` filter.
+ */
+export function sanitizeDependsOn(
+  subtasks: Array<{ dependsOn: number[] }>,
+): void {
+  subtasks.forEach((s, i) => {
+    s.dependsOn = [
+      ...new Set(
+        (Array.isArray(s.dependsOn) ? s.dependsOn : []).filter(
+          (idx) => idx >= 0 && idx < subtasks.length && idx !== i,
+        ),
+      ),
+    ];
+  });
+}
 
 /**
  * Returns the indices of every cycle in the dependency graph (DFS).
