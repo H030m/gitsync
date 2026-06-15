@@ -1,17 +1,23 @@
+import 'dart:async';
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../l10n/app_strings.dart';
+import '../../models/agent_run.dart';
 import '../../models/app_user.dart';
 import '../../models/member.dart';
 import '../../models/sub_task.dart';
 import '../../models/task.dart';
+import '../../repositories/agent_run_repo.dart';
 import '../../services/authentication.dart';
 import '../../services/functions_service.dart';
 import '../../services/navigation.dart';
 import '../../theme/app_dimens.dart';
 import '../../view_models/members_vm.dart';
 import '../../view_models/tasks_board_vm.dart';
+import '../chat/chat_live_trace.dart';
 
 // How a task gets created: by hand (one task) or by AI breakdown (spec → list).
 enum _AddMode { manual, ai }
@@ -217,8 +223,21 @@ class _AddTodoPageState extends State<AddTodoPage> {
   bool _busy = false;
   String? _error;
 
+  // Live trace for the AI breakdown.
+  List<AgentStep> _liveSteps = const [];
+  StreamSubscription<AgentRun?>? _traceSub;
+  final AgentRunRepository _agentRuns = AgentRunRepository();
+  static final _rng = Random();
+
+  static String _newRunId() {
+    final ts = DateTime.now().microsecondsSinceEpoch;
+    final nonce = _rng.nextInt(1 << 30).toRadixString(16);
+    return 'run-$ts-$nonce';
+  }
+
   @override
   void dispose() {
+    _traceSub?.cancel();
     _titleCtrl.dispose();
     _descCtrl.dispose();
     super.dispose();
@@ -257,10 +276,20 @@ class _AddTodoPageState extends State<AddTodoPage> {
   }
 
   Future<void> _runBreakdown() async {
+    final runId = _newRunId();
     setState(() {
       _busy = true;
       _error = null;
+      _liveSteps = const [];
     });
+
+    // Subscribe to the trace doc so steps appear while the callable runs.
+    _traceSub?.cancel();
+    _traceSub = _agentRuns.watch(widget.repoId, runId).listen((run) {
+      if (run == null || !mounted) return;
+      setState(() => _liveSteps = run.steps);
+    });
+
     try {
       final fn = Provider.of<FunctionsService>(context, listen: false);
       // W6: generate the tasks in the app's current language.
@@ -268,6 +297,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
         repoId: widget.repoId,
         goal: _goal,
         language: context.l10n.backendLanguage,
+        runId: runId,
       );
       if (!mounted) return;
       setState(() {
@@ -278,7 +308,14 @@ class _AddTodoPageState extends State<AddTodoPage> {
       if (!mounted) return;
       setState(() => _error = context.l10n.couldNotBreakdown);
     } finally {
-      if (mounted) setState(() => _busy = false);
+      unawaited(_traceSub?.cancel() ?? Future<void>.value());
+      _traceSub = null;
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _liveSteps = const [];
+        });
+      }
     }
   }
 
@@ -431,9 +468,19 @@ class _AddTodoPageState extends State<AddTodoPage> {
         const SizedBox(height: AppDimens.spacingMd),
         FilledButton.icon(
           onPressed: _busy || _goal.trim().isEmpty ? null : _runBreakdown,
-          icon: const Icon(Icons.auto_awesome),
+          icon: _busy
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.auto_awesome),
           label: Text(_busy ? s.breakingDown : s.breakDownWithAI),
         ),
+        if (_busy) ...[
+          const SizedBox(height: AppDimens.spacingMd),
+          ChatLiveTrace(steps: _liveSteps),
+        ],
         if (_error != null) ...[
           const SizedBox(height: AppDimens.spacingMd),
           Text(_error!, style: TextStyle(color: scheme.error)),
