@@ -175,27 +175,36 @@ class _ContributionTabState extends State<_ContributionTab> {
                         ],
                       ),
                     ),
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          s.contributionTab,
-                          style: Theme.of(context)
-                              .textTheme
-                              .labelMedium
-                              ?.copyWith(
-                                color: scheme.onSurface,
-                                fontWeight: FontWeight.w600,
-                              ),
-                        ),
-                        Text(
-                          s.pieChart,
-                          style: Theme.of(context)
-                              .textTheme
-                              .labelSmall
-                              ?.copyWith(color: scheme.onSurfaceVariant),
-                        ),
-                      ],
+                    SizedBox(
+                      width: 52,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              s.contributionTab,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelMedium
+                                  ?.copyWith(
+                                    color: scheme.onSurface,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                          ),
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              s.pieChart,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(color: scheme.onSurfaceVariant),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),

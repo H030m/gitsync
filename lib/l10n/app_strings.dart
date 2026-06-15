@@ -39,6 +39,12 @@ class AppStrings {
   String get done => _('Done', '完成');
   String get view => _('View', '查看');
 
+  // ---- Bottom navigation ----
+  String get navTasks => _('Tasks', '任務');
+  String get navDaily => _('Daily', '每日彙整');
+  String get navStats => _('Stats', '統計');
+  String get navSettings => _('Settings', '設定');
+
   // ---- Status ----
   String get statusTodo => _('To do', '待辦');
   String get statusInProgress => _('In progress', '進行中');

@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Verify the 4 new AppStrings keys follow the existing _(en, zh) pattern; no inline font-size override on the Texts."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Verify flutter test baseline unchanged + flutter build web green."}
