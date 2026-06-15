@@ -10,7 +10,9 @@ import { askRepoFlow, type AskRepoTurn } from '../flows/askRepo';
 const RUNID_RE = /^[A-Za-z0-9_-]{1,200}$/;
 
 export const askRepo = onCall(
-  { region: REGION, secrets: [openaiKey], timeoutSeconds: 120 },
+  // 512 MiB: the agentic loop + tool results pushed the default 256 MiB over
+  // the limit (OOM kills surfaced as a generic failure to the client).
+  { region: REGION, secrets: [openaiKey], timeoutSeconds: 120, memory: '512MiB' },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError('failed-precondition', 'Please log in first.');
