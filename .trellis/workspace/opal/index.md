@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 14
+- **Total Sessions**: 15
 - **Last Active**: 2026-06-15
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~485 | Active |
+| `journal-1.md` | ~520 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 15 | 2026-06-15 | 每日彙整:合併 Discord+摘要為單一視圖、精簡卡片、全頁 AI 中文 | `bf02f40`, `0e98350`, `a5e8038` | `feature/merge-daily-digest` |
 | 14 | 2026-06-15 | 增量拆解可觀測性:記錄 agent 工具調用與依賴統計 | `3dd960b` | `feature/incremental-breakdown-observability` |
 | 13 | 2026-06-15 | 增量拆解 prompt 對齊 baseSystem + W6 多語 | `259d42f` | `feature/align-incremental-prompt` |
 | 12 | 2026-06-15 | agentic 增量式 task 拆解(grounded in existing tasks + repo 記憶隔離) | `eb3707d`, `ff730d8` | `feature/incremental-breakdown` |
