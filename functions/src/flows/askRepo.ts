@@ -533,6 +533,9 @@ async function runTool(
           rs.map((m) => ({
             name: m.name,
             githubLogin: m.githubLogin,
+            // email = the stable identity key for merging commits a person
+            // authored under a git email GitHub couldn't map to a login.
+            email: m.email,
             // Learned skills (inferred from completed work) + current load, so
             // the agent can answer "who's good at what / who gets the next task".
             expertiseTags: m.expertiseTags,

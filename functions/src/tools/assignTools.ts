@@ -16,6 +16,9 @@ export interface TeamMemberState {
   userId: string;
   name: string | null;
   githubLogin: string | null;
+  /** The member's account email — the stable key for re-linking commits a
+   *  person authored under a git email GitHub couldn't map to a login. */
+  email: string | null;
   discordUserId: string | null;
   activeIssueCount: number;
   expertiseTags: string[];
@@ -42,6 +45,7 @@ export async function readTeamState(repoId: string): Promise<TeamMemberState[]> 
         userId: m.id,
         name: (user.name as string | undefined) ?? null,
         githubLogin: (user.githubLogin as string | undefined) ?? null,
+        email: (user.email as string | undefined) ?? null,
         discordUserId: (user.discordUserId as string | undefined) ?? null,
         activeIssueCount: (member.activeIssueCount as number | undefined) ?? 0,
         expertiseTags: (user.expertiseTags as string[] | undefined) ?? [],
@@ -80,11 +84,12 @@ export async function searchMemberCommits(
   const userSnap = await db.doc(`apps/gitsync/users/${memberId}`).get();
   const data = userSnap.data() ?? {};
   const githubLogin = (data.githubLogin as string | undefined)?.trim() ?? '';
+  const email = (data.email as string | undefined)?.trim() ?? '';
   const name = (data.name as string | undefined)?.trim() ?? '';
-  if (!githubLogin && !name) return []; // can't map to commits → no signal
+  if (!githubLogin && !email && !name) return []; // can't map to commits → no signal
 
   const commits = db.collection(`apps/gitsync/repos/${repoId}/commits`);
-  // sha → hit, so the two passes below dedupe naturally.
+  // sha → hit, so the passes below dedupe naturally.
   const hits = new Map<string, MemberCommitHit>();
 
   // (1) Semantic search by GitHub login (uses the existing vector index).
@@ -115,21 +120,23 @@ export async function searchMemberCommits(
     }
   }
 
-  // (2) Identity-alias fallback. A person often commits under a local git name
+  // (2) Identity-alias fallback. A person often commits under a git identity
   // whose email is NOT on their GitHub account, so GitHub can't attach a login
   // and the commit lands with `author.login === ''` — invisible to the prefilter
-  // above. Catch those by matching the member's display NAME against
-  // `author.name` (equality-only → no extra index needed), then keep the ones
-  // most relevant to the query by an in-memory keyword score. This is what
-  // re-links a fragmented identity (e.g. login "H030m" ↔ commits authored as
-  // "倪嘉駿") so the assign agent sees the member's real body of work.
-  if (name) {
+  // above. Re-link those by matching the member's stable identity keys against
+  // the commit author: EMAIL first (the most reliable — a person can rename
+  // themselves but the git email is constant), then display NAME. Equality-only
+  // queries → no extra index. This reunites a fragmented identity (e.g. login
+  // "H030m" ↔ commits authored as "倪嘉駿 <a0905217134@gmail.com>") so the assign
+  // agent sees the member's full body of work. Keep the most query-relevant by
+  // an in-memory keyword score.
+  const terms = query
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((t) => t.length >= 2);
+  const aliasPass = async (field: 'author.email' | 'author.name', value: string) => {
     try {
-      const snap = await commits.where('author.name', '==', name).limit(50).get();
-      const terms = query
-        .toLowerCase()
-        .split(/[^\p{L}\p{N}]+/u)
-        .filter((t) => t.length >= 2);
+      const snap = await commits.where(field, '==', value).limit(50).get();
       const scored = snap.docs
         .map((d) => {
           const message = (d.data()?.message as string | undefined) ?? '';
@@ -141,14 +148,16 @@ export async function searchMemberCommits(
         .slice(0, 5);
       for (const c of scored) hits.set(c.sha, { sha: c.sha, message: c.message });
     } catch (err) {
-      logger.warn('searchMemberCommits: name alias path failed (best-effort)', {
+      logger.warn('searchMemberCommits: alias path failed (best-effort)', {
         repoId,
         memberId,
-        name,
+        field,
         err: String(err),
       });
     }
-  }
+  };
+  if (email) await aliasPass('author.email', email);
+  if (name) await aliasPass('author.name', name);
 
   return [...hits.values()].slice(0, 8);
 }
