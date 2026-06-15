@@ -60,6 +60,8 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
   final AgentRunRepository _agentRuns = AgentRunRepository();
   List<AgentStep> _handoffSteps = const [];
   StreamSubscription<AgentRun?>? _handoffTraceSub;
+  // True while an on-demand AI assignment is in flight (guards double-taps).
+  bool _aiAssigning = false;
   static final _rng = Random();
 
   /// A unique, path-safe trace doc id, generated BEFORE the callable so the UI
@@ -205,6 +207,42 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
         ..showSnackBar(
           SnackBar(content: Text(s.couldNotUpdateAssignee)),
         );
+    }
+  }
+
+  // AI auto-assign: runs the same assignTaskFlow the dependency chain uses, but
+  // on demand — so a ROOT task (no finished prerequisite to trigger
+  // onTaskUpdated) can still get its best assignee picked automatically.
+  Future<void> _aiAssign(Task task) async {
+    final s = context.l10n;
+    final functions = context.read<FunctionsService>();
+    final membersVm = context.read<MembersViewModel>();
+    final messenger = ScaffoldMessenger.of(context);
+    if (_aiAssigning) return; // guard against double-taps
+    setState(() => _aiAssigning = true);
+    messenger
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(content: Text(s.aiAssigning)));
+    try {
+      final r =
+          await functions.assignTask(repoId: widget.repoId, taskId: task.id);
+      if (!mounted) return;
+      // Nudge the member profile to resolve (fire-and-forget; the card refreshes
+      // from the task stream once Firestore updates). labelFor already returns
+      // the real name for an existing repo member, else the id as a fallback.
+      membersVm.ensureResolved(r.assigneeId);
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(content: Text(s.aiAssignedTo(membersVm.labelFor(r.assigneeId)))),
+        );
+    } catch (_) {
+      if (!mounted) return;
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(content: Text(s.couldNotAiAssign)));
+    } finally {
+      if (mounted) setState(() => _aiAssigning = false);
     }
   }
 
@@ -405,7 +443,22 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
                           membersVm: membersVm,
                         ),
                       ),
-                      const SizedBox(width: AppDimens.spacingSm),
+                      const SizedBox(width: AppDimens.spacingXs),
+                      // AI auto-assign: lets a root task (no finished prerequisite
+                      // to trigger the chain) get its best assignee picked on demand.
+                      IconButton(
+                        tooltip: s.aiAssign,
+                        onPressed: _aiAssigning ? null : () => _aiAssign(task),
+                        icon: _aiAssigning
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : Icon(Icons.auto_awesome,
+                                color: scheme.primary, size: 22),
+                      ),
+                      const SizedBox(width: AppDimens.spacingXs),
                       _StatusChip(
                         status: task.status,
                         onTap: () => _changeStatus(task),
