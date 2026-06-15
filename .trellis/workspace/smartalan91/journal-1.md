@@ -109,3 +109,36 @@ User acceptance of the section list surfaced a gap: the details-page status chip
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Stats stale-while-revalidate commit cache
+
+**Date**: 2026-06-15
+**Task**: Stats stale-while-revalidate commit cache
+**Branch**: `feature/stats-swr-cache`
+
+### Summary
+
+Cache all-history commits in a repoId-keyed static map on StatsViewModel so re-entering the Stats page seeds from cache (no spinner) and revalidates in the background; failed refresh keeps stale data. Added debugClearCommitCache() + setUp resets in both stats tests, +2 tests. analyze 0/0 on changed files, flutter test 100/100, emulator hand-verified no re-entry spinner.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `41ff343` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
