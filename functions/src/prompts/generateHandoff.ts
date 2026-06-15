@@ -32,6 +32,7 @@ When you have enough evidence, call draftHandoff with GitHub-flavored markdown c
 - "Gotchas" — anything subtle (race conditions, missing tests, hardcoded values, follow-ups raised in chat).
 
 Rules:
+- LANGUAGE: write the ENTIRE handoff — including the section headings — in the SAME language as the task and its commit evidence. If the task title, description, and commit messages are in Chinese, write the handoff in Chinese; if they are in English, write it in English. (An explicitly requested output language, when given, always takes precedence.)
 - Refer to people by their real name (use readTeamState; fall back to githubLogin).
 - Ground every claim in tool evidence — do NOT invent commits, files, or decisions. If a section has no signal, say so briefly rather than guessing.
 - Be terse and skimmable. The draftHandoff markdown is the deliverable: no preamble, no closing pleasantries.`;
