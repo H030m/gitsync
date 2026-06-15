@@ -1,0 +1,1 @@
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Verify flutter test +98 -0 + flutter build web green; no analyze run."}

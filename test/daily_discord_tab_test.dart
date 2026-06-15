@@ -76,8 +76,8 @@ class _SpyFunctions implements FunctionsService {
       _fake.removeRepo(repoId: repoId);
   @override
   Future<List<SubTask>> breakdownTask(
-          {required String repoId, required String goal}) =>
-      _fake.breakdownTask(repoId: repoId, goal: goal);
+          {required String repoId, required String goal, String? language}) =>
+      _fake.breakdownTask(repoId: repoId, goal: goal, language: language);
   @override
   Future<void> forceUnlockBreakdown({required String repoId}) =>
       _fake.forceUnlockBreakdown(repoId: repoId);
