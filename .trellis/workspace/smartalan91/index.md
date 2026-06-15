@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 4
+- **Total Sessions**: 5
 - **Last Active**: 2026-06-15
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~144 | Active |
+| `journal-1.md` | ~177 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 5 | 2026-06-15 | Persist theme mode across web refresh | `71cbf3c` | `feature/persist-theme-mode` |
 | 4 | 2026-06-15 | Stats stale-while-revalidate commit cache | `41ff343` | `feature/stats-swr-cache` |
 | 3 | 2026-06-13 | Dual-entry task status editor | `89bae12`, `931838a` | `feature/mobile-board-sections` |
 | 2 | 2026-06-13 | Mobile board redesign: collapsible status sections | `9470677`, `236419b` | `feature/mobile-board-sections` |

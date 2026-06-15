@@ -142,3 +142,36 @@ Cache all-history commits in a repoId-keyed static map on StatsViewModel so re-e
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Persist theme mode across web refresh
+
+**Date**: 2026-06-15
+**Task**: Persist theme mode across web refresh
+**Branch**: `feature/persist-theme-mode`
+
+### Summary
+
+ThemeModeNotifier kept the theme only in memory, so F5 / fresh load reset to ThemeMode.system (appeared dark). Added SharedPreferences persistence mirroring LocaleNotifier: constructor _load()s stored value, setMode/toggle write it back (key theme_mode, value enum .name). Public API/provider wiring/UI unchanged, default stays system. analyze 0/0 on changed files, flutter test 104/104 (+4 new theme tests).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `71cbf3c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
