@@ -328,6 +328,18 @@ describe('getCommitGraph handler', () => {
     ).rejects.toMatchObject({ code: 'unavailable' });
   });
 
+  it('maps a GitHub 401 to a distinct reconnect marker (06-16 D3)', async () => {
+    const err = new Error('Bad credentials') as Error & { status: number };
+    err.status = 401;
+    mockFetchCommitGraph.mockRejectedValue(err);
+    await expect(
+      handler({ auth: { uid: 'u1' }, data: { repoId: REPO } }),
+    ).rejects.toMatchObject({
+      code: 'failed-precondition',
+      message: expect.stringContaining('github-token-invalid'),
+    });
+  });
+
   // ---- 06-05 D7: best-effort commit-doc sync on a non-cached fetch ----------
 
   it('syncs fetched commits into Firestore docs with the webhook shape', async () => {

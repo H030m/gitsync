@@ -59,6 +59,30 @@ class AppConfig {
   static const String fcmVapidKey =
       String.fromEnvironment('FCM_VAPID_KEY', defaultValue: '');
 
+  // ---- GitHub OAuth (manual connect flow) -----------------------------
+
+  /// GitHub OAuth App **client_id** (public — it travels in the authorize URL).
+  /// Must match the OAuth App whose **client_secret** is set as the Cloud
+  /// Function secret `GITHUB_OAUTH_CLIENT_SECRET` (and the backend
+  /// `GITHUB_OAUTH_CLIENT_ID`). Override per build with
+  /// `--dart-define=GITHUB_OAUTH_CLIENT_ID=...`. The secret is NEVER here.
+  static const String githubOAuthClientId = String.fromEnvironment(
+    'GITHUB_OAUTH_CLIENT_ID',
+    defaultValue: 'Ov23liGitSyncClientId',
+  );
+
+  /// Custom URL scheme for the OAuth redirect capture (`flutter_web_auth_2`).
+  /// The GitHub OAuth App's "Authorization callback URL" must be
+  /// `${githubOAuthRedirectUri}` (i.e. `gitsync://oauth/github`).
+  static const String githubOAuthCallbackScheme = 'gitsync';
+
+  /// The full redirect URI registered on the GitHub OAuth App. Sent to the
+  /// backend so its token exchange uses the identical `redirect_uri`.
+  static const String githubOAuthRedirectUri = 'gitsync://oauth/github';
+
+  /// Scopes the connect flow requests (must match what backend consumers need).
+  static const List<String> githubOAuthScopes = ['repo', 'read:user'];
+
   // ---- Fake-mode tuning -------------------------------------------------
 
   /// Artificial delay added to fake repository / service calls so streams

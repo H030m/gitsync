@@ -11,6 +11,7 @@ class _FakeAuthenticationService implements AuthenticationService {
     this.uidToReturn,
     this.errorToThrow,
     this.gate,
+    this.connectErrorToThrow,
   });
 
   /// Returned by `logInWithGitHub` (a null uid means "no user").
@@ -23,7 +24,11 @@ class _FakeAuthenticationService implements AuthenticationService {
   /// hold the first call open to probe the re-entrancy guard.
   final Future<void>? gate;
 
+  /// Drives `connectGitHub`: when set it throws; the gate (if any) also applies.
+  final Object? connectErrorToThrow;
+
   int logInCalls = 0;
+  int connectCalls = 0;
   bool _signedIn = false;
 
   @override
@@ -39,6 +44,14 @@ class _FakeAuthenticationService implements AuthenticationService {
     if (errorToThrow != null) throw errorToThrow!;
     _signedIn = uidToReturn != null;
     return uidToReturn;
+  }
+
+  @override
+  Future<bool> connectGitHub() async {
+    connectCalls++;
+    if (gate != null) await gate;
+    if (connectErrorToThrow != null) throw connectErrorToThrow!;
+    return true;
   }
 
   @override
@@ -101,6 +114,50 @@ void main() {
       gate.complete();
       expect(await first, isTrue);
       expect(auth.logInCalls, 1);
+    });
+  });
+
+  group('AuthViewModel.connectGitHub', () {
+    test('returns true and clears lastError on success', () async {
+      final auth = _FakeAuthenticationService();
+      final vm = AuthViewModel(authService: auth);
+
+      final ok = await vm.connectGitHub();
+
+      expect(ok, isTrue);
+      expect(vm.lastError, isNull);
+      expect(vm.isConnectingGitHub, isFalse);
+      expect(auth.connectCalls, 1);
+    });
+
+    test('sets lastError and returns false on exception', () async {
+      final auth = _FakeAuthenticationService(
+        connectErrorToThrow: Exception('oauth boom'),
+      );
+      final vm = AuthViewModel(authService: auth);
+
+      final ok = await vm.connectGitHub();
+
+      expect(ok, isFalse);
+      expect(vm.lastError, contains('oauth boom'));
+      expect(vm.isConnectingGitHub, isFalse);
+    });
+
+    test('re-entrancy guard: second call while connecting is a no-op', () async {
+      final gate = Completer<void>();
+      final auth = _FakeAuthenticationService(gate: gate.future);
+      final vm = AuthViewModel(authService: auth);
+
+      final first = vm.connectGitHub();
+      expect(vm.isConnectingGitHub, isTrue);
+
+      final second = await vm.connectGitHub();
+      expect(second, isFalse);
+      expect(auth.connectCalls, 1);
+
+      gate.complete();
+      expect(await first, isTrue);
+      expect(auth.connectCalls, 1);
     });
   });
 }

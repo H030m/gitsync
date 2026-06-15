@@ -382,6 +382,17 @@ class FakeFunctionsService implements FunctionsService {
     );
   }
 
+  // ---- GitHub OAuth ------------------------------------------------------
+
+  @override
+  Future<void> exchangeGitHubCode({
+    required String code,
+    required String redirectUri,
+  }) async {
+    await Future.delayed(AppConfig.simulatedLatency * 2);
+    // Fake mode has no real GitHub round-trip — pretend the swap succeeded.
+  }
+
   // ---- Discord -----------------------------------------------------------
 
   @override

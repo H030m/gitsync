@@ -116,6 +116,20 @@ export async function getCommitGraphFlow(
     branchesRaw = fetched.branches;
     branchesTruncated = fetched.branchesTruncated;
   } catch (err) {
+    // A 401 ("Bad credentials") means the stored token is revoked/expired —
+    // surface a STABLE, client-detectable marker so the app can prompt the
+    // user to reconnect GitHub (task 06-16 D3), distinct from a transient
+    // GitHub outage. The marker string is part of the client contract: the
+    // commits VM matches on `github-token-invalid`.
+    const status = (err as { status?: number } | null)?.status;
+    if (status === 401) {
+      logger.warn('fetchCommitGraph: GitHub token rejected (401)', { repoId });
+      throw new HttpsError(
+        'failed-precondition',
+        'github-token-invalid: Your GitHub authorization has expired. ' +
+          'Please reconnect GitHub.',
+      );
+    }
     logger.error('fetchCommitGraph failed', { repoId, err: String(err) });
     throw new HttpsError(
       'unavailable',

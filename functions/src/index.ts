@@ -16,6 +16,7 @@ export { dailyBrief } from './handlers/dailyBrief';
 export { explainCommit } from './handlers/explainCommit';
 export { summarizeAuthorWork } from './handlers/summarizeAuthorWork';
 export { getCommitGraph } from './handlers/getCommitGraph';
+export { exchangeGitHubCode } from './handlers/exchangeGitHubCode';
 export { setDiscordWebhook } from './handlers/setDiscordWebhook';
 export { subscribeToTopic } from './handlers/subscribeToTopic';
 export { requestDiscordFetch } from './handlers/requestDiscordFetch';

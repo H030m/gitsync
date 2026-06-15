@@ -25,6 +25,13 @@ class FakeAuthenticationService implements AuthenticationService {
   }
 
   @override
+  Future<bool> connectGitHub() async {
+    // No real OAuth in fake mode — pretend the connect succeeded.
+    await Future.delayed(AppConfig.simulatedLatency * 2);
+    return true;
+  }
+
+  @override
   Future<void> logOut() async {
     await Future.delayed(AppConfig.simulatedLatency);
     _signedIn = false;

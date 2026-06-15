@@ -12,6 +12,7 @@ import '../../theme/app_dimens.dart';
 import '../../theme/app_motion.dart';
 import '../../widgets/section_card.dart';
 import '../../view_models/ask_repo_vm.dart';
+import '../../view_models/auth_vm.dart';
 import '../../view_models/commits_vm.dart';
 import '../../view_models/daily_report_vm.dart';
 import '../../view_models/discord_messages_vm.dart';
@@ -1386,32 +1387,46 @@ class _BranchGraphView extends StatelessWidget {
       return const Center(child: CircularProgressIndicator());
     }
     if (vm.graphError != null && vm.graph == null) {
+      // A rejected GitHub token (backend marker `github-token-invalid`) needs a
+      // reconnect, not a retry — swap the CTA + message accordingly (06-16 D3).
+      final tokenInvalid = vm.graphTokenInvalid;
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(AppDimens.spacingLg),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline, size: 40),
+              Icon(
+                tokenInvalid ? Icons.link_off : Icons.error_outline,
+                size: 40,
+              ),
               const SizedBox(height: AppDimens.spacingSm),
               Text(
-                s.couldNotLoadBranchGraph,
+                tokenInvalid
+                    ? s.githubTokenExpired
+                    : s.couldNotLoadBranchGraph,
                 style: theme.textTheme.titleMedium,
-              ),
-              const SizedBox(height: AppDimens.spacingXs),
-              Text(
-                vm.graphError!,
-                style: theme.textTheme.bodySmall,
                 textAlign: TextAlign.center,
-                maxLines: 4,
-                overflow: TextOverflow.ellipsis,
               ),
+              if (!tokenInvalid) ...[
+                const SizedBox(height: AppDimens.spacingXs),
+                Text(
+                  vm.graphError!,
+                  style: theme.textTheme.bodySmall,
+                  textAlign: TextAlign.center,
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
               const SizedBox(height: AppDimens.spacingMd),
-              FilledButton.icon(
-                onPressed: vm.loadGraph,
-                icon: const Icon(Icons.refresh, size: 18),
-                label: Text(s.retry),
-              ),
+              if (tokenInvalid)
+                _ReconnectGitHubButton(vm: vm)
+              else
+                FilledButton.icon(
+                  onPressed: vm.loadGraph,
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: Text(s.retry),
+                ),
             ],
           ),
         ),
@@ -1506,6 +1521,48 @@ class _BranchGraphView extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+// CTA shown in the branch-graph error state when the stored GitHub token is
+// rejected: runs the manual OAuth reconnect, then reloads the graph (06-16 D3).
+class _ReconnectGitHubButton extends StatelessWidget {
+  const _ReconnectGitHubButton({required this.vm});
+  final CommitsViewModel vm;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.l10n;
+    final auth = context.watch<AuthViewModel>();
+    final busy = auth.isConnectingGitHub;
+    return FilledButton.icon(
+      onPressed: busy ? null : () => _reconnect(context),
+      icon: busy
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.link, size: 18),
+      label: Text(s.reconnectGitHub),
+    );
+  }
+
+  Future<void> _reconnect(BuildContext context) async {
+    final s = context.l10n;
+    final messenger = ScaffoldMessenger.of(context);
+    final auth = Provider.of<AuthViewModel>(context, listen: false);
+    final ok = await auth.connectGitHub();
+    if (!context.mounted) return;
+    if (ok) {
+      messenger.showSnackBar(SnackBar(content: Text(s.githubConnected)));
+      // Token refreshed — retry the graph load.
+      vm.loadGraph(force: true);
+    } else if (auth.lastError != null) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(s.githubConnectFailed(auth.lastError!))),
+      );
+    }
   }
 }
 
