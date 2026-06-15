@@ -167,6 +167,13 @@ class AppStrings {
   );
   String get couldNotUpdateAssignee =>
       _('Could not update the assignee.', '無法更新負責人。');
+  String get aiAssign => _('AI assign', 'AI 指派');
+  String get aiAssigning =>
+      _('AI is picking the best assignee…', 'AI 正在挑選最適合的負責人…');
+  String get couldNotAiAssign =>
+      _('AI assignment failed. Please try again.', 'AI 指派失敗,請再試一次。');
+  String aiAssignedTo(String name) =>
+      _('AI assigned this task to $name', 'AI 已將此任務指派給 $name');
   String get couldNotGenerateHandoff =>
       _('Could not generate the handoff doc.', '無法產生交接文件。');
   String get couldNotOpenLink => _('Could not open the link.', '無法開啟連結。');
