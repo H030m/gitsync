@@ -29,13 +29,13 @@ class DiscordMessagesViewModel with ChangeNotifier, AgentTraceMixin {
     RepoRepository? repoRepository,
     DiscordFetchRepository? fetchRepository,
     FunctionsService? functionsService,
-  })  : _repoId = repoId,
-        _date = date ?? DateTime.now(),
-        _repo = messageRepository ?? DiscordMessageRepository(),
-        _digestRepo = digestRepository ?? DiscordDigestRepository(),
-        _repoRepo = repoRepository ?? RepoRepository(),
-        _fetchRepo = fetchRepository ?? DiscordFetchRepository(),
-        _functions = functionsService ?? FunctionsService() {
+  }) : _repoId = repoId,
+       _date = date ?? DateTime.now(),
+       _repo = messageRepository ?? DiscordMessageRepository(),
+       _digestRepo = digestRepository ?? DiscordDigestRepository(),
+       _repoRepo = repoRepository ?? RepoRepository(),
+       _fetchRepo = fetchRepository ?? DiscordFetchRepository(),
+       _functions = functionsService ?? FunctionsService() {
     _sub = _repo.streamRecent(_repoId).listen((messages) {
       _messages = messages;
       _loading = false;
@@ -105,6 +105,15 @@ class DiscordMessagesViewModel with ChangeNotifier, AgentTraceMixin {
   /// Backward-compat: the newest digest in the window (or null when empty).
   DiscordDigest? get digest => _digests.isEmpty ? null : _digests.first;
 
+  /// The digest for a specific `YYYY-MM-DD` day, or null when that day has none.
+  /// Used by the unified daily view to align a day's digest with its report.
+  DiscordDigest? digestForDate(String date) {
+    for (final d in _digests) {
+      if (d.date == date) return d;
+    }
+    return null;
+  }
+
   bool _loading = true;
   bool get loading => _loading;
 
@@ -160,9 +169,9 @@ class DiscordMessagesViewModel with ChangeNotifier, AgentTraceMixin {
     _digestSub = _digestRepo
         .streamDigestsInRange(_repoId, startKey, endKey)
         .listen((digests) {
-      _digests = digests;
-      notifyListeners();
-    });
+          _digests = digests;
+          notifyListeners();
+        });
   }
 
   // Reacts to repo doc changes: updates the saved range and, when the resolved
@@ -233,8 +242,7 @@ class DiscordMessagesViewModel with ChangeNotifier, AgentTraceMixin {
 
     // Watch the request status; finish when it reaches a terminal state.
     _fetchSub?.cancel();
-    _fetchSub =
-        _fetchRepo.streamStatus(_repoId, requestId).listen((status) {
+    _fetchSub = _fetchRepo.streamStatus(_repoId, requestId).listen((status) {
       if (status != null && _terminalStatuses.contains(status)) {
         _finishRefresh();
       }
@@ -296,7 +304,11 @@ class DiscordMessagesViewModel with ChangeNotifier, AgentTraceMixin {
     notifyListeners();
 
     // Normalize to whole days, oldest..newest, capped at 31.
-    var start = DateTime(_windowStart.year, _windowStart.month, _windowStart.day);
+    var start = DateTime(
+      _windowStart.year,
+      _windowStart.month,
+      _windowStart.day,
+    );
     var end = DateTime(_windowEnd.year, _windowEnd.month, _windowEnd.day);
     if (end.isBefore(start)) {
       final tmp = start;
@@ -304,9 +316,11 @@ class DiscordMessagesViewModel with ChangeNotifier, AgentTraceMixin {
       end = tmp;
     }
     final days = <DateTime>[];
-    for (var d = start;
-        !d.isAfter(end) && days.length < 31;
-        d = d.add(const Duration(days: 1))) {
+    for (
+      var d = start;
+      !d.isAfter(end) && days.length < 31;
+      d = d.add(const Duration(days: 1))
+    ) {
       days.add(d);
     }
 

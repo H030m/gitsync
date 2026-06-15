@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Verify the palette change still uses ColorScheme tokens and no hardcoded Colors literals were introduced."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Verify flutter test + flutter build web green; no analyze run."}

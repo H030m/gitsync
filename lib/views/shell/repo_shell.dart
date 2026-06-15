@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../models/task.dart';
 import '../../router/shell_transitions.dart';
 import '../../services/authentication.dart';
@@ -111,44 +112,48 @@ class _RepoShellState extends State<RepoShell> {
     super.dispose();
   }
 
-  static const _items = <_NavItem>[
-    _NavItem(
-      icon: Icons.view_kanban_outlined,
-      selectedIcon: Icons.view_kanban,
-      label: '任務',
-      segment: 'tasks',
-    ),
-    _NavItem(
-      icon: Icons.today_outlined,
-      selectedIcon: Icons.today,
-      label: '每日彙整',
-      segment: 'daily',
-    ),
-    _NavItem(
-      icon: Icons.bar_chart_outlined,
-      selectedIcon: Icons.bar_chart,
-      label: '統計',
-      segment: 'stats',
-    ),
-    _NavItem(
-      icon: Icons.settings_outlined,
-      selectedIcon: Icons.settings,
-      label: '設定',
-      segment: 'settings',
-    ),
-  ];
+  // Build the bottom-nav items once per frame, reading localized labels from
+  // `context.l10n`. The list is small (4 entries) and stable in ordering;
+  // building it per build avoids stashing a `static const` of hardcoded labels.
+  List<_NavItem> _buildNavItems(AppStrings s) => <_NavItem>[
+        _NavItem(
+          icon: Icons.view_kanban_outlined,
+          selectedIcon: Icons.view_kanban,
+          label: s.navTasks,
+          segment: 'tasks',
+        ),
+        _NavItem(
+          icon: Icons.today_outlined,
+          selectedIcon: Icons.today,
+          label: s.navDaily,
+          segment: 'daily',
+        ),
+        _NavItem(
+          icon: Icons.bar_chart_outlined,
+          selectedIcon: Icons.bar_chart,
+          label: s.navStats,
+          segment: 'stats',
+        ),
+        _NavItem(
+          icon: Icons.settings_outlined,
+          selectedIcon: Icons.settings,
+          label: s.navSettings,
+          segment: 'settings',
+        ),
+      ];
 
-  int _selectedIndex(BuildContext context) {
+  int _selectedIndex(BuildContext context, List<_NavItem> items) {
     final location = GoRouterState.of(context).uri.path;
-    for (var i = 0; i < _items.length; i++) {
-      if (location.contains('/${_items[i].segment}')) return i;
+    for (var i = 0; i < items.length; i++) {
+      if (location.contains('/${items[i].segment}')) return i;
     }
     return 0;
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentIndex = _selectedIndex(context);
+    final items = _buildNavItems(context.l10n);
+    final currentIndex = _selectedIndex(context, items);
     // Page-swap animation lives at the route level via CustomTransitionPage +
     // sharedAxisSlide (see lib/router/shell_transitions.dart). ShellNavSignal
     // is updated below before navigating so the transition reads the
@@ -158,11 +163,11 @@ class _RepoShellState extends State<RepoShell> {
       bottomNavigationBar: _SlidingBottomNav(
         key: RepoShell._navKey,
         selectedIndex: currentIndex,
-        items: _items,
+        items: items,
         onTap: (i) {
           ShellNavSignal.goingRight = i >= ShellNavSignal.previousIndex;
           ShellNavSignal.previousIndex = i;
-          context.go('/repos/${widget.repoId}/${_items[i].segment}');
+          context.go('/repos/${widget.repoId}/${items[i].segment}');
         },
       ),
     );

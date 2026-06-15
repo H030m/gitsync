@@ -45,6 +45,7 @@ class FakeFunctionsService implements FunctionsService {
     required String repoId,
     required String goal,
     String? language,
+    String? runId,
   }) async {
     await Future.delayed(AppConfig.simulatedLatency * 6);
     // Pretend the LLM split the goal into 4 generic subtasks.
@@ -296,6 +297,7 @@ class FakeFunctionsService implements FunctionsService {
     required String question,
     List<AskRepoTurn> history = const [],
     String? runId,
+    String? language,
   }) async {
     // Outlast the FakeAgentRunRepository's 4-step canned trace (one step per
     // simulatedLatency) so the sheet shows the trace appear live BEFORE the

@@ -12,10 +12,11 @@ export const breakdownTask = onCall(
     if (!request.auth) {
       throw new HttpsError('failed-precondition', 'Please log in first.');
     }
-    const { repoId, goal, language } = request.data as {
+    const { repoId, goal, language, runId } = request.data as {
       repoId?: string;
       goal?: string;
       language?: string;
+      runId?: string;
     };
     if (!repoId || !goal) {
       throw new HttpsError('invalid-argument', 'repoId and goal are required');
@@ -52,6 +53,7 @@ export const breakdownTask = onCall(
         goal,
         requestedBy: request.auth.uid,
         language,
+        runId,
       });
     } finally {
       // Always release the lock, even on error. Swallow the unlock error so

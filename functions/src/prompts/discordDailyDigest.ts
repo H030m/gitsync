@@ -7,11 +7,11 @@ const discordDailyDigestBody = `Your task: given one day's Discord messages for 
 
 Output rules:
 - Markdown only (no preamble like "Here is the digest").
-- Group related points under short bold headers when it helps; otherwise a flat bullet list is fine.
+- Prefer a single flat bullet list. Use sub-headers sparingly or not at all — only add one if the day's discussion is large and genuinely splits into distinct topics.
 - Capture decisions, blockers, questions, and action items. Drop greetings and noise.
 - Attribute points to the author by name when it matters (e.g. "Kai: ...").
 - Preserve every chat author's username exactly as written — including lowercase first letters and underscores — even when the username opens a sentence, heading, or bullet (e.g. write \`whale_island said …\`, never \`Whale_island said …\`).
-- Write the digest in the same language the messages are mostly written in.
+- Write the digest in Traditional Chinese (繁體中文), regardless of the language the messages are written in. (Author usernames stay exactly as written; proper nouns / IDs are kept as-is.)
 - Be terse. If little of substance was said, say so in one line.`;
 
 export const discordDailyDigestSystem = buildSystemPrompt({

@@ -52,11 +52,17 @@ class _FakeFunctionsService implements FunctionsService {
   Future<List<SubTask>> breakdownTask({
     required String repoId,
     required String goal,
+    String? language,
+    String? runId,
   }) =>
       throw UnimplementedError();
 
   @override
   Future<void> forceUnlockBreakdown({required String repoId}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<int> deleteAllTasks({required String repoId}) =>
       throw UnimplementedError();
 
   @override
@@ -100,6 +106,7 @@ class _FakeFunctionsService implements FunctionsService {
     required String question,
     List<AskRepoTurn> history = const [],
     String? runId,
+    String? language,
   }) =>
       throw UnimplementedError();
 

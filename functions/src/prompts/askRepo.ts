@@ -37,7 +37,19 @@ Source panels:
  * Full system prompt for askRepoFlow: the top-level base + this agent's body +
  * today's date (appended last by buildSystemPrompt). `extra` carries the
  * best-effort project-brief prefix and planner guidance the flow assembles.
+ * With `language` (W6, an English language NAME like "Traditional Chinese") the
+ * answer is forced into that language; without it the model mirrors the input
+ * language (base rule) — zero behavior change for no-language callers.
  */
-export function askRepoSystem(today: string, sinceDays: number, extra = ''): string {
-  return buildSystemPrompt({ agentBody: askRepoBody(sinceDays) + extra, today });
+export function askRepoSystem(
+  today: string,
+  sinceDays: number,
+  extra = '',
+  language?: string,
+): string {
+  return buildSystemPrompt({
+    agentBody: askRepoBody(sinceDays) + extra,
+    today,
+    language,
+  });
 }

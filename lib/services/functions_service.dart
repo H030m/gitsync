@@ -50,6 +50,7 @@ abstract class FunctionsService {
     required String repoId,
     required String goal,
     String? language,
+    String? runId,
   });
   Future<void> forceUnlockBreakdown({required String repoId});
 
@@ -101,12 +102,15 @@ abstract class FunctionsService {
   /// and returns the answer plus the commits + Discord clusters it surfaced.
   /// [history] is prior turns, oldest first, for follow-up context. [runId] is a
   /// client-generated id for the agent tool-trace doc the UI streams while
-  /// waiting (omit to skip the trace).
+  /// waiting (omit to skip the trace). [language] (W6) is the English language
+  /// NAME for the app locale; when set, the answer comes back in that language
+  /// (omit to keep the backend's default-language behavior).
   Future<AskRepoReply> askRepo({
     required String repoId,
     required String question,
     List<AskRepoTurn> history = const [],
     String? runId,
+    String? language,
   });
 
   /// Asks the AI to explain the work behind one commit (the commit tree map's
@@ -256,12 +260,14 @@ class _LiveFunctionsService implements FunctionsService {
     required String repoId,
     required String goal,
     String? language,
+    String? runId,
   }) async {
     final res = await _callable('breakdownTask').call({
       'repoId': repoId,
       'goal': goal,
       // Only sent when present; absent → backend follows the spec's language.
       'language': ?language,
+      'runId': ?runId,
     });
     final data = Map<String, dynamic>.from(res.data as Map);
     return (data['subtasks'] as List)
@@ -357,6 +363,7 @@ class _LiveFunctionsService implements FunctionsService {
     required String question,
     List<AskRepoTurn> history = const [],
     String? runId,
+    String? language,
   }) async {
     final res = await _callable('askRepo').call({
       'repoId': repoId,
@@ -364,6 +371,8 @@ class _LiveFunctionsService implements FunctionsService {
       'history': history.map((t) => t.toMap()).toList(),
       // Carried in so the backend writes the trace doc the UI is streaming.
       'runId': ?runId,
+      // Only sent when present; absent → backend default language.
+      'language': ?language,
     });
     return AskRepoReply.fromMap(Map<String, dynamic>.from(res.data as Map));
   }

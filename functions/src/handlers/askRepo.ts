@@ -15,11 +15,12 @@ export const askRepo = onCall(
     if (!request.auth) {
       throw new HttpsError('failed-precondition', 'Please log in first.');
     }
-    const { repoId, question, history, runId } = request.data as {
+    const { repoId, question, history, runId, language } = request.data as {
       repoId?: string;
       question?: string;
       history?: AskRepoTurn[];
       runId?: string;
+      language?: string;
     };
     if (!repoId || !question || !question.trim()) {
       throw new HttpsError(
@@ -30,11 +31,18 @@ export const askRepo = onCall(
     if (runId !== undefined && !RUNID_RE.test(runId)) {
       throw new HttpsError('invalid-argument', 'runId has an invalid format');
     }
+    // W6: optional language (a human-readable English language NAME the client
+    // derives from the app locale) forces the answer into that language; absent
+    // → unchanged behavior (the model mirrors the input language).
+    if (language !== undefined && typeof language !== 'string') {
+      throw new HttpsError('invalid-argument', 'language must be a string');
+    }
     return askRepoFlow({
       repoId,
       question: question.trim(),
       history: Array.isArray(history) ? history : [],
       runId,
+      language,
     });
   },
 );

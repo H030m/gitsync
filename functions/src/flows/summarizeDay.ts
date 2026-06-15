@@ -30,6 +30,7 @@ import {
   type MemberContributions,
 } from '../tools/dailyIntel';
 import { mergeProjectBrief, renderReportForBrief } from '../tools/projectBrief';
+import { writeObservation, type ObservationCategory } from '../tools/memoryWrite';
 import type { CommitTheme, DailyReportNarrative } from '../types';
 
 export interface SummarizeDayInput {
@@ -239,7 +240,83 @@ export async function summarizeDayFlow(
     });
   }
 
+  // ---- Step 5: extract observations from the report (best-effort) ----------
+  // Each highlight/blocker becomes a searchable knowledge entry so future agent
+  // flows can recall it via active recall, even before it gets consolidated
+  // into the project brief.
+  try {
+    await extractReportObservations(repoId, docId, result);
+  } catch (err) {
+    logger.warn('summarizeDayFlow: observation extraction failed (best-effort)', {
+      repoId,
+      docId,
+      err: String(err),
+    });
+  }
+
   return result;
+}
+
+/**
+ * Extract observations from a daily report's highlights, blockers, and commit
+ * themes. Each entry becomes a separate observation doc with its own embedding,
+ * so future agent flows can surface it via active recall. Best-effort: failures
+ * are logged but never propagated.
+ */
+async function extractReportObservations(
+  repoId: string,
+  docId: string,
+  report: SummarizeDayResult,
+): Promise<void> {
+  const entries: Array<{ content: string; category: ObservationCategory }> = [];
+
+  for (const h of report.highlights) {
+    if (h.trim()) entries.push({ content: h.trim(), category: 'project_state' });
+  }
+  for (const b of report.blockers) {
+    if (b.trim()) entries.push({ content: b.trim(), category: 'blocker' });
+  }
+  for (const t of report.commitThemes) {
+    if (t.theme.trim() && t.summary.trim()) {
+      entries.push({
+        content: `${t.theme}: ${t.summary}`,
+        category: 'project_state',
+      });
+    }
+  }
+
+  if (entries.length === 0) return;
+
+  // Write observations in parallel (best-effort each).
+  await Promise.all(
+    entries.map((e) =>
+      writeObservation(repoId, {
+        content: e.content,
+        category: e.category,
+        sourceFlow: 'summarizeDay',
+        sourceId: docId,
+        tags: tokenizeForTags(e.content),
+      }),
+    ),
+  );
+
+  logger.info('extractReportObservations: done', {
+    repoId,
+    docId,
+    count: entries.length,
+  });
+}
+
+/** Simple tokenizer for observation tags — lowercase words of length >= 3. */
+function tokenizeForTags(text: string): string[] {
+  return [
+    ...new Set(
+      text
+        .toLowerCase()
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter((t) => t.length >= 3),
+    ),
+  ].slice(0, 10); // cap at 10 tags
 }
 
 /** The OpenAI function-calling loop that authors the report narrative. */

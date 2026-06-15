@@ -1,4 +1,4 @@
-﻿import 'dart:math' as math;
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -6,30 +6,68 @@ import 'package:provider/provider.dart';
 import '../../models/commit.dart';
 import '../../models/commit_graph.dart';
 import '../../models/daily_report.dart';
-import '../../models/discord_chat.dart';
 import '../../models/discord_digest.dart';
 import '../../l10n/app_strings.dart';
-import '../../repositories/user_repo.dart';
 import '../../theme/app_dimens.dart';
 import '../../theme/app_motion.dart';
 import '../../widgets/section_card.dart';
 import '../../view_models/ask_repo_vm.dart';
 import '../../view_models/commits_vm.dart';
-import '../../view_models/daily_brief_vm.dart';
 import '../../view_models/daily_report_vm.dart';
-import '../../view_models/discord_chat_vm.dart';
 import '../../view_models/discord_messages_vm.dart';
 import '../../view_models/intel_range_vm.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/markdown_view.dart';
 import '../../widgets/staggered_entry.dart';
 import '../ask/ask_repo_chat.dart';
+import '../chat/chat_full_screen.dart';
+import '../chat/chat_preview_bar.dart';
 
-// DailyViewPage — three tabs: Summary / Commits / Discord, all driven by ONE
-// shared date range (IntelRangeViewModel). A single picker in the AppBar (shown
-// from every tab) re-scopes all three tabs at once; clearing it returns each to
-// its default. The page subscribes to the shared range and fans changes out to
-// the per-tab ViewModels.
+/// Slide-up page transition for full-screen chat. Enters from the bottom
+/// with a deceleration curve, exits downward with an acceleration curve.
+/// The previous route stays perfectly still (no slide or fade) because
+/// [canTransitionTo] returns false.
+Route<void> _slideUpRoute(Widget child) => _SlideUpRoute(child: child);
+
+class _SlideUpRoute extends PageRouteBuilder<void> {
+  _SlideUpRoute({required Widget child})
+      : super(
+          fullscreenDialog: true,
+          transitionDuration: AppMotion.nav,
+          reverseTransitionDuration: AppMotion.nav,
+          pageBuilder: (_, _, _) => child,
+          transitionsBuilder: (_, animation, _, child) {
+            final slideTween =
+                Tween(begin: const Offset(0, 1), end: Offset.zero);
+            final curvedAnimation = CurvedAnimation(
+              parent: animation,
+              curve: AppMotion.emphasizedDecel,
+              reverseCurve: AppMotion.emphasizedAccel,
+            );
+            return SlideTransition(
+              position: slideTween.animate(curvedAnimation),
+              child: child,
+            );
+          },
+        );
+
+  /// Returning false tells Flutter NOT to run the previous route's
+  /// secondaryAnimation when this route pushes on top. This prevents
+  /// the shell tab page from sliding left or fading out.
+  @override
+  bool canTransitionTo(TransitionRoute<dynamic> nextRoute) => false;
+
+  @override
+  bool canTransitionFrom(TransitionRoute<dynamic> previousRoute) => false;
+}
+
+// DailyViewPage — two tabs: Daily / Commits, all driven by ONE shared date
+// range (IntelRangeViewModel). A single picker in the AppBar (shown from every
+// tab) re-scopes both tabs at once; clearing it returns each to its default.
+// The page subscribes to the shared range and fans changes out to the per-tab
+// ViewModels. The Daily tab merges the former Summary + Discord tabs into one
+// per-day view: each day shows its AI report (summary, merged "key activity")
+// AND its Discord digest, with a single "Ask GitSync" chat.
 class DailyViewPage extends StatefulWidget {
   const DailyViewPage({super.key, required this.repoId});
   final String repoId;
@@ -52,37 +90,28 @@ class _DailyViewPageState extends State<DailyViewPage> {
     }
   }
 
-  // Fans the shared range out to every tab's ViewModel. Setting a range scopes
-  // Summary (per-day cards), the daily-brief chat, the Commits list+graph, the
-  // Discord digest display + persisted backfill range, and the Discord chat's
-  // read window. Clearing returns each tab to its default.
+  // Fans the shared range out to each tab's ViewModel. Setting a range scopes
+  // the Daily per-day cards (report) + the Discord digest display & persisted
+  // backfill range, and the Commits list+graph. Clearing returns each to its
+  // default. (D2: the Discord-only chat is gone; the unified "Ask GitSync" chat
+  // is repo-wide and not date-scoped.)
   void _onRangeChanged() {
     final range = _rangeVm?.range;
     final report = context.read<DailyReportViewModel>();
-    final chat = context.read<DailyBriefChatViewModel>();
     final commits = context.read<CommitsViewModel>();
     final discord = context.read<DiscordMessagesViewModel>();
-    final discordChat = context.read<DiscordChatViewModel>();
     if (range != null) {
       report.setRange(range.start, range.end);
-      chat.setRange(range.start, range.end);
       commits.setRange(range.start, range.end);
-      // D1+D3: setDiscordRange is now additive-only, so binding the shared range
-      // to Discord is safe again — it persists the range (bot re-pulls + dedups)
-      // and mirrors into the digest display. D2: the Discord chat reads the same
-      // window.
+      // setDiscordRange is additive-only (D1): persists the range (bot re-pulls
+      // + dedups) and mirrors into the digest display.
       discord.setRange(range.start, range.end);
-      discordChat.setRange(range.start, range.end);
     } else {
-      final now = DateTime.now();
       report.clearRange();
-      chat.setRange(now, now);
       commits.clearRange();
       // Clears only the Discord display scope (no callable — additive store
-      // keeps everything). The chat is scoped to today (matching the displayed
-      // "today" window) so it doesn't pull messages from unrelated past days.
+      // keeps everything).
       discord.clearViewRange();
-      discordChat.setRange(now, now);
     }
   }
 
@@ -96,7 +125,7 @@ class _DailyViewPageState extends State<DailyViewPage> {
   Widget build(BuildContext context) {
     final s = context.l10n;
     return DefaultTabController(
-      length: 3,
+      length: 2,
       child: Scaffold(
         appBar: AppBar(
           title: Text(s.dailyTitle),
@@ -108,29 +137,26 @@ class _DailyViewPageState extends State<DailyViewPage> {
                 const Divider(height: 1),
                 TabBar(
                   tabs: [
-                    Tab(text: s.dailyTabSummary),
+                    Tab(text: s.dailyTabDaily),
                     Tab(text: s.dailyTabCommits),
-                    Tab(text: s.dailyTabDiscord),
                   ],
                 ),
               ],
             ),
           ),
         ),
-        body: const TabBarView(
-          children: [_SummaryTab(), _CommitsTab(), _DiscordTab()],
-        ),
+        body: const TabBarView(children: [_DailyTab(), _CommitsTab()]),
       ),
     );
   }
 }
 
-// The one shared Refresh for all three tabs (D3), pinned in the AppBar next to
-// the shared range picker. Refreshes everything for the current window:
+// The one shared Refresh for both tabs (D3), pinned in the AppBar next to the
+// shared range picker. Refreshes everything for the current window:
 //   - Commits: forces a branch-graph reload (the list view is realtime).
 //   - Discord: re-requests a per-day backfill across the window (≤31 days; the
 //     bot dedups), so missing days fill in.
-//   - Summary: nothing (reports stream realtime; generation stays per-day).
+//   - Daily report: nothing (reports stream realtime; generation stays per-day).
 // Disabled while either the graph or the Discord sweep is already in flight.
 class _SharedRefreshAction extends StatelessWidget {
   const _SharedRefreshAction();
@@ -162,9 +188,9 @@ class _SharedRefreshAction extends StatelessWidget {
   }
 }
 
-// The one shared date-range picker for all three tabs, pinned in the AppBar so
-// it's reachable from Summary / Commits / Discord alike. Picking sets the
-// shared range; the reset icon (shown only while a range is active) clears it.
+// The one shared date-range picker for both tabs, pinned in the AppBar so it's
+// reachable from Daily / Commits alike. Picking sets the shared range; the reset
+// icon (shown only while a range is active) clears it.
 class _SharedRangeAction extends StatelessWidget {
   const _SharedRangeAction();
 
@@ -187,7 +213,8 @@ class _SharedRangeAction extends StatelessWidget {
                   context: ctx,
                   firstDate: DateTime(2020),
                   lastDate: now,
-                  initialDateRange: range ?? DateTimeRange(start: now, end: now),
+                  initialDateRange:
+                      range ?? DateTimeRange(start: now, end: now),
                 );
                 if (picked == null) return;
                 vm.setRange(picked);
@@ -212,56 +239,40 @@ class _SharedRangeAction extends StatelessWidget {
   }
 }
 
-// The Summary tab is the developer "intelligence hub": an AI daily report
-// (summary + highlights + blockers + commit-message rollup + per-member
-// contributions) on top, and the global, repo-wide "Ask GitSync" assistant at
-// the bottom. The report streams from `dailyReports/{date}`; the chat drives the
-// SHARED [AskRepoViewModel] (the `askRepo` callable) — the same instance the
-// repo-shell FAB opens, so the transcript is shared across both entry points.
-// Both areas share one vertical scroll, with the chat input bar pinned to the
-// bottom (mirrors the Discord tab).
-class _SummaryTab extends StatefulWidget {
-  const _SummaryTab();
+// The Daily tab is the developer "intelligence hub" (D1: merged Summary +
+// Discord). One collapsible card per day shows that day's AI report (summary,
+// the merged "Key activity" block) AND its Discord
+// digest (markdown + referenced messages + lock / AI-adjust). A single,
+// repo-wide "Ask GitSync" assistant lives at the bottom — it drives the SHARED
+// [AskRepoViewModel] (the `askRepo` callable), the same instance the repo-shell
+// FAB opens, so the transcript is shared across both entry points (D2 removed
+// the Discord-only chat). Report streams from `dailyReports/{date}`; the digest
+// from `discordDigests/{date}` — two docs, aligned by date in the card.
+class _DailyTab extends StatefulWidget {
+  const _DailyTab();
 
   @override
-  State<_SummaryTab> createState() => _SummaryTabState();
+  State<_DailyTab> createState() => _DailyTabState();
 }
 
-class _SummaryTabState extends State<_SummaryTab> {
+class _DailyTabState extends State<_DailyTab> {
   final _controller = TextEditingController();
-  final _scrollController = ScrollController();
-
-  // Whether the upper day-report panel (D2) is expanded. Starts collapsed for
-  // multi-day ranges so the chat gets more room; single-day starts expanded.
-  bool? _reportsExpanded;
 
   @override
   void dispose() {
     _controller.dispose();
-    _scrollController.dispose();
     super.dispose();
   }
 
-  void _send(AskRepoViewModel vm) {
-    final text = _controller.text;
-    if (text.trim().isEmpty || vm.sending) return;
-    _controller.clear();
-    vm.ask(text);
-    // Jump to the latest turn once it's laid out.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) return;
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: AppMotion.medium,
-        curve: AppMotion.emphasizedDecel,
-      );
-    });
-  }
-
-  // Builds one collapsible report card per day in the selected range. With no
-  // range (single day) it's just today's card; with a range it's one card per
-  // day, today expanded by default and the rest collapsed.
-  List<Widget> _dayCards(DailyReportViewModel report) {
+  // Builds one collapsible unified day card per day in the selected range. With
+  // no range (single day) it's just today's card; with a range it's one card
+  // per day, today expanded by default and the rest collapsed. Each card is the
+  // unified per-day view: AI report (summary + Key activity) AND that day's
+  // Discord digest, so it needs the DiscordMessagesViewModel.
+  List<Widget> _dayCards(
+    DailyReportViewModel report,
+    DiscordMessagesViewModel discord,
+  ) {
     final todayKey = DailyReportViewModel.dayKeyOf(DateTime.now());
     final days = report.rangeDays;
     return [
@@ -274,6 +285,7 @@ class _SummaryTabState extends State<_SummaryTab> {
           child: _DayReportCard(
             key: ValueKey(DailyReportViewModel.dayKeyOf(days[i])),
             vm: report,
+            discord: discord,
             day: days[i],
             initiallyExpanded:
                 DailyReportViewModel.dayKeyOf(days[i]) == todayKey,
@@ -284,60 +296,56 @@ class _SummaryTabState extends State<_SummaryTab> {
     ];
   }
 
+  void _openAskChat(BuildContext context, AskRepoViewModel chat) {
+    Navigator.of(context).push(_slideUpRoute(
+      ChangeNotifierProvider<AskRepoViewModel>.value(
+        value: chat,
+        child: _AskRepoFullScreenWrapper(controller: _controller),
+      ),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Consumer2<DailyReportViewModel, AskRepoViewModel>(
-      builder: (ctx, report, chat, _) {
+    final s = context.l10n;
+    // Split into independent Consumers so the (potentially expensive) day report
+    // list only rebuilds when its data (DailyReportViewModel /
+    // DiscordMessagesViewModel) changes, NOT when AskRepoViewModel fires
+    // notifyListeners (which happens frequently during live trace streaming).
+    return Consumer<DailyReportViewModel>(
+      builder: (ctx, report, _) {
         if (report.loading) {
           return const Center(child: CircularProgressIndicator());
         }
-        // Default: expanded for single-day, collapsed for multi-day ranges so
-        // the chat area gets more room.
-        final expanded = _reportsExpanded ?? report.isSingleDay;
-        // Cap the day-report panel at ~42% of the viewport so many days never
-        // push the chat off screen — it scrolls internally instead (D2).
-        final panelMaxHeight = MediaQuery.of(ctx).size.height * 0.42;
-        // Count how many days are currently generating (for progress label).
-        final generatingCount = report.rangeDays
-            .where((d) => report.isGeneratingDay(
-                DailyReportViewModel.dayKeyOf(d)))
-            .length;
         return Column(
           children: [
-            // ---- Upper panel: collapsible, fixed-height, internally scrollable
-            _ReportsPanel(
-              dayCount: report.rangeDays.length,
-              expanded: expanded,
-              maxHeight: panelMaxHeight,
-              generatingCount: generatingCount,
-              onToggle: () =>
-                  setState(() => _reportsExpanded = !expanded),
-              cards: _dayCards(report),
-            ),
-            const Divider(height: 1),
-            // ---- Lower area: the global "Ask GitSync" chat, own scroll. Drives
-            // the shared AskRepoViewModel (same instance as the FAB sheet), so
-            // its transcript is repo-wide and shared across both entry points.
+            // ---- Unified per-day cards: AI report + that day's Discord digest.
+            // Wrapped in its own Consumer so the digest data drives rebuilds too,
+            // without coupling to the chat VM.
             Expanded(
-              child: ListView(
-                controller: _scrollController,
-                padding: const EdgeInsets.all(AppDimens.spacingMd),
-                children: [
-                  const _AskRepoHeader(),
-                  const SizedBox(height: AppDimens.spacingSm),
-                  if (chat.turns.isEmpty)
-                    const AskRepoEmptyHint()
-                  else
-                    for (final turn in chat.turns) AskRepoTurnView(turn: turn),
-                  if (chat.sending) AskRepoLiveTraceStrip(steps: chat.liveSteps),
-                ],
+              child: Consumer<DiscordMessagesViewModel>(
+                builder: (ctx2, discord, _) => ListView(
+                  padding: const EdgeInsets.all(AppDimens.spacingMd),
+                  children: _dayCards(report, discord),
+                ),
               ),
             ),
-            AskRepoInputBar(
-              controller: _controller,
-              sending: chat.sending,
-              onSend: () => _send(chat),
-              onNewSession: chat.sending ? null : chat.newSession,
+            // ---- Chat preview bar: only rebuilds on chat VM changes.
+            Consumer<AskRepoViewModel>(
+              builder: (ctx2, chat, _) {
+                final lastAssistant = chat.turns
+                    .where((t) => !t.isUser)
+                    .toList();
+                final lastMsg = lastAssistant.isEmpty
+                    ? null
+                    : lastAssistant.last.content;
+                return ChatPreviewBar(
+                  title: s.askRepoTitle,
+                  lastMessage: lastMsg,
+                  sending: chat.sending,
+                  onTap: () => _openAskChat(ctx2, chat),
+                );
+              },
             ),
           ],
         );
@@ -346,147 +354,60 @@ class _SummaryTabState extends State<_SummaryTab> {
   }
 }
 
-// D2: the upper day-report panel. A tappable header row ("日報" + day count +
-// chevron) collapses/expands the whole panel; when expanded the day cards live
-// in a fixed-height, internally scrollable region (so many days don't push the
-// chat off screen). The day cards keep their own per-card collapse.
-class _ReportsPanel extends StatefulWidget {
-  const _ReportsPanel({
-    required this.dayCount,
-    required this.expanded,
-    required this.maxHeight,
-    required this.onToggle,
-    required this.cards,
-    this.generatingCount = 0,
-  });
-
-  final int dayCount;
-  final bool expanded;
-  final double maxHeight;
-  final VoidCallback onToggle;
-  final List<Widget> cards;
-  final int generatingCount;
-
-  @override
-  State<_ReportsPanel> createState() => _ReportsPanelState();
-}
-
-class _ReportsPanelState extends State<_ReportsPanel> {
-  final ScrollController _scrollController = ScrollController();
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
+/// Wrapper pushed via Navigator.push that re-provides the same
+/// [AskRepoViewModel] instance so [ChatFullScreen] can rebuild on changes.
+/// Uses develop's shared full-screen chat architecture; the single remaining
+/// "Ask GitSync" chat passes the app-locale language NAME (D9) so the answer
+/// comes back in the user's language (on this page that's Chinese).
+class _AskRepoFullScreenWrapper extends StatelessWidget {
+  const _AskRepoFullScreenWrapper({required this.controller});
+  final TextEditingController controller;
 
   @override
   Widget build(BuildContext context) {
     final s = context.l10n;
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Semantics(
-          expanded: widget.expanded,
-          button: true,
-          label: s.dailyReport,
-          child: InkWell(
-            onTap: widget.onToggle,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppDimens.spacingMd,
-                AppDimens.spacingSm,
-                AppDimens.spacingSm,
-                AppDimens.spacingSm,
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.summarize_outlined, size: 20, color: scheme.primary),
-                  const SizedBox(width: AppDimens.spacingSm),
-                  Text(
-                    s.dailyReport,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(width: AppDimens.spacingSm),
-                  _CountChip(
-                    icon: Icons.calendar_today_outlined,
-                    label: '${widget.dayCount}',
-                  ),
-                  if (widget.generatingCount > 0) ...[
-                    const SizedBox(width: AppDimens.spacingSm),
-                    Text(
-                      s.generatingDayProgress(
-                        widget.dayCount - widget.generatingCount,
-                        widget.dayCount,
-                      ),
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: scheme.primary,
-                      ),
-                    ),
-                  ],
-                  const Spacer(),
-                  AnimatedRotation(
-                    turns: widget.expanded ? 0.5 : 0,
-                    duration: AppMotion.short,
-                    child: const Icon(Icons.expand_more),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        if (widget.expanded)
-          ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: widget.maxHeight),
-            // Scrollbar pinned flush to the panel's far-right edge: the ListView
-            // carries no right padding, so the scrollbar gutter sits at the
-            // outermost right. Each child gets its own right inset instead.
-            child: Scrollbar(
-              controller: _scrollController,
-              thumbVisibility: true,
-              child: ListView(
-                controller: _scrollController,
-                padding: const EdgeInsets.fromLTRB(
-                  AppDimens.spacingMd,
-                  0,
-                  0,
-                  AppDimens.spacingMd,
-                ),
-                shrinkWrap: true,
-                children: [
-                  for (final card in widget.cards)
-                    Padding(
-                      padding: const EdgeInsets.only(
-                        right: AppDimens.spacingSm,
-                      ),
-                      child: card,
-                    ),
-                ],
-              ),
-            ),
-          ),
-      ],
+    return Consumer<AskRepoViewModel>(
+      builder: (ctx, chat, _) {
+        return ChatFullScreen(
+          title: s.askRepoTitle,
+          turnWidgets: [
+            for (final turn in chat.turns) AskRepoTurnView(turn: turn),
+          ],
+          emptyHint: const ChatEmptyHint(),
+          sending: chat.sending,
+          liveSteps: chat.liveSteps,
+          controller: controller,
+          onSend: () {
+            final text = controller.text;
+            if (text.trim().isEmpty || chat.sending) return;
+            controller.clear();
+            // D9: pass the app-locale language NAME (Chinese on this page) so the
+            // answer returns in the user's language.
+            chat.ask(text, language: ctx.l10n.backendLanguage);
+          },
+          onNewSession: chat.sending ? null : chat.newSession,
+        );
+      },
     );
   }
 }
 
-// One collapsible per-day report card (mirrors _DigestCard's interaction:
-// tappable header + animated chevron + conditional body). Collapsed shows the
-// date and a one-line summary; expanded shows the full report (summary +
-// highlights + commit rollup + contributions) with a regenerate action, or a
-// "產生日報" generate button when the day has no report yet.
+// One collapsible unified per-day card (D1). Collapsed shows the date and a
+// one-line summary; expanded shows the full AI report (summary + merged "Key
+// activity") followed by the day's Discord digest (markdown +
+// referenced messages + lock / AI-adjust). A day may have a report, a digest,
+// both, or neither — each section renders only when its data exists, and the
+// "Generate report" button shows when there's no report yet.
 class _DayReportCard extends StatefulWidget {
   const _DayReportCard({
     super.key,
     required this.vm,
+    required this.discord,
     required this.day,
     required this.initiallyExpanded,
   });
   final DailyReportViewModel vm;
+  final DiscordMessagesViewModel discord;
   final DateTime day;
   final bool initiallyExpanded;
 
@@ -504,10 +425,23 @@ class _DayReportCardState extends State<_DayReportCard> {
     return _dayKeyStr == todayKey ? '$today · $_dayKeyStr' : _dayKeyStr;
   }
 
-  String _summaryLine(DailyReport? report, String noReportYet) {
-    if (report == null || report.isEmpty) return noReportYet;
-    final first = report.summary.split('\n').first.trim();
-    return first.isEmpty ? noReportYet : first;
+  String _summaryLine(
+    DailyReport? report,
+    DiscordDigest? digest,
+    String noContentYet,
+  ) {
+    if (report != null && !report.isEmpty) {
+      final first = report.summary.split('\n').first.trim();
+      if (first.isNotEmpty) return first;
+    }
+    if (digest != null && digest.markdown.trim().isNotEmpty) {
+      final first = digest.markdown
+          .split('\n')
+          .map((l) => l.replaceAll(RegExp(r'[#*>`-]'), '').trim())
+          .firstWhere((l) => l.isNotEmpty, orElse: () => '');
+      if (first.isNotEmpty) return first;
+    }
+    return noContentYet;
   }
 
   @override
@@ -519,6 +453,7 @@ class _DayReportCardState extends State<_DayReportCard> {
     final report = vm.reportForDay(_dayKeyStr);
     final hasReport = report != null && !report.isEmpty;
     final generating = vm.isGeneratingDay(_dayKeyStr);
+    final digest = widget.discord.digestForDate(_dayKeyStr);
 
     return AnimatedContainer(
       duration: AppMotion.medium,
@@ -574,7 +509,7 @@ class _DayReportCardState extends State<_DayReportCard> {
                           ),
                           if (!_expanded)
                             Text(
-                              _summaryLine(report, s.noReportYet),
+                              _summaryLine(report, digest, s.noReportYet),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.bodySmall?.copyWith(
@@ -589,6 +524,13 @@ class _DayReportCardState extends State<_DayReportCard> {
                       _CountChip(
                         icon: Icons.commit_outlined,
                         label: '${report.commitCount}',
+                      ),
+                    ],
+                    if (digest != null) ...[
+                      const SizedBox(width: AppDimens.spacingSm),
+                      _CountChip(
+                        icon: Icons.forum_outlined,
+                        label: '${digest.messageCount}',
                       ),
                     ],
                     AnimatedRotation(
@@ -614,15 +556,29 @@ class _DayReportCardState extends State<_DayReportCard> {
                       AppDimens.spacingMd,
                       AppDimens.spacingMd,
                     ),
-                    child: hasReport
-                        ? _DayReportBody(vm: vm, day: widget.day, report: report)
-                        : _DayReportEmpty(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // ---- AI report half ----
+                        if (hasReport)
+                          _DayReportBody(
+                            vm: vm,
+                            day: widget.day,
+                            report: report,
+                          )
+                        else
+                          _DayReportEmpty(
                             generating: generating,
                             onGenerate: () => vm.generateDay(
                               widget.day,
                               language: context.l10n.backendLanguage,
                             ),
                           ),
+                        // ---- Discord digest half (only when the day has one) --
+                        if (digest != null)
+                          _DayDigestSection(digest: digest, vm: widget.discord),
+                      ],
+                    ),
                   )
                 : const SizedBox(width: double.infinity),
           ),
@@ -632,9 +588,9 @@ class _DayReportCardState extends State<_DayReportCard> {
   }
 }
 
-// The expanded body of a day card that HAS a report: summary text, a
-// regenerate action, then the existing highlights / rollup / contributions
-// content widgets (reused, not duplicated).
+// The expanded report half of a unified day card: summary text, a regenerate
+// action, then the "Key activity" card (highlights + blockers, D8). The
+// per-member contributions card was removed (D10).
 class _DayReportBody extends StatelessWidget {
   const _DayReportBody({
     required this.vm,
@@ -661,9 +617,9 @@ class _DayReportBody extends StatelessWidget {
             onPressed: generating
                 ? null
                 : () => vm.generateDay(
-                      day,
-                      language: context.l10n.backendLanguage,
-                    ),
+                    day,
+                    language: context.l10n.backendLanguage,
+                  ),
             icon: generating
                 ? const SizedBox(
                     width: 16,
@@ -674,9 +630,9 @@ class _DayReportBody extends StatelessWidget {
             label: Text(generating ? s.generating : s.regenerateReport),
           ),
         ),
-        _HighlightsCard(report: report),
-        _CommitRollupCard(report: report),
-        _ContributionsCard(report: report),
+        // D8: highlights + blockers in ONE card (commit rollup dropped).
+        // D10: per-member contributions card removed from the daily report.
+        _KeyActivityCard(report: report),
       ],
     );
   }
@@ -695,10 +651,7 @@ class _DayReportEmpty extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          s.dayNoReportHint,
-          style: theme.textTheme.bodyMedium,
-        ),
+        Text(s.dayNoReportHint, style: theme.textTheme.bodyMedium),
         const SizedBox(height: AppDimens.spacingMd),
         Align(
           alignment: Alignment.centerLeft,
@@ -719,20 +672,192 @@ class _DayReportEmpty extends StatelessWidget {
   }
 }
 
-// Highlights (wins) + blockers, each a labelled list. Renders nothing for an
-// empty section so the card stays compact.
-class _HighlightsCard extends StatelessWidget {
-  const _HighlightsCard({required this.report});
+// D1: the Discord-digest half of a unified day card. Renders inline (no nested
+// card — it already lives inside the day card) under a divided "Discord digest"
+// sub-heading: the digest markdown, the referenced-messages expander, and the
+// lock / AI-adjust controls (carried over from the former _DigestCard). All
+// digest mutations go through DiscordMessagesViewModel; light/dark inherited.
+class _DayDigestSection extends StatefulWidget {
+  const _DayDigestSection({required this.digest, required this.vm});
+  final DiscordDigest digest;
+  final DiscordMessagesViewModel vm;
+
+  @override
+  State<_DayDigestSection> createState() => _DayDigestSectionState();
+}
+
+class _DayDigestSectionState extends State<_DayDigestSection> {
+  final _adjustController = TextEditingController();
+
+  @override
+  void dispose() {
+    _adjustController.dispose();
+    super.dispose();
+  }
+
+  void _submitAdjust() {
+    final text = _adjustController.text;
+    if (text.trim().isEmpty || widget.vm.isEditingDigest(widget.digest.date)) {
+      return;
+    }
+    _adjustController.clear();
+    widget.vm.editDigest(widget.digest.date, text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.l10n;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final digest = widget.digest;
+    final vm = widget.vm;
+    final locked = digest.locked;
+    final editing = vm.isEditingDigest(digest.date);
+    final toggling = vm.isTogglingLock(digest.date);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: AppDimens.spacingMd),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Divider(height: 1),
+          const SizedBox(height: AppDimens.spacingSm),
+          // ---- Sub-heading: "Discord digest" + lock toggle ----
+          Row(
+            children: [
+              Icon(Icons.forum_outlined, size: 18, color: scheme.secondary),
+              const SizedBox(width: AppDimens.spacingXs),
+              Text(
+                s.discordDigest,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+              if (locked) ...[
+                const SizedBox(width: AppDimens.spacingXs),
+                Icon(Icons.lock, size: 14, color: scheme.primary),
+              ],
+              const Spacer(),
+              IconButton(
+                tooltip: locked ? s.unlockDigest : s.lockDigest,
+                visualDensity: VisualDensity.compact,
+                onPressed: toggling ? null : () => vm.toggleLock(digest),
+                icon: toggling
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : AnimatedSwitcher(
+                        duration: AppMotion.medium,
+                        transitionBuilder: (child, anim) => ScaleTransition(
+                          scale: anim,
+                          child: RotationTransition(turns: anim, child: child),
+                        ),
+                        child: Icon(
+                          locked ? Icons.lock : Icons.lock_open,
+                          key: ValueKey(locked),
+                          color: locked ? scheme.primary : null,
+                        ),
+                      ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppDimens.spacingXs),
+          // ---- Digest markdown (D3: prompt now prefers a flat bullet list) ----
+          SizedBox(
+            width: double.infinity,
+            child: MarkdownView(data: digest.markdown),
+          ),
+          const SizedBox(height: AppDimens.spacingSm),
+          // ---- Lock hint OR the AI-adjust input ----
+          if (locked)
+            Row(
+              children: [
+                Icon(Icons.lock_outline, size: 16, color: scheme.outline),
+                const SizedBox(width: AppDimens.spacingXs),
+                Expanded(
+                  child: Text(
+                    s.digestLockedHint,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.outline,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          else
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _adjustController,
+                    minLines: 1,
+                    maxLines: 3,
+                    enabled: !editing,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) => _submitAdjust(),
+                    decoration: InputDecoration(
+                      hintText: s.adjustSummaryHint,
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppDimens.spacingSm),
+                IconButton.filledTonal(
+                  tooltip: s.adjustWithAi,
+                  onPressed: editing ? null : _submitAdjust,
+                  icon: editing
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.auto_fix_high),
+                ),
+              ],
+            ),
+          if (editing) ...[
+            const SizedBox(height: AppDimens.spacingXs),
+            // Live agent "thinking" steps while the digest is rewritten.
+            AskRepoLiveTraceStrip(steps: vm.liveSteps),
+          ],
+          if (vm.digestError != null) ...[
+            const SizedBox(height: AppDimens.spacingXs),
+            Text(
+              s.couldNotUpdateDigest,
+              style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// D8: the "Key activity" card — highlights (wins) + blockers under ONE header.
+// (The commit-message rollup was dropped per D8; commitThemes can still exist in
+// the data, it's just not rendered here.) Each sub-section renders only when it
+// has data, and the whole card disappears when there's nothing, so it stays
+// compact. Light/dark are inherited from SectionCard + colorScheme.
+class _KeyActivityCard extends StatelessWidget {
+  const _KeyActivityCard({required this.report});
   final DailyReport report;
 
   @override
   Widget build(BuildContext context) {
-    if (report.highlights.isEmpty && report.blockers.isEmpty) {
+    final hasHighlights = report.highlights.isNotEmpty;
+    final hasBlockers = report.blockers.isNotEmpty;
+    if (!hasHighlights && !hasBlockers) {
       return const SizedBox.shrink();
     }
     final s = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+
     return Padding(
       padding: const EdgeInsets.only(top: AppDimens.spacingMd),
       child: SectionCard(
@@ -741,275 +866,40 @@ class _HighlightsCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(
-                  Icons.emoji_events_outlined,
-                  size: 20,
+                Icon(Icons.bolt_outlined, size: 20, color: scheme.primary),
+                const SizedBox(width: AppDimens.spacingSm),
+                Text(
+                  s.keyActivity,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppDimens.spacingSm),
+            // ---- Highlights ----
+            if (hasHighlights) ...[
+              for (final h in report.highlights)
+                _BulletRow(
+                  icon: Icons.check_circle_outline,
                   color: scheme.primary,
+                  text: h,
                 ),
-                const SizedBox(width: AppDimens.spacingSm),
-                Text(
-                  s.highlights,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppDimens.spacingSm),
-            for (final h in report.highlights)
-              _BulletRow(
-                icon: Icons.check_circle_outline,
-                color: scheme.primary,
-                text: h,
-              ),
-            if (report.highlights.isNotEmpty && report.blockers.isNotEmpty)
-              const SizedBox(height: AppDimens.spacingSm),
-            for (final b in report.blockers)
-              _BulletRow(
-                icon: Icons.report_problem_outlined,
-                color: scheme.error,
-                text: b,
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// Commit-message rollup: the day's commits grouped into AI-labelled themes.
-class _CommitRollupCard extends StatelessWidget {
-  const _CommitRollupCard({required this.report});
-  final DailyReport report;
-
-  @override
-  Widget build(BuildContext context) {
-    if (report.commitThemes.isEmpty) return const SizedBox.shrink();
-    final s = context.l10n;
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(top: AppDimens.spacingMd),
-      child: SectionCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.merge_type_outlined,
-                  size: 20,
-                  color: scheme.tertiary,
-                ),
-                const SizedBox(width: AppDimens.spacingSm),
-                Text(
-                  s.commitRollup,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppDimens.spacingSm),
-            for (final t in report.commitThemes)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppDimens.spacingSm),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            t.theme,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          if (t.summary.isNotEmpty)
-                            Text(
-                              t.summary,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: scheme.onSurfaceVariant,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    if (t.commitCount > 0) ...[
-                      const SizedBox(width: AppDimens.spacingSm),
-                      _CountChip(
-                        icon: Icons.commit_outlined,
-                        label: '${t.commitCount}',
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// Per-member contribution chips (tasks done + commits), keyed as the backend
-// reports them (userId, or author login for unmatched commits).
-class _ContributionsCard extends StatefulWidget {
-  const _ContributionsCard({required this.report});
-  final DailyReport report;
-
-  @override
-  State<_ContributionsCard> createState() => _ContributionsCardState();
-}
-
-class _ContributionsCardState extends State<_ContributionsCard> {
-  final UserRepository _users = UserRepository();
-  // UID -> display name, filled in for members the report named only by UID.
-  Map<String, String> _resolved = {};
-
-  @override
-  void initState() {
-    super.initState();
-    _resolveNames();
-  }
-
-  @override
-  void didUpdateWidget(covariant _ContributionsCard old) {
-    super.didUpdateWidget(old);
-    if (old.report != widget.report) _resolveNames();
-  }
-
-  // The report usually stores only the Firebase UID for roster members, so look
-  // the unnamed ones up in their user doc (UID -> githubLogin / name). Without
-  // this the chip shows a raw 28-char UID instead of the GitHub handle.
-  Future<void> _resolveNames() async {
-    final entries = widget.report.memberContributions.entries
-        .where((e) => e.value.tasksDone > 0 || e.value.commits > 0);
-    final out = <String, String>{};
-    for (final e in entries) {
-      if (_reportLabel(e) != null) continue; // already named by the report
-      try {
-        final u = await _users.getUser(e.key);
-        if (u == null) continue;
-        final name = u.githubLogin.isNotEmpty
-            ? u.githubLogin
-            : (u.name.isNotEmpty ? u.name : null);
-        if (name != null) out[e.key] = name;
-      } catch (_) {
-        // leave unresolved -> UID fallback
-      }
-    }
-    if (mounted && out.isNotEmpty) setState(() => _resolved = out);
-  }
-
-  // Name the report itself carries (githubLogin -> displayName), or null.
-  static String? _reportLabel(MapEntry<String, MemberContribution> e) {
-    final login = e.value.githubLogin;
-    if (login != null && login.isNotEmpty) return login;
-    final name = e.value.displayName;
-    if (name != null && name.isNotEmpty) return name;
-    return null;
-  }
-
-  // Final label: report name -> resolved user-doc name -> raw key (UID).
-  String _memberLabel(MapEntry<String, MemberContribution> e) =>
-      _reportLabel(e) ?? _resolved[e.key] ?? e.key;
-
-  static String _initial(String key) =>
-      key.isEmpty ? '?' : key.substring(0, 1).toUpperCase();
-
-  @override
-  Widget build(BuildContext context) {
-    final report = widget.report;
-    final entries = report.memberContributions.entries
-        .where((e) => e.value.tasksDone > 0 || e.value.commits > 0)
-        .toList();
-    if (entries.isEmpty) return const SizedBox.shrink();
-    final s = context.l10n;
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(top: AppDimens.spacingMd),
-      child: SectionCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.groups_outlined,
-                  size: 20,
-                  color: scheme.secondary,
-                ),
-                const SizedBox(width: AppDimens.spacingSm),
-                Text(
-                  s.contributions,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppDimens.spacingSm),
-              Wrap(
-                spacing: AppDimens.spacingSm,
-                runSpacing: AppDimens.spacingSm,
-                children: [
-                  for (final e in entries)
-                    Semantics(
-                      label: '${_memberLabel(e)}: '
-                          '${e.value.tasksDone} tasks, '
-                          '${e.value.commits} commits',
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppDimens.spacingSm,
-                          vertical: AppDimens.spacingXs,
-                        ),
-                        decoration: BoxDecoration(
-                          color: scheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            CircleAvatar(
-                              radius: 10,
-                              backgroundColor: scheme.primaryContainer,
-                              child: Text(
-                                _initial(_memberLabel(e)),
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: scheme.onPrimaryContainer,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: AppDimens.spacingXs),
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 120),
-                              child: Text(
-                                _memberLabel(e),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.labelMedium,
-                              ),
-                            ),
-                            const SizedBox(width: AppDimens.spacingXs),
-                            Text(
-                              '·  ${e.value.tasksDone}✓ ${e.value.commits}⎇',
-                              style: theme.textTheme.labelMedium,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                ],
-              ),
             ],
-          ),
+            // ---- Blockers ----
+            if (hasBlockers) ...[
+              if (hasHighlights) const SizedBox(height: AppDimens.spacingSm),
+              for (final b in report.blockers)
+                _BulletRow(
+                  icon: Icons.report_problem_outlined,
+                  color: scheme.error,
+                  text: b,
+                ),
+            ],
+          ],
         ),
-      );
+      ),
+    );
   }
 }
 
@@ -1063,45 +953,6 @@ class _CountChip extends StatelessWidget {
           Text(label, style: Theme.of(context).textTheme.labelSmall),
         ],
       ),
-    );
-  }
-}
-
-// The global "Ask GitSync" section header for the Summary tab's chat. Repo-wide
-// framing (not date-scoped) — reuses the shared `askRepoTitle` string.
-class _AskRepoHeader extends StatelessWidget {
-  const _AskRepoHeader();
-
-  @override
-  Widget build(BuildContext context) {
-    final s = context.l10n;
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(Icons.auto_awesome, size: 20, color: scheme.primary),
-            const SizedBox(width: AppDimens.spacingSm),
-            Text(
-              s.askRepoTitle,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        Padding(
-          padding: const EdgeInsets.only(left: 28),
-          child: Text(
-            s.askRepoScope,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }
@@ -1222,16 +1073,15 @@ class _CommitsTab extends StatelessWidget {
                         ? '${_monthDay(vm.rangeStart!)} ~ ${_monthDay(vm.rangeEnd!)}'
                         : s.recent50,
                     style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                        ),
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                   if (vm.hasRange) ...[
                     const SizedBox(width: AppDimens.spacingSm),
                     ActionChip(
                       avatar: const Icon(Icons.restore, size: 16),
                       label: Text(s.recent50),
-                      onPressed: () =>
-                          ctx.read<IntelRangeViewModel>().clear(),
+                      onPressed: () => ctx.read<IntelRangeViewModel>().clear(),
                       visualDensity: VisualDensity.compact,
                     ),
                   ],
@@ -1336,34 +1186,34 @@ class _CommitListViewState extends State<_CommitListView> {
                       : null,
                 )
               : filtered.isEmpty
-                  ? EmptyState(
-                      icon: Icons.filter_list_off_outlined,
-                      title: s.noMatchingCommits,
-                      message: s.noCommitsMatchFilters,
-                      action: ActionChip(
-                        avatar: const Icon(Icons.clear, size: 16),
-                        label: Text(s.clearFilters),
-                        onPressed: vm.clearFilters,
+              ? EmptyState(
+                  icon: Icons.filter_list_off_outlined,
+                  title: s.noMatchingCommits,
+                  message: s.noCommitsMatchFilters,
+                  action: ActionChip(
+                    avatar: const Icon(Icons.clear, size: 16),
+                    label: Text(s.clearFilters),
+                    onPressed: vm.clearFilters,
+                  ),
+                )
+              : Builder(
+                  builder: (ctx) {
+                    final items = _items(filtered);
+                    return ListView.builder(
+                      padding: const EdgeInsets.only(
+                        bottom: AppDimens.spacingMd,
                       ),
-                    )
-                  : Builder(
-                      builder: (ctx) {
-                        final items = _items(filtered);
-                        return ListView.builder(
-                          padding: const EdgeInsets.only(
-                            bottom: AppDimens.spacingMd,
-                          ),
-                          itemCount: items.length,
-                          itemBuilder: (ctx, i) {
-                            final item = items[i];
-                            if (item.isHeader) {
-                              return _DayHeader(label: item.dayLabel!);
-                            }
-                            return _CommitListRow(commit: item.commit!, vm: vm);
-                          },
-                        );
+                      itemCount: items.length,
+                      itemBuilder: (ctx, i) {
+                        final item = items[i];
+                        if (item.isHeader) {
+                          return _DayHeader(label: item.dayLabel!);
+                        }
+                        return _CommitListRow(commit: item.commit!, vm: vm);
                       },
-                    ),
+                    );
+                  },
+                ),
         ),
       ],
     );
@@ -1843,7 +1693,8 @@ class _BranchGraphRow extends StatelessWidget {
             break;
           }
         }
-        final commit = full ??
+        final commit =
+            full ??
             Commit(
               sha: g.sha,
               repoId: '',
@@ -1938,8 +1789,8 @@ class _BranchGraphRow extends StatelessWidget {
                               (g.authorLogin ?? g.authorName).isEmpty
                                   ? '?'
                                   : (g.authorLogin ?? g.authorName)
-                                      .substring(0, 1)
-                                      .toUpperCase(),
+                                        .substring(0, 1)
+                                        .toUpperCase(),
                               style: theme.textTheme.labelSmall?.copyWith(
                                 fontSize: 9,
                                 color: scheme.onSurfaceVariant,
@@ -2003,10 +1854,9 @@ class _GraphChip extends StatelessWidget {
           const SizedBox(width: 3),
           Text(
             label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  fontSize: 10,
-                  color: foreground,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.labelSmall?.copyWith(fontSize: 10, color: foreground),
           ),
         ],
       ),
@@ -2040,8 +1890,9 @@ class _GraphLanePainter extends CustomPainter {
   // Color a lane by the BRANCH its line belongs to (stable across reloads);
   // fall back to the lane-index color when the branch is unknown.
   Color _colorOf(int lane) {
-    final branch =
-        lane < row.laneBranches.length ? row.laneBranches[lane] : null;
+    final branch = lane < row.laneBranches.length
+        ? row.laneBranches[lane]
+        : null;
     if (branch != null && branch.isNotEmpty) {
       return palette[branchColorIndex(branch, palette.length)];
     }
@@ -2102,11 +1953,7 @@ class _GraphLanePainter extends CustomPainter {
 
     // Node dot (ring + fill); merge commits get a hollow center.
     canvas.drawCircle(Offset(nodeX, midY), 5.5, Paint()..color = ringColor);
-    canvas.drawCircle(
-      Offset(nodeX, midY),
-      4,
-      Paint()..color = _nodeColor,
-    );
+    canvas.drawCircle(Offset(nodeX, midY), 4, Paint()..color = _nodeColor);
     if (row.commit.isMerge) {
       canvas.drawCircle(Offset(nodeX, midY), 1.8, Paint()..color = ringColor);
     }
@@ -2114,9 +1961,7 @@ class _GraphLanePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_GraphLanePainter old) =>
-      old.row != row ||
-      old.maxLanes != maxLanes ||
-      old.ringColor != ringColor;
+      old.row != row || old.maxLanes != maxLanes || old.ringColor != ringColor;
 }
 
 // Rail-tap legend (D3): lists the branches whose lines pass through this row —
@@ -2373,1026 +2218,6 @@ String _dayKey(DateTime d) =>
 String _monthDay(DateTime d) =>
     '${d.month.toString().padLeft(2, '0')}/${d.day.toString().padLeft(2, '0')}';
 
-// Date-range button label: shows the saved range, the busy state, or a prompt.
-String _rangeLabel(DiscordMessagesViewModel vm, AppStrings s) {
-  if (vm.settingRange) return s.saving;
-  final start = vm.rangeStart;
-  final end = vm.rangeEnd;
-  if (start != null && end != null) {
-    return '${_monthDay(start)} ~ ${_monthDay(end)}';
-  }
-  return s.dateRangeLabel;
-}
-
-// Discord tab — a collapsible, fixed-height digest panel (mirrors the Summary
-// tab's day-report panel, D4) on top, and the AI chat over the team's Discord
-// messages below. The shared AppBar Refresh fills the window's digests; the
-// shared range scopes both the digest display and the chat reads. No per-tab
-// refresh / date / backfill controls (D3) — just a read-only scope label.
-class _DiscordTab extends StatefulWidget {
-  const _DiscordTab();
-
-  @override
-  State<_DiscordTab> createState() => _DiscordTabState();
-}
-
-class _DiscordTabState extends State<_DiscordTab> {
-  // Whether the upper digest panel is expanded. Collapsed shows just its header
-  // row, giving the chat the full height.
-  bool _digestExpanded = true;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = context.l10n;
-    return Consumer<DiscordMessagesViewModel>(
-      builder: (ctx, vm, _) {
-        if (vm.loading) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        // Show a one-shot "Updated" toast once a refresh round-trip completes.
-        if (vm.justUpdated) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!ctx.mounted) return;
-            vm.acknowledgeUpdated();
-            ScaffoldMessenger.of(
-              ctx,
-            ).showSnackBar(SnackBar(content: Text(s.updated)));
-          });
-        }
-        // Cap the digest panel at ~45% of the viewport so many days never push
-        // the chat off screen — it scrolls internally instead (D4).
-        final panelMaxHeight = MediaQuery.of(ctx).size.height * 0.45;
-        return Column(
-          children: [
-            _DigestPanel(
-              vm: vm,
-              expanded: _digestExpanded,
-              maxHeight: panelMaxHeight,
-              onToggle: () =>
-                  setState(() => _digestExpanded = !_digestExpanded),
-            ),
-            const Divider(height: 1),
-            const Expanded(child: _DiscordChat()),
-          ],
-        );
-      },
-    );
-  }
-}
-
-// D4: the upper digest panel. A tappable header row ('Discord digest' + day
-// count + chevron) collapses/expands the whole panel; when expanded the per-day
-// digest cards live in a fixed-height, internally scrollable region. Mirrors
-// _ReportsPanel. The per-day _DigestCards are unchanged inside.
-class _DigestPanel extends StatefulWidget {
-  const _DigestPanel({
-    required this.vm,
-    required this.expanded,
-    required this.maxHeight,
-    required this.onToggle,
-  });
-
-  final DiscordMessagesViewModel vm;
-  final bool expanded;
-  final double maxHeight;
-  final VoidCallback onToggle;
-
-  @override
-  State<_DigestPanel> createState() => _DigestPanelState();
-}
-
-class _DigestPanelState extends State<_DigestPanel> {
-  final ScrollController _scrollController = ScrollController();
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = context.l10n;
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final vm = widget.vm;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Semantics(
-          expanded: widget.expanded,
-          button: true,
-          label: s.discordDigest,
-          child: InkWell(
-          onTap: widget.onToggle,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppDimens.spacingMd,
-              AppDimens.spacingSm,
-              AppDimens.spacingSm,
-              AppDimens.spacingSm,
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.forum_outlined, size: 20, color: scheme.primary),
-                const SizedBox(width: AppDimens.spacingSm),
-                Text(
-                  s.discordDigest,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(width: AppDimens.spacingSm),
-                _CountChip(
-                  icon: Icons.calendar_today_outlined,
-                  label: '${vm.digests.length}',
-                ),
-                const SizedBox(width: AppDimens.spacingSm),
-                // Read-only scope label — the saved backfill range (or a "saving"
-                // spinner). Refresh + range are now the shared AppBar actions.
-                if (vm.settingRange)
-                  const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                else
-                  Flexible(
-                    child: Text(
-                      _rangeLabel(vm, s),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                const Spacer(),
-                AnimatedRotation(
-                  turns: widget.expanded ? 0.5 : 0,
-                  duration: AppMotion.short,
-                  child: const Icon(Icons.expand_more),
-                ),
-              ],
-            ),
-          ),
-        ),
-        ),
-        if (widget.expanded)
-          ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: widget.maxHeight),
-            child: vm.digests.isEmpty
-                ? Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppDimens.spacingMd,
-                      0,
-                      AppDimens.spacingMd,
-                      AppDimens.spacingMd,
-                    ),
-                    child: Text(
-                      s.noDigestInRange,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  )
-                // Scrollbar pinned flush to the panel's far-right edge: the
-                // ListView carries no right padding, so the scrollbar gutter sits
-                // at the outermost right. Each child gets its own right inset.
-                : Scrollbar(
-                    controller: _scrollController,
-                    thumbVisibility: true,
-                    child: ListView(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.fromLTRB(
-                        AppDimens.spacingMd,
-                        0,
-                        0,
-                        AppDimens.spacingMd,
-                      ),
-                      shrinkWrap: true,
-                      children: [
-                        // One digest card per day in the visible window that HAS
-                        // a digest doc (newest first). Days without a digest are
-                        // skipped.
-                        for (var i = 0; i < vm.digests.length; i++) ...[
-                          Padding(
-                            padding: const EdgeInsets.only(
-                              right: AppDimens.spacingSm,
-                            ),
-                            child: _DigestCard(
-                              key: ValueKey(vm.digests[i].date),
-                              digest: vm.digests[i],
-                              vm: vm,
-                              // Newest day expanded by default, older collapsed.
-                              initiallyExpanded: i == 0,
-                            ),
-                          ),
-                          const SizedBox(height: AppDimens.spacingMd),
-                        ],
-                      ],
-                    ),
-                  ),
-          ),
-      ],
-    );
-  }
-}
-
-/// The messages a digest references, with timestamps. Prefers the set the
-/// backend persisted on the digest doc (`sourceMessages`); for older digests
-/// written before that field existed, falls back to the day's streamed messages
-/// (filtered to the digest's Asia/Taipei day) so the panel still appears. Capped
-/// to keep the list bounded.
-List<DiscordDigestSource> _digestSources(
-  DiscordDigest digest,
-  DiscordMessagesViewModel vm,
-) {
-  if (digest.sourceMessages.isNotEmpty) return digest.sourceMessages;
-  String taipeiKey(DateTime ts) {
-    final t = ts.toUtc().add(const Duration(hours: 8));
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${t.year}-${two(t.month)}-${two(t.day)}';
-  }
-  final sameDay = vm.messages
-      .where((m) => taipeiKey(m.timestamp.toDate()) == digest.date)
-      .toList()
-    ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
-  return sameDay
-      .take(50)
-      .map((m) => DiscordDigestSource(
-            authorName: m.authorName,
-            content: m.content,
-            timestamp: m.timestamp.toDate().toLocal(),
-          ))
-      .toList();
-}
-
-// Collapsible "referenced messages" list under a digest: the messages the
-// summary was built from, each with its send time, so the user can see what was
-// discussed and WHEN (not just the outline). Collapsed by default.
-class _DigestSourceMessages extends StatelessWidget {
-  const _DigestSourceMessages({required this.sources});
-  final List<DiscordDigestSource> sources;
-
-  static String _stamp(DateTime? dt) {
-    if (dt == null) return '';
-    final d = dt.toLocal();
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${d.year}/${two(d.month)}/${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = context.l10n;
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Theme(
-      // Strip the default ExpansionTile dividers so it sits flush in the card.
-      data: theme.copyWith(dividerColor: Colors.transparent),
-      child: ExpansionTile(
-        tilePadding: EdgeInsets.zero,
-        childrenPadding: const EdgeInsets.only(bottom: AppDimens.spacingSm),
-        // ExpansionTile centers its children by default — left-align them.
-        expandedCrossAxisAlignment: CrossAxisAlignment.start,
-        expandedAlignment: Alignment.centerLeft,
-        dense: true,
-        leading: Icon(Icons.forum_outlined, size: 16, color: scheme.secondary),
-        title: Text(
-          s.digestSourceMessages(sources.length),
-          style: theme.textTheme.labelMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        children: [
-          for (final m in sources)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: RichText(
-                text: TextSpan(
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: scheme.onSurfaceVariant),
-                  children: [
-                    if (_stamp(m.timestamp).isNotEmpty)
-                      TextSpan(
-                        text: '${_stamp(m.timestamp)}  ',
-                        style: theme.textTheme.labelSmall
-                            ?.copyWith(color: scheme.onSurfaceVariant),
-                      ),
-                    TextSpan(
-                      text: '${m.authorName}: ',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    TextSpan(text: m.content),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-// collapse/expand; the lock button animates; the card border animates to a
-// "frozen" tint when locked.
-class _DigestCard extends StatefulWidget {
-  const _DigestCard({
-    super.key,
-    required this.digest,
-    required this.vm,
-    this.initiallyExpanded = true,
-  });
-  final DiscordDigest digest;
-  final DiscordMessagesViewModel vm;
-  final bool initiallyExpanded;
-
-  @override
-  State<_DigestCard> createState() => _DigestCardState();
-}
-
-class _DigestCardState extends State<_DigestCard> {
-  late bool _expanded = widget.initiallyExpanded;
-  final _adjustController = TextEditingController();
-
-  @override
-  void dispose() {
-    _adjustController.dispose();
-    super.dispose();
-  }
-
-  void _submitAdjust() {
-    final text = _adjustController.text;
-    if (text.trim().isEmpty || widget.vm.isEditingDigest(widget.digest.date)) {
-      return;
-    }
-    _adjustController.clear();
-    widget.vm.editDigest(widget.digest.date, text);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = context.l10n;
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final digest = widget.digest;
-    final vm = widget.vm;
-    final locked = digest.locked;
-    final editing = vm.isEditingDigest(digest.date);
-    final toggling = vm.isTogglingLock(digest.date);
-
-    return AnimatedContainer(
-      duration: AppMotion.medium,
-      curve: AppMotion.emphasizedDecel,
-      decoration: BoxDecoration(
-        color: theme.brightness == Brightness.light
-            ? const Color(0xFFFFFFFF)
-            : scheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-        border: Border.all(
-          color: locked
-              ? scheme.primary
-              : scheme.outlineVariant.withValues(alpha: 0.4),
-          width: locked ? 1.6 : 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: scheme.shadow.withValues(alpha: 0.06),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ---- Header (tap to collapse/expand) ----
-          Semantics(
-            expanded: _expanded,
-            button: true,
-            child: InkWell(
-            onTap: () => setState(() => _expanded = !_expanded),
-            borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppDimens.spacingMd,
-                AppDimens.spacingSm,
-                AppDimens.spacingSm,
-                AppDimens.spacingSm,
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.auto_awesome_outlined,
-                    size: 20,
-                    color: scheme.primary,
-                  ),
-                  const SizedBox(width: AppDimens.spacingSm),
-                  Text(
-                    s.discordDigestForDate(digest.date),
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  if (locked) ...[
-                    const SizedBox(width: AppDimens.spacingSm),
-                    Icon(Icons.lock, size: 16, color: scheme.primary),
-                  ],
-                  const Spacer(),
-                  // Animated lock toggle.
-                  IconButton(
-                    tooltip: locked ? s.unlockDigest : s.lockDigest,
-                    onPressed: toggling ? null : () => vm.toggleLock(digest),
-                    icon: toggling
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : AnimatedSwitcher(
-                            duration: AppMotion.medium,
-                            transitionBuilder: (child, anim) => ScaleTransition(
-                              scale: anim,
-                              child: RotationTransition(
-                                turns: anim,
-                                child: child,
-                              ),
-                            ),
-                            child: Icon(
-                              locked ? Icons.lock : Icons.lock_open,
-                              key: ValueKey(locked),
-                              color: locked ? scheme.primary : null,
-                            ),
-                          ),
-                  ),
-                  // Animated collapse chevron.
-                  AnimatedRotation(
-                    turns: _expanded ? 0.5 : 0,
-                    duration: AppMotion.short,
-                    child: const Icon(Icons.expand_more),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          ),
-          // ---- Collapsible body ----
-          AnimatedSize(
-            duration: AppMotion.short,
-            curve: AppMotion.emphasizedDecel,
-            alignment: Alignment.topCenter,
-            child: _expanded
-                ? Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppDimens.spacingMd,
-                      0,
-                      AppDimens.spacingMd,
-                      AppDimens.spacingMd,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Render the full digest inline and let the enclosing
-                        // panel ListView own the scroll. (A nested same-axis
-                        // SingleChildScrollView here captured vertical drags, so
-                        // the panel couldn't scroll past a long digest and the
-                        // card's bottom — adjust field, trace — was unreachable.)
-                        SizedBox(
-                          width: double.infinity,
-                          child: MarkdownView(data: digest.markdown),
-                        ),
-                        // The messages this digest references. Prefer the set
-                        // the backend persisted with the digest; for older
-                        // digests written before that existed, fall back to the
-                        // day's streamed messages so the panel still shows.
-                        if (_digestSources(digest, vm).isNotEmpty) ...[
-                          const SizedBox(height: AppDimens.spacingSm),
-                          _DigestSourceMessages(
-                            sources: _digestSources(digest, vm),
-                          ),
-                        ],
-                        const SizedBox(height: AppDimens.spacingSm),
-                        const Divider(height: 1),
-                        const SizedBox(height: AppDimens.spacingSm),
-                        if (locked)
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.lock_outline,
-                                size: 16,
-                                color: scheme.outline,
-                              ),
-                              const SizedBox(width: AppDimens.spacingXs),
-                              Expanded(
-                                child: Text(
-                                  s.digestLockedHint,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: scheme.outline,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          )
-                        else
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _adjustController,
-                                  minLines: 1,
-                                  maxLines: 3,
-                                  enabled: !editing,
-                                  textInputAction: TextInputAction.send,
-                                  onSubmitted: (_) => _submitAdjust(),
-                                  decoration: InputDecoration(
-                                    hintText: s.adjustSummaryHint,
-                                    border: const OutlineInputBorder(),
-                                    isDense: true,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: AppDimens.spacingSm),
-                              IconButton.filledTonal(
-                                tooltip: s.adjustWithAi,
-                                onPressed: editing ? null : _submitAdjust,
-                                icon: editing
-                                    ? const SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : const Icon(Icons.auto_fix_high),
-                              ),
-                            ],
-                          ),
-                        if (editing) ...[
-                          const SizedBox(height: AppDimens.spacingXs),
-                          // Live agent "thinking" steps while the digest is
-                          // rewritten (searching Discord, revising…).
-                          AskRepoLiveTraceStrip(steps: vm.liveSteps),
-                        ],
-                        if (vm.digestError != null) ...[
-                          const SizedBox(height: AppDimens.spacingXs),
-                          Text(
-                            s.couldNotUpdateDigest,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: scheme.error,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  )
-                : const SizedBox(width: double.infinity),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// AI chat box over the team's Discord messages. The user asks questions; the
-// backend `discordChat` callable searches the ingested messages and answers.
-// Each AI answer embeds a scrollable panel of the messages it surfaced.
-class _DiscordChat extends StatefulWidget {
-  const _DiscordChat();
-
-  @override
-  State<_DiscordChat> createState() => _DiscordChatState();
-}
-
-class _DiscordChatState extends State<_DiscordChat> {
-  final _controller = TextEditingController();
-  final _scrollController = ScrollController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  void _send(DiscordChatViewModel vm) {
-    final text = _controller.text;
-    if (text.trim().isEmpty || vm.sending) return;
-    _controller.clear();
-    vm.ask(text);
-    // Jump to the latest turn once the frame with it is laid out.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) return;
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: AppMotion.medium,
-        curve: AppMotion.emphasizedDecel,
-      );
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = context.l10n;
-    return Consumer<DiscordChatViewModel>(
-      builder: (ctx, vm, _) {
-        final turns = vm.turns;
-        return Column(
-          children: [
-            Expanded(
-              // Make the empty state scroll-safe: in a small/short window the
-              // chat's Expanded can shrink below the EmptyState's natural
-              // height, which would overflow a plain Column. LayoutBuilder +
-              // SingleChildScrollView keeps it centered when there's room and
-              // scrollable when there isn't.
-              child: turns.isEmpty
-                  ? LayoutBuilder(
-                      builder: (ctx, constraints) => SingleChildScrollView(
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            minHeight: constraints.maxHeight,
-                          ),
-                          child: Center(
-                            child: EmptyState(
-                              icon: Icons.auto_awesome_outlined,
-                              title: s.askAiAboutChat,
-                              message: s.askAiAboutChatHint,
-                            ),
-                          ),
-                        ),
-                      ),
-                    )
-                  : ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.all(AppDimens.spacingMd),
-                      itemCount: turns.length + 1 + (vm.sending ? 1 : 0),
-                      itemBuilder: (_, i) {
-                        if (i == 0) {
-                          return Padding(
-                            padding: const EdgeInsets.only(
-                              bottom: AppDimens.spacingSm,
-                            ),
-                            child: Text(
-                              s.askDiscordScope,
-                              style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                                color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          );
-                        }
-                        final ti = i - 1;
-                        if (ti >= turns.length) {
-                          // Live agent trace (searching Discord, composing…)
-                          // replaces the generic "thinking" bubble.
-                          return AskRepoLiveTraceStrip(steps: vm.liveSteps);
-                        }
-                        return _ChatTurnView(turn: turns[ti]);
-                      },
-                    ),
-            ),
-            _ChatInputBar(
-              controller: _controller,
-              sending: vm.sending,
-              onSend: () => _send(vm),
-              onNewSession: vm.sending ? null : vm.newSession,
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
 // Two-digit `HH:mm` for a chat-bubble timestamp.
 String _hhmm(DateTime t) =>
     '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
-
-// `MM/dd HH:mm` from a Discord message's ISO 8601 timestamp (shown local). Falls
-// back to the raw string if unparseable, or '' when there is none.
-String _sourceTime(String? iso) {
-  if (iso == null || iso.isEmpty) return '';
-  final parsed = DateTime.tryParse(iso);
-  if (parsed == null) return iso;
-  final t = parsed.toLocal();
-  return '${t.month.toString().padLeft(2, '0')}/${t.day.toString().padLeft(2, '0')} '
-      '${_hhmm(t)}';
-}
-
-class _ChatTurnView extends StatelessWidget {
-  const _ChatTurnView({required this.turn});
-  final DiscordChatTurn turn;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-
-    if (turn.isUser) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: AppDimens.spacingMd),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Container(
-              constraints: const BoxConstraints(maxWidth: 520),
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppDimens.spacingMd,
-                vertical: AppDimens.spacingSm,
-              ),
-              decoration: BoxDecoration(
-                color: scheme.primaryContainer,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Text(
-                turn.content,
-                style: TextStyle(color: scheme.onPrimaryContainer),
-              ),
-            ),
-            if (turn.createdAt != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 2, right: 4),
-                child: Text(
-                  _hhmm(turn.createdAt!),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      );
-    }
-
-    // Assistant turn: markdown answer + (optional) scrollable sources panel.
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppDimens.spacingMd),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.auto_awesome_outlined,
-                size: 18,
-                color: scheme.primary,
-              ),
-              const SizedBox(width: AppDimens.spacingSm),
-              Text(
-                'AI',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              if (turn.createdAt != null) ...[
-                const SizedBox(width: AppDimens.spacingSm),
-                Text(
-                  _hhmm(turn.createdAt!),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: AppDimens.spacingSm),
-          MarkdownView(data: turn.content),
-          if (turn.snippets.isNotEmpty) ...[
-            const SizedBox(height: AppDimens.spacingSm),
-            _SourcesPanel(snippets: turn.snippets),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-// Scrollable panel of the conversation clusters the AI surfaced for an answer
-// — the "relevant chat content in the middle that the user can scroll" (D4).
-// Each snippet is one cluster: chronological messages with the matched line(s)
-// emphasized and surrounding context dimmed; clusters are split by a divider.
-class _SourcesPanel extends StatelessWidget {
-  const _SourcesPanel({required this.snippets});
-  final List<DiscordChatSnippet> snippets;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = context.l10n;
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Container(
-      constraints: const BoxConstraints(maxHeight: 260),
-      decoration: BoxDecoration(
-        border: Border.all(color: scheme.outlineVariant),
-        borderRadius: BorderRadius.circular(12),
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppDimens.spacingMd,
-              AppDimens.spacingSm,
-              AppDimens.spacingMd,
-              AppDimens.spacingXs,
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.forum_outlined, size: 16, color: scheme.secondary),
-                const SizedBox(width: AppDimens.spacingXs),
-                Text(
-                  s.relatedConversations(snippets.length),
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Flexible(
-            child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(
-                AppDimens.spacingMd,
-                0,
-                AppDimens.spacingMd,
-                AppDimens.spacingSm,
-              ),
-              shrinkWrap: true,
-              itemCount: snippets.length,
-              // Visible divider so distinct conversations read as separate
-              // clusters.
-              separatorBuilder: (_, _) => const Padding(
-                padding: EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
-                child: Divider(height: 1),
-              ),
-              itemBuilder: (_, i) => _SnippetBlock(snippet: snippets[i]),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// One conversation cluster: its messages in chronological order. Matched
-// messages are emphasized (subtle highlight + leading marker); context
-// messages are dimmed.
-class _SnippetBlock extends StatelessWidget {
-  const _SnippetBlock({required this.snippet});
-  final DiscordChatSnippet snippet;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (var i = 0; i < snippet.messages.length; i++) ...[
-          if (i > 0) const SizedBox(height: AppDimens.spacingXs),
-          _SnippetMessage(source: snippet.messages[i]),
-        ],
-      ],
-    );
-  }
-}
-
-class _SnippetMessage extends StatelessWidget {
-  const _SnippetMessage({required this.source});
-  final DiscordChatSource source;
-
-  @override
-  Widget build(BuildContext context) {
-    final l = context.l10n;
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final s = source;
-    final time = _sourceTime(s.timestamp);
-    // Matched line: full-strength text with a highlight; context: dimmed.
-    final authorColor = s.isMatch ? scheme.primary : scheme.onSurfaceVariant;
-    final contentStyle = theme.textTheme.bodySmall?.copyWith(
-      color: s.isMatch ? scheme.onSurface : scheme.onSurfaceVariant,
-    );
-
-    final row = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            if (s.isMatch) ...[
-              Icon(Icons.arrow_right, size: 14, color: scheme.primary),
-              const SizedBox(width: 2),
-            ],
-            Flexible(
-              child: Text(
-                s.authorName.isEmpty ? l.unknownAuthor : s.authorName,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  fontWeight: s.isMatch ? FontWeight.w700 : FontWeight.w600,
-                  color: authorColor,
-                ),
-              ),
-            ),
-            if (time.isNotEmpty) ...[
-              const SizedBox(width: AppDimens.spacingSm),
-              Text(
-                time,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ],
-        ),
-        Text(s.content, style: contentStyle),
-      ],
-    );
-
-    if (!s.isMatch) return row;
-    // Subtle highlighted background for the matched message(s).
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppDimens.spacingXs,
-        vertical: 2,
-      ),
-      decoration: BoxDecoration(
-        color: scheme.primaryContainer.withValues(alpha: 0.35),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: row,
-    );
-  }
-}
-
-class _ChatInputBar extends StatelessWidget {
-  const _ChatInputBar({
-    required this.controller,
-    required this.sending,
-    required this.onSend,
-    required this.onNewSession,
-  });
-
-  final TextEditingController controller;
-  final bool sending;
-  final VoidCallback onSend;
-
-  /// Clears the conversation to start a fresh session (D5). Null disables it
-  /// (e.g. while a question is in flight).
-  final VoidCallback? onNewSession;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = context.l10n;
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      elevation: 2,
-      color: scheme.surface,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          AppDimens.spacingMd,
-          AppDimens.spacingSm,
-          AppDimens.spacingMd,
-          AppDimens.spacingMd,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            // Start a new chat session — clears the transcript (D5).
-            IconButton(
-              tooltip: s.newSession,
-              onPressed: sending ? null : onNewSession,
-              icon: const Icon(Icons.restart_alt),
-            ),
-            Expanded(
-              child: TextField(
-                controller: controller,
-                minLines: 1,
-                maxLines: 4,
-                textInputAction: TextInputAction.send,
-                enabled: !sending,
-                onSubmitted: (_) => onSend(),
-                decoration: InputDecoration(
-                  hintText: s.askAiDiscordHint,
-                  border: const OutlineInputBorder(),
-                  isDense: true,
-                ),
-              ),
-            ),
-            const SizedBox(width: AppDimens.spacingSm),
-            IconButton.filled(
-              onPressed: sending ? null : onSend,
-              icon: sending
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.send),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

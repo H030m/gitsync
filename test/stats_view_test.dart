@@ -79,6 +79,10 @@ Widget _harness() {
 }
 
 void main() {
+  // The commit cache is static (survives VM disposal) — clear it before each
+  // test so a seed from one case never bleeds into the next.
+  setUp(StatsViewModel.debugClearCommitCache);
+
   testWidgets('renders both tabs; pie legend shows %; 進度表 lists authors', (
     tester,
   ) async {

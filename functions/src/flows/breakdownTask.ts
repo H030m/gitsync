@@ -32,12 +32,19 @@ import {
 } from '../prompts/breakdownTask';
 import { readRepoPlanningDocs } from '../tools/repoDocs';
 import { readProjectBrief, formatBriefForPrompt } from '../tools/projectBrief';
+import { recallForPrompt } from '../tools/memorySearch';
 import { searchPastCommits } from '../tools/dailyIntel';
 import {
   listExistingTaskTitles,
   searchExistingTasks,
   readExistingTaskGraph,
 } from '../tools/breakdownTools';
+import {
+  startRun,
+  appendStep,
+  finishRun,
+  TRACE_LABELS,
+} from '../tools/agentTrace';
 import {
   BreakdownOutputSchema,
   BreakdownOutput,
@@ -57,6 +64,8 @@ export interface BreakdownTaskInput {
    * model follows the spec's own language (the base prompt rule).
    */
   language?: string;
+  /** Client-generated agent-trace doc id; absent → trace is a no-op. */
+  runId?: string;
 }
 
 export interface BreakdownTaskResult {
@@ -82,7 +91,10 @@ interface ResolvedSubtask {
 export async function breakdownTaskFlow(
   input: BreakdownTaskInput,
 ): Promise<BreakdownTaskResult> {
-  const { repoId, goal, requestedBy, language } = input;
+  const { repoId, goal, requestedBy, language, runId } = input;
+
+  // Best-effort agent trace (no-op without a runId).
+  await startRun(repoId, runId, 'breakdownTask');
 
   // ---- Step 1: fetchProjectContext (Firestore only, NO GitHub) -------------
   // Context = the pasted SPEC.md (`goal`) + light repo info (name/desc).
@@ -104,11 +116,13 @@ export async function breakdownTaskFlow(
   const hasExistingTasks = !existingProbe.empty;
 
   let resolved: ResolvedSubtask[];
+  try {
   if (hasExistingTasks) {
     logger.info('breakdownTaskFlow: incremental path (repo has tasks)', { repoId });
-    resolved = await incrementalBreakdown(repoId, goal, language);
+    resolved = await incrementalBreakdown(repoId, goal, language, runId);
   } else {
     logger.info('breakdownTaskFlow: first-pass path (empty repo)', { repoId });
+    await appendStep(repoId, runId, TRACE_LABELS.breakdownGenerate);
     resolved = await firstPassBreakdown(repoId, goal, repo, language);
   }
 
@@ -140,6 +154,7 @@ export async function breakdownTaskFlow(
   }
   await batch.commit();
 
+  await finishRun(repoId, runId, 'done');
   return {
     subtasks: resolved.map((s) => ({
       id: s.id,
@@ -149,6 +164,10 @@ export async function breakdownTaskFlow(
       estimatedHours: s.estimatedHours,
     })),
   };
+  } catch (err) {
+    await finishRun(repoId, runId, 'error');
+    throw err;
+  }
 }
 
 // ===========================================================================
@@ -170,10 +189,18 @@ async function firstPassBreakdown(
 
   // Best-effort: prepend the accumulated project brief as a stable, cache-friendly
   // prefix (empty brief → '' → byte-identical prompt).
-  const briefPrefix = formatBriefForPrompt(await readProjectBrief(repoId));
+  const brief = await readProjectBrief(repoId);
+  const briefPrefix = formatBriefForPrompt(brief);
+
+  // Best-effort active recall using the goal text (empty when no observations exist).
+  const memoryContext = await recallForPrompt(repoId, {
+    query: goal,
+    briefContent: brief?.content,
+  });
 
   const projectContext = [
     briefPrefix || undefined,
+    memoryContext || undefined,
     hasDocs ? repoDocs.content : undefined,
     `Repository: ${repo.name ?? repoId}`,
     repo.description ? `Description: ${repo.description}` : undefined,
@@ -193,7 +220,7 @@ async function firstPassBreakdown(
   ];
 
   const completion = await openai.beta.chat.completions.parse({
-    model: MODELS.reasoning,
+    model: MODELS.fast,
     messages,
     response_format: zodResponseFormat(BreakdownOutputSchema, 'breakdown'),
   });
@@ -224,7 +251,7 @@ async function firstPassBreakdown(
     });
 
     const retry = await openai.beta.chat.completions.parse({
-      model: MODELS.reasoning,
+      model: MODELS.fast,
       messages,
       response_format: zodResponseFormat(BreakdownOutputSchema, 'breakdown'),
     });
@@ -383,13 +410,21 @@ async function incrementalBreakdown(
   repoId: string,
   goal: string,
   language?: string,
+  runId?: string,
 ): Promise<ResolvedSubtask[]> {
   // Best-effort project-brief prefix (stable; empty → '' → no behavior change).
-  const briefPrefix = formatBriefForPrompt(await readProjectBrief(repoId));
+  const brief = await readProjectBrief(repoId);
+  const briefPrefix = formatBriefForPrompt(brief);
+
+  // Best-effort active recall using the goal text (empty when no observations exist).
+  const memoryContext = await recallForPrompt(repoId, {
+    query: goal,
+    briefContent: brief?.content,
+  });
 
   const openai = getOpenAI();
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: 'system', content: incrementalBreakdownSystem(language) + briefPrefix },
+    { role: 'system', content: incrementalBreakdownSystem(language) + briefPrefix + memoryContext },
     { role: 'user', content: incrementalBreakdownUser(goal) },
   ];
 
@@ -400,7 +435,7 @@ async function incrementalBreakdown(
     logger.info('incrementalBreakdown: agentic round', { repoId, round });
 
     const completion = await openai.chat.completions.create({
-      model: MODELS.reasoning,
+      model: MODELS.fast,
       messages,
       tools: INCREMENTAL_TOOLS,
       tool_choice: 'auto',
@@ -467,6 +502,7 @@ async function incrementalBreakdown(
       }
 
       logSubmit(repoId, round, parsed.data.subtasks);
+      await appendStep(repoId, runId, TRACE_LABELS.submitBreakdown);
 
       const resolved = await resolveAndCheck(
         repoId,
@@ -500,9 +536,16 @@ async function incrementalBreakdown(
           args,
         );
         logToolCall(repoId, round, call.function.name, args, resultCount);
-        return { id: call.id, content };
+        return { id: call.id, content, tool: call.function.name as string };
       }),
     );
+    // Best-effort trace: one step per tool this round.
+    const traceLabels = results
+      .filter((r): r is typeof r & { tool: string } => 'tool' in r)
+      .map((r) => toolTraceLabel(r.tool));
+    if (traceLabels.length > 0) {
+      await appendStep(repoId, runId, traceLabels);
+    }
     for (const r of results) {
       messages.push({ role: 'tool', tool_call_id: r.id, content: r.content });
     }
@@ -717,6 +760,18 @@ function logSubmit(
 }
 
 /** Parse a tool-call arguments JSON string, tolerating malformed input. */
+/** Map an incremental breakdown tool name to a user-visible trace label. */
+function toolTraceLabel(tool: string): string {
+  switch (tool) {
+    case 'listExistingTaskTitles': return TRACE_LABELS.listExistingTaskTitles;
+    case 'searchExistingTasks': return TRACE_LABELS.searchExistingTasks;
+    case 'searchPastCommits': return TRACE_LABELS.searchPastCommits;
+    case 'readRepoPlanningDocs': return TRACE_LABELS.readRepoPlanningDocs;
+    case 'submitBreakdown': return TRACE_LABELS.submitBreakdown;
+    default: return tool;
+  }
+}
+
 function safeParse(raw: string | undefined): Record<string, unknown> {
   if (!raw) return {};
   try {

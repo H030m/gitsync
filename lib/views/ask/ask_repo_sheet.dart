@@ -74,7 +74,9 @@ class _AskRepoBodyState extends State<_AskRepoBody> {
     final text = _controller.text;
     if (text.trim().isEmpty || vm.sending) return;
     _controller.clear();
-    vm.ask(text);
+    // Pass the app-locale language NAME (W6) so the shared transcript stays in
+    // the user's language across both entry points.
+    vm.ask(text, language: context.l10n.backendLanguage);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!widget.scrollController.hasClients) return;
       widget.scrollController.animateTo(
