@@ -235,7 +235,8 @@ describe('generateHandoffFlow', () => {
 
     expect(res.cached).toBe(false);
     expect(res.handoffMarkdown).toContain('What was done');
-    expect(mockCreate).toHaveBeenCalledTimes(1);
+    // +1 for the fire-and-forget observation extraction call.
+    expect(mockCreate).toHaveBeenCalledTimes(2);
     expect(mockParse).toHaveBeenCalledTimes(1);
     expect(updateSpy).toHaveBeenCalledWith(
       TASK,
@@ -263,7 +264,8 @@ describe('generateHandoffFlow', () => {
     expect(res.cached).toBe(false);
     expect(mockListRelatedCommits).toHaveBeenCalledWith(REPO, ['t-api', 't-ui']);
     expect(mockGetCommitDiff).toHaveBeenCalledWith(REPO, 'c1c1c1c');
-    expect(mockCreate).toHaveBeenCalledTimes(2);
+    // +1 for observation extraction.
+    expect(mockCreate).toHaveBeenCalledTimes(3);
   });
 
   it('review-retry: low score injects gaps, agent redrafts, second review passes', async () => {
@@ -276,7 +278,8 @@ describe('generateHandoffFlow', () => {
     const res = await generateHandoffFlow({ repoId: REPO, taskId: 't-ui' });
 
     expect(res.handoffMarkdown).toContain('improved draft');
-    expect(mockCreate).toHaveBeenCalledTimes(2);
+    // +1 for observation extraction.
+    expect(mockCreate).toHaveBeenCalledTimes(3);
     expect(mockParse).toHaveBeenCalledTimes(2);
 
     // The gaps were re-injected into the Phase-1 thread as a user message.
@@ -313,7 +316,8 @@ describe('generateHandoffFlow', () => {
     const res = await generateHandoffFlow({ repoId: REPO, taskId: 't-ui' });
 
     expect(res.handoffMarkdown).toContain('forced draft');
-    expect(mockCreate).toHaveBeenCalledTimes(5);
+    // +1 for observation extraction.
+    expect(mockCreate).toHaveBeenCalledTimes(6);
     // The 5th (final) create was forced to draftHandoff via tool_choice.
     const lastCall = mockCreate.mock.calls[4] as unknown as [
       { tool_choice?: { function?: { name?: string } } },
@@ -360,7 +364,8 @@ describe('generateHandoffFlow', () => {
     expect(res.handoffMarkdown).toContain('both');
     // draftHandoff won → the read tool was NOT executed this turn.
     expect(mockListRelatedCommits).not.toHaveBeenCalled();
-    expect(mockCreate).toHaveBeenCalledTimes(1);
+    // +1 for observation extraction.
+    expect(mockCreate).toHaveBeenCalledTimes(2);
   });
 
   it('traces the run (W5): startRun → appendStep per tool round + review → finishRun', async () => {
