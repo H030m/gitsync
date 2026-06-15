@@ -46,6 +46,7 @@ import {
   finishRun,
   TRACE_LABELS,
 } from '../tools/agentTrace';
+import { assignTaskFlow } from './assignTask';
 import {
   BreakdownOutputSchema,
   BreakdownOutput,
@@ -154,6 +155,30 @@ export async function breakdownTaskFlow(
     });
   }
   await batch.commit();
+
+  // Auto-assign ROOT tasks (no prerequisites) right away — they are ready to
+  // start, so the user shouldn't have to assign them by hand. Downstream tasks
+  // are still auto-assigned later by onTaskUpdated when their prerequisites
+  // finish. Best-effort + parallel: a failure just leaves that task unassigned
+  // (the user can assign it manually) and never fails the breakdown.
+  const rootTasks = resolved.filter((s) => s.dependsOn.length === 0);
+  if (rootTasks.length > 0) {
+    logger.info('breakdownTaskFlow: auto-assigning root tasks', {
+      repoId,
+      count: rootTasks.length,
+    });
+    await Promise.allSettled(
+      rootTasks.map((s) =>
+        assignTaskFlow({ repoId, taskId: s.id }).catch((err) => {
+          logger.warn('breakdownTaskFlow: auto-assign root failed (best-effort)', {
+            repoId,
+            taskId: s.id,
+            err: String(err),
+          });
+        }),
+      ),
+    );
+  }
 
   // Best-effort: record what was broken down so future flows can recall it.
   const topTitles = resolved.slice(0, 3).map((s) => s.title).join('、');
