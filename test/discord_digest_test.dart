@@ -21,7 +21,7 @@ import '_helpers/locale.dart';
 // Discord tab / digest panel.
 //
 // The widget tests look for English UI strings (e.g. the `Discord digest`
-// sub-heading, `Lock digest`), so `_harness()` pins the locale to English via
+// sub-heading), so `_harness()` pins the locale to English via
 // [pinLocale] (production default is Traditional Chinese since `5b7e562`).
 
 const _repoId = DummyData.demoRepoId;
@@ -156,39 +156,4 @@ void main() {
     },
   );
 
-  testWidgets('lock toggle acts on the tapped day\'s digest', (tester) async {
-    _seed('2026-06-03');
-    _seed('2026-06-04');
-
-    final vm = await openRange(
-      tester,
-      DateTime(2026, 6, 3),
-      DateTime(2026, 6, 5),
-    );
-    await expandDay(tester, '2026-06-03');
-    await expandDay(tester, '2026-06-04');
-
-    // Both start unlocked.
-    DiscordDigest byDate(String d) => vm.digests.firstWhere((x) => x.date == d);
-    expect(byDate('2026-06-03').locked, isFalse);
-    expect(byDate('2026-06-04').locked, isFalse);
-
-    // Find the lock button inside the 6/3 day card subtree (anchored on its
-    // inline digest markdown).
-    final card3 = find.ancestor(
-      of: find.textContaining('Digest for 2026-06-03'),
-      matching: find.byType(AnimatedContainer),
-    );
-    final lockBtn = find.descendant(
-      of: card3.first,
-      matching: find.byTooltip('Lock digest'),
-    );
-    expect(lockBtn, findsOneWidget);
-    await tester.tap(lockBtn);
-    await tester.pumpAndSettle();
-
-    // ONLY 6/3 became locked — the dispatch carried the tapped day's date.
-    expect(byDate('2026-06-03').locked, isTrue);
-    expect(byDate('2026-06-04').locked, isFalse);
-  });
 }

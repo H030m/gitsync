@@ -312,12 +312,6 @@ class AppStrings {
     'No digest in this range. Use "Refresh current range" above to pull messages.',
     '這個範圍還沒有摘要。用上方的「重新整理目前範圍」拉取訊息。',
   );
-  String get lockDigest => _('Lock digest', '鎖定摘要');
-  String get unlockDigest => _('Unlock digest', '解鎖摘要');
-  String get digestLockedHint => _(
-    'Locked — unlock to let AI adjust this summary.',
-    '已鎖定 — 解鎖後 AI 才能調整此摘要。',
-  );
   String get adjustSummaryHint =>
       _('Ask AI to adjust this summary…', '請 AI 調整此摘要…');
   String get adjustWithAi => _('Adjust with AI', '用 AI 調整');

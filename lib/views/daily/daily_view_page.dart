@@ -519,20 +519,6 @@ class _DayReportCardState extends State<_DayReportCard> {
                         ],
                       ),
                     ),
-                    if (report != null && report.commitCount > 0) ...[
-                      const SizedBox(width: AppDimens.spacingSm),
-                      _CountChip(
-                        icon: Icons.commit_outlined,
-                        label: '${report.commitCount}',
-                      ),
-                    ],
-                    if (digest != null) ...[
-                      const SizedBox(width: AppDimens.spacingSm),
-                      _CountChip(
-                        icon: Icons.forum_outlined,
-                        label: '${digest.messageCount}',
-                      ),
-                    ],
                     AnimatedRotation(
                       turns: _expanded ? 0.5 : 0,
                       duration: AppMotion.short,
@@ -711,9 +697,7 @@ class _DayDigestSectionState extends State<_DayDigestSection> {
     final scheme = theme.colorScheme;
     final digest = widget.digest;
     final vm = widget.vm;
-    final locked = digest.locked;
     final editing = vm.isEditingDigest(digest.date);
-    final toggling = vm.isTogglingLock(digest.date);
 
     return Padding(
       padding: const EdgeInsets.only(top: AppDimens.spacingMd),
@@ -722,7 +706,7 @@ class _DayDigestSectionState extends State<_DayDigestSection> {
         children: [
           const Divider(height: 1),
           const SizedBox(height: AppDimens.spacingSm),
-          // ---- Sub-heading: "Discord digest" + lock toggle ----
+          // ---- Sub-heading: "Discord digest" ----
           Row(
             children: [
               Icon(Icons.forum_outlined, size: 18, color: scheme.secondary),
@@ -734,34 +718,6 @@ class _DayDigestSectionState extends State<_DayDigestSection> {
                   color: scheme.onSurfaceVariant,
                 ),
               ),
-              if (locked) ...[
-                const SizedBox(width: AppDimens.spacingXs),
-                Icon(Icons.lock, size: 14, color: scheme.primary),
-              ],
-              const Spacer(),
-              IconButton(
-                tooltip: locked ? s.unlockDigest : s.lockDigest,
-                visualDensity: VisualDensity.compact,
-                onPressed: toggling ? null : () => vm.toggleLock(digest),
-                icon: toggling
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : AnimatedSwitcher(
-                        duration: AppMotion.medium,
-                        transitionBuilder: (child, anim) => ScaleTransition(
-                          scale: anim,
-                          child: RotationTransition(turns: anim, child: child),
-                        ),
-                        child: Icon(
-                          locked ? Icons.lock : Icons.lock_open,
-                          key: ValueKey(locked),
-                          color: locked ? scheme.primary : null,
-                        ),
-                      ),
-              ),
             ],
           ),
           const SizedBox(height: AppDimens.spacingXs),
@@ -771,55 +727,39 @@ class _DayDigestSectionState extends State<_DayDigestSection> {
             child: MarkdownView(data: digest.markdown),
           ),
           const SizedBox(height: AppDimens.spacingSm),
-          // ---- Lock hint OR the AI-adjust input ----
-          if (locked)
-            Row(
-              children: [
-                Icon(Icons.lock_outline, size: 16, color: scheme.outline),
-                const SizedBox(width: AppDimens.spacingXs),
-                Expanded(
-                  child: Text(
-                    s.digestLockedHint,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.outline,
-                    ),
+          // ---- AI-adjust input ----
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _adjustController,
+                  minLines: 1,
+                  maxLines: 3,
+                  enabled: !editing,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _submitAdjust(),
+                  decoration: InputDecoration(
+                    hintText: s.adjustSummaryHint,
+                    border: const OutlineInputBorder(),
+                    isDense: true,
                   ),
                 ),
-              ],
-            )
-          else
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _adjustController,
-                    minLines: 1,
-                    maxLines: 3,
-                    enabled: !editing,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => _submitAdjust(),
-                    decoration: InputDecoration(
-                      hintText: s.adjustSummaryHint,
-                      border: const OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: AppDimens.spacingSm),
-                IconButton.filledTonal(
-                  tooltip: s.adjustWithAi,
-                  onPressed: editing ? null : _submitAdjust,
-                  icon: editing
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.auto_fix_high),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(width: AppDimens.spacingSm),
+              IconButton.filledTonal(
+                tooltip: s.adjustWithAi,
+                onPressed: editing ? null : _submitAdjust,
+                icon: editing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.auto_fix_high),
+              ),
+            ],
+          ),
           if (editing) ...[
             const SizedBox(height: AppDimens.spacingXs),
             // Live agent "thinking" steps while the digest is rewritten.
@@ -925,32 +865,6 @@ class _BulletRow extends StatelessWidget {
           Expanded(
             child: Text(text, style: Theme.of(context).textTheme.bodyMedium),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CountChip extends StatelessWidget {
-  const _CountChip({required this.icon, required this.label});
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: scheme.onSurfaceVariant),
-          const SizedBox(width: 4),
-          Text(label, style: Theme.of(context).textTheme.labelSmall),
         ],
       ),
     );
