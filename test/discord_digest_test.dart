@@ -21,12 +21,12 @@ import '_helpers/locale.dart';
 // Discord tab / digest panel.
 //
 // The widget tests look for English UI strings (e.g. the `Discord digest`
-// sub-heading, `Lock digest`), so `_harness()` pins the locale to English via
+// sub-heading), so `_harness()` pins the locale to English via
 // [pinLocale] (production default is Traditional Chinese since `5b7e562`).
 
 const _repoId = DummyData.demoRepoId;
 
-Widget _harness() {
+Widget _harness({DailyReportViewModel? report}) {
   return pinLocale(
     AppLocale.en,
     child: MaterialApp(
@@ -39,7 +39,7 @@ Widget _harness() {
             create: (_) => DiscordMessagesViewModel(repoId: _repoId),
           ),
           ChangeNotifierProvider(
-            create: (_) => DailyReportViewModel(repoId: _repoId),
+            create: (_) => report ?? DailyReportViewModel(repoId: _repoId),
           ),
           ChangeNotifierProvider(
             create: (_) => AskRepoViewModel(repoId: _repoId),
@@ -53,12 +53,11 @@ Widget _harness() {
 }
 
 // Seeds an explicit digest doc for [date] (YYYY-MM-DD) in the fake repo.
-DiscordDigest _seed(String date, {bool locked = false}) {
+DiscordDigest _seed(String date) {
   final digest = DiscordDigest(
     date: date,
     markdown: '**Digest for $date**',
     messageCount: 3,
-    locked: locked,
   );
   FakeDiscordDigestRepository().seedDigest(_repoId, digest);
   return digest;
@@ -156,39 +155,45 @@ void main() {
     },
   );
 
-  testWidgets('lock toggle acts on the tapped day\'s digest', (tester) async {
-    _seed('2026-06-03');
-    _seed('2026-06-04');
+  testWidgets(
+    'on INITIAL load the Discord window follows the report range '
+    '(no manual range change needed)',
+    (tester) async {
+      // Regression (06-15): the per-day cards span the report VM's range, but
+      // the Discord digest window defaulted independently (saved Discord range
+      // / today). When they diverge, a past day's digest was missing until the
+      // user manually changed the range. Here the report VM opens on a
+      // multi-day range that does NOT include today; the digest for a past day
+      // in that range must surface on first open, WITHOUT touching
+      // IntelRangeViewModel.
+      tester.view.physicalSize = const Size(1200, 3000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-    final vm = await openRange(
-      tester,
-      DateTime(2026, 6, 3),
-      DateTime(2026, 6, 5),
-    );
-    await expandDay(tester, '2026-06-03');
-    await expandDay(tester, '2026-06-04');
+      _seed('2026-06-03');
+      _seed('2026-06-04');
 
-    // Both start unlocked.
-    DiscordDigest byDate(String d) => vm.digests.firstWhere((x) => x.date == d);
-    expect(byDate('2026-06-03').locked, isFalse);
-    expect(byDate('2026-06-04').locked, isFalse);
+      // Report VM already scoped to a past multi-day range before the page
+      // wires up — the shared IntelRangeViewModel stays null (the default,
+      // "no manual range change" path).
+      final report = DailyReportViewModel(repoId: _repoId)
+        ..setRange(DateTime(2026, 6, 3), DateTime(2026, 6, 5));
 
-    // Find the lock button inside the 6/3 day card subtree (anchored on its
-    // inline digest markdown).
-    final card3 = find.ancestor(
-      of: find.textContaining('Digest for 2026-06-03'),
-      matching: find.byType(AnimatedContainer),
-    );
-    final lockBtn = find.descendant(
-      of: card3.first,
-      matching: find.byTooltip('Lock digest'),
-    );
-    expect(lockBtn, findsOneWidget);
-    await tester.tap(lockBtn);
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(_harness(report: report));
+      await tester.pumpAndSettle();
 
-    // ONLY 6/3 became locked — the dispatch carried the tapped day's date.
-    expect(byDate('2026-06-03').locked, isTrue);
-    expect(byDate('2026-06-04').locked, isFalse);
-  });
+      final ctx = tester.element(find.byType(DailyViewPage));
+      // The shared range was never set — the alignment came purely from the
+      // page's initial sync in didChangeDependencies.
+      expect(ctx.read<IntelRangeViewModel>().range, isNull);
+
+      final vm = ctx.read<DiscordMessagesViewModel>();
+      // The Discord window now tracks the report's range, so past-day digests
+      // are returned on initial load.
+      expect(vm.digestForDate('2026-06-04')?.date, '2026-06-04');
+      expect(vm.digestForDate('2026-06-03')?.date, '2026-06-03');
+      expect(vm.digests.length, 2);
+    },
+  );
 }

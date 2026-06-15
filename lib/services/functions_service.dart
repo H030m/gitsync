@@ -181,25 +181,6 @@ abstract class FunctionsService {
     required String endDate,
   });
 
-  /// Asks the AI to rewrite the digest for [date] (YYYY-MM-DD) per
-  /// [instruction]. Returns the new markdown. Throws if the digest is locked.
-  /// [runId] is a client-generated id for the agent tool-trace doc the UI
-  /// streams while the agent gathers evidence + rewrites (omit to skip).
-  Future<String> editDiscordDigest({
-    required String repoId,
-    required String date,
-    required String instruction,
-    String? runId,
-  });
-
-  /// Locks (freezes) or unlocks the digest for [date]. A locked digest is not
-  /// changed by auto-regeneration or AI edits.
-  Future<void> setDigestLock({
-    required String repoId,
-    required String date,
-    required bool locked,
-  });
-
   /// Asks the AI a question about this repo's Discord chat. The backend runs an
   /// agentic loop: it searches the ingested messages, then answers. Returns the
   /// answer plus the messages it surfaced (for the scrollable "sources" panel).
@@ -479,37 +460,6 @@ class _LiveFunctionsService implements FunctionsService {
       'repoId': repoId,
       'startDate': startDate,
       'endDate': endDate,
-    });
-  }
-
-  @override
-  Future<String> editDiscordDigest({
-    required String repoId,
-    required String date,
-    required String instruction,
-    String? runId,
-  }) async {
-    final res = await _callable('editDiscordDigest').call({
-      'repoId': repoId,
-      'date': date,
-      'instruction': instruction,
-      // Client-generated trace doc id; absent → backend skips the trace.
-      'runId': ?runId,
-    });
-    final data = Map<String, dynamic>.from(res.data as Map);
-    return data['markdown'] as String;
-  }
-
-  @override
-  Future<void> setDigestLock({
-    required String repoId,
-    required String date,
-    required bool locked,
-  }) async {
-    await _callable('setDigestLock').call({
-      'repoId': repoId,
-      'date': date,
-      'locked': locked,
     });
   }
 

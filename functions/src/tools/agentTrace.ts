@@ -26,7 +26,6 @@ export type AgentFlow =
   | 'generateHandoff'
   | 'discordChat'
   | 'explainCommit'
-  | 'editDiscordDigest'
   | 'breakdownTask';
 
 /** Human-readable English step labels, surfaced verbatim in the UI (the prd
@@ -51,8 +50,6 @@ export const TRACE_LABELS = {
   // explainCommit agentic loop.
   listNeighborCommits: 'Listing nearby commits…',
   writeExplanation: 'Writing the explanation…',
-  // editDiscordDigest agentic loop.
-  writeDigest: 'Revising the digest…',
   // breakdownTask agentic loop.
   listExistingTaskTitles: 'Listing existing tasks…',
   searchExistingTasks: 'Searching existing tasks…',

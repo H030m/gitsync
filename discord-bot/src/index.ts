@@ -1,8 +1,8 @@
 // GitSync bot entry point.
 //
 // Real-time message forwarding has been removed. The bot now:
-//   1. Registers the `/gitsync-listen` (bind channel→repo) and `/gitsync-digest`
-//      (AI-edit the day's digest) slash commands per guild.
+//   1. Registers the `/gitsync-listen` (bind channel→repo) slash command per
+//      guild.
 //   2. Polls claimDiscordFetch for on-demand backfill requests and REST-
 //      backfills the day's messages to discordMessageIngest.
 // Stateless Cloud Functions can't hold a Discord gateway connection, so this
@@ -10,9 +10,7 @@
 import { Client, Events, GatewayIntentBits } from 'discord.js';
 
 import {
-  handleDigestCommand,
   handleListenCommand,
-  DIGEST_COMMAND,
   LISTEN_COMMAND,
   registerAllGuildCommands,
   registerGuildCommands,
@@ -48,8 +46,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName === LISTEN_COMMAND) {
     await handleListenCommand(interaction, cfg);
-  } else if (interaction.commandName === DIGEST_COMMAND) {
-    await handleDigestCommand(interaction, cfg);
   }
 });
 

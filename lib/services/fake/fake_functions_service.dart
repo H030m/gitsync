@@ -423,31 +423,6 @@ class FakeFunctionsService implements FunctionsService {
   }
 
   @override
-  Future<String> editDiscordDigest({
-    required String repoId,
-    required String date,
-    required String instruction,
-    String? runId,
-  }) async {
-    await Future.delayed(AppConfig.simulatedLatency * 3);
-    final repo = FakeDiscordDigestRepository();
-    final newMarkdown =
-        '${DummyData.discordDigestMarkdown}\n\n> _AI 已依指令調整：「$instruction」（fake 示範）_';
-    repo.applyEdit(repoId, date, markdown: newMarkdown);
-    return newMarkdown;
-  }
-
-  @override
-  Future<void> setDigestLock({
-    required String repoId,
-    required String date,
-    required bool locked,
-  }) async {
-    await Future.delayed(AppConfig.simulatedLatency);
-    FakeDiscordDigestRepository().applyEdit(repoId, date, locked: locked);
-  }
-
-  @override
   Future<DiscordChatReply> discordChat({
     required String repoId,
     required String question,

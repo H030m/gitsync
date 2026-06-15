@@ -10,7 +10,6 @@ import '../repositories/discord_fetch_repo.dart';
 import '../repositories/discord_message_repo.dart';
 import '../repositories/repo_repo.dart';
 import '../services/functions_service.dart';
-import 'agent_trace_mixin.dart';
 
 /// Drives the Daily page's Discord tab: streams messages + the visible window's
 /// digests, and owns the Discord half of the shared Refresh ([refreshWindow]).
@@ -20,7 +19,7 @@ import 'agent_trace_mixin.dart';
 /// deleted) AND mirrors into the display view range for instant feedback. The
 /// shared range CLEAR calls [clearViewRange] (display only, no callable). The
 /// visible window precedence stays view → saved → today.
-class DiscordMessagesViewModel with ChangeNotifier, AgentTraceMixin {
+class DiscordMessagesViewModel with ChangeNotifier {
   DiscordMessagesViewModel({
     required String repoId,
     DateTime? date,
@@ -137,16 +136,6 @@ class DiscordMessagesViewModel with ChangeNotifier, AgentTraceMixin {
 
   bool _settingRange = false;
   bool get settingRange => _settingRange;
-
-  // Per-date in-flight flags so each card spins independently.
-  final Set<String> _editingDates = {};
-  bool isEditingDigest(String date) => _editingDates.contains(date);
-
-  final Set<String> _togglingDates = {};
-  bool isTogglingLock(String date) => _togglingDates.contains(date);
-
-  String? _digestError;
-  String? get digestError => _digestError;
 
   String _keyOf(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-'
@@ -343,56 +332,6 @@ class DiscordMessagesViewModel with ChangeNotifier, AgentTraceMixin {
     }
   }
 
-  // Asks the AI to adjust the digest for [date] (the tapped card's day). The
-  // updated markdown arrives via the digest stream, so we don't set it locally.
-  Future<void> editDigest(String date, String instruction) async {
-    if (_editingDates.contains(date) || instruction.trim().isEmpty) return;
-    final runId = newRunId('editdigest-');
-    _editingDates.add(date);
-    _digestError = null;
-    notifyListeners();
-
-    // Stream the agent's live "thinking" steps while the callable runs.
-    beginTrace(_repoId, runId);
-
-    try {
-      await _functions.editDiscordDigest(
-        repoId: _repoId,
-        date: date,
-        instruction: instruction.trim(),
-        runId: runId,
-      );
-    } catch (e) {
-      _digestError = '$e';
-    } finally {
-      endTrace();
-      _editingDates.remove(date);
-      notifyListeners();
-    }
-  }
-
-  // Toggles the lock on [digest] (its own date). When locked, the backend won't
-  // change it (auto-regen and AI edits are both refused).
-  Future<void> toggleLock(DiscordDigest digest) async {
-    final date = digest.date;
-    if (_togglingDates.contains(date)) return;
-    _togglingDates.add(date);
-    _digestError = null;
-    notifyListeners();
-    try {
-      await _functions.setDigestLock(
-        repoId: _repoId,
-        date: date,
-        locked: !digest.locked,
-      );
-    } catch (e) {
-      _digestError = '$e';
-    } finally {
-      _togglingDates.remove(date);
-      notifyListeners();
-    }
-  }
-
   @override
   void dispose() {
     _sub?.cancel();
@@ -400,7 +339,6 @@ class DiscordMessagesViewModel with ChangeNotifier, AgentTraceMixin {
     _repoSub?.cancel();
     _fetchSub?.cancel();
     _fetchTimeout?.cancel();
-    endTrace();
     super.dispose();
   }
 }

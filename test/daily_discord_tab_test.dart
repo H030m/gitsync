@@ -170,24 +170,6 @@ class _SpyFunctions implements FunctionsService {
     endDate: endDate,
   );
   @override
-  Future<String> editDiscordDigest({
-    required String repoId,
-    required String date,
-    required String instruction,
-    String? runId,
-  }) => _fake.editDiscordDigest(
-    repoId: repoId,
-    date: date,
-    instruction: instruction,
-    runId: runId,
-  );
-  @override
-  Future<void> setDigestLock({
-    required String repoId,
-    required String date,
-    required bool locked,
-  }) => _fake.setDigestLock(repoId: repoId, date: date, locked: locked);
-  @override
   Future<DiscordChatReply> discordChat({
     required String repoId,
     required String question,

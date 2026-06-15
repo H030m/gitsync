@@ -87,6 +87,24 @@ class _DailyViewPageState extends State<DailyViewPage> {
       _rangeVm?.removeListener(_onRangeChanged);
       _rangeVm = vm;
       _rangeVm!.addListener(_onRangeChanged);
+      // Initial alignment: the shared range starts null, so [_onRangeChanged]
+      // never fires on first open and the two VMs keep their independent
+      // defaults — the report cards span the report VM's range while the
+      // Discord digest window falls back to the saved Discord range / today.
+      // When those differ, a day card's digest is missing until the user
+      // manually changes the range. Point the Discord display window at the
+      // report VM's current range so digests align with the rendered day cards
+      // from the start. Use [setViewRange] (display-only) — NOT [setRange],
+      // which would persist a Discord backfill range to Firestore on mere page
+      // load and overwrite the user's saved range. Deferred to a post-frame
+      // callback because [setViewRange] calls notifyListeners, which can't run
+      // synchronously while the provider tree is still building.
+      final report = context.read<DailyReportViewModel>();
+      final discord = context.read<DiscordMessagesViewModel>();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        discord.setViewRange(report.rangeStart, report.rangeEnd);
+      });
     }
   }
 
@@ -519,20 +537,6 @@ class _DayReportCardState extends State<_DayReportCard> {
                         ],
                       ),
                     ),
-                    if (report != null && report.commitCount > 0) ...[
-                      const SizedBox(width: AppDimens.spacingSm),
-                      _CountChip(
-                        icon: Icons.commit_outlined,
-                        label: '${report.commitCount}',
-                      ),
-                    ],
-                    if (digest != null) ...[
-                      const SizedBox(width: AppDimens.spacingSm),
-                      _CountChip(
-                        icon: Icons.forum_outlined,
-                        label: '${digest.messageCount}',
-                      ),
-                    ],
                     AnimatedRotation(
                       turns: _expanded ? 0.5 : 0,
                       duration: AppMotion.short,
@@ -575,8 +579,7 @@ class _DayReportCardState extends State<_DayReportCard> {
                             ),
                           ),
                         // ---- Discord digest half (only when the day has one) --
-                        if (digest != null)
-                          _DayDigestSection(digest: digest, vm: widget.discord),
+                        if (digest != null) _DayDigestSection(digest: digest),
                       ],
                     ),
                   )
@@ -674,46 +677,16 @@ class _DayReportEmpty extends StatelessWidget {
 
 // D1: the Discord-digest half of a unified day card. Renders inline (no nested
 // card — it already lives inside the day card) under a divided "Discord digest"
-// sub-heading: the digest markdown, the referenced-messages expander, and the
-// lock / AI-adjust controls (carried over from the former _DigestCard). All
-// digest mutations go through DiscordMessagesViewModel; light/dark inherited.
-class _DayDigestSection extends StatefulWidget {
-  const _DayDigestSection({required this.digest, required this.vm});
+// sub-heading: just the digest markdown. Light/dark inherited via colorScheme.
+class _DayDigestSection extends StatelessWidget {
+  const _DayDigestSection({required this.digest});
   final DiscordDigest digest;
-  final DiscordMessagesViewModel vm;
-
-  @override
-  State<_DayDigestSection> createState() => _DayDigestSectionState();
-}
-
-class _DayDigestSectionState extends State<_DayDigestSection> {
-  final _adjustController = TextEditingController();
-
-  @override
-  void dispose() {
-    _adjustController.dispose();
-    super.dispose();
-  }
-
-  void _submitAdjust() {
-    final text = _adjustController.text;
-    if (text.trim().isEmpty || widget.vm.isEditingDigest(widget.digest.date)) {
-      return;
-    }
-    _adjustController.clear();
-    widget.vm.editDigest(widget.digest.date, text);
-  }
 
   @override
   Widget build(BuildContext context) {
     final s = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final digest = widget.digest;
-    final vm = widget.vm;
-    final locked = digest.locked;
-    final editing = vm.isEditingDigest(digest.date);
-    final toggling = vm.isTogglingLock(digest.date);
 
     return Padding(
       padding: const EdgeInsets.only(top: AppDimens.spacingMd),
@@ -722,7 +695,7 @@ class _DayDigestSectionState extends State<_DayDigestSection> {
         children: [
           const Divider(height: 1),
           const SizedBox(height: AppDimens.spacingSm),
-          // ---- Sub-heading: "Discord digest" + lock toggle ----
+          // ---- Sub-heading: "Discord digest" ----
           Row(
             children: [
               Icon(Icons.forum_outlined, size: 18, color: scheme.secondary),
@@ -734,34 +707,6 @@ class _DayDigestSectionState extends State<_DayDigestSection> {
                   color: scheme.onSurfaceVariant,
                 ),
               ),
-              if (locked) ...[
-                const SizedBox(width: AppDimens.spacingXs),
-                Icon(Icons.lock, size: 14, color: scheme.primary),
-              ],
-              const Spacer(),
-              IconButton(
-                tooltip: locked ? s.unlockDigest : s.lockDigest,
-                visualDensity: VisualDensity.compact,
-                onPressed: toggling ? null : () => vm.toggleLock(digest),
-                icon: toggling
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : AnimatedSwitcher(
-                        duration: AppMotion.medium,
-                        transitionBuilder: (child, anim) => ScaleTransition(
-                          scale: anim,
-                          child: RotationTransition(turns: anim, child: child),
-                        ),
-                        child: Icon(
-                          locked ? Icons.lock : Icons.lock_open,
-                          key: ValueKey(locked),
-                          color: locked ? scheme.primary : null,
-                        ),
-                      ),
-              ),
             ],
           ),
           const SizedBox(height: AppDimens.spacingXs),
@@ -770,68 +715,6 @@ class _DayDigestSectionState extends State<_DayDigestSection> {
             width: double.infinity,
             child: MarkdownView(data: digest.markdown),
           ),
-          const SizedBox(height: AppDimens.spacingSm),
-          // ---- Lock hint OR the AI-adjust input ----
-          if (locked)
-            Row(
-              children: [
-                Icon(Icons.lock_outline, size: 16, color: scheme.outline),
-                const SizedBox(width: AppDimens.spacingXs),
-                Expanded(
-                  child: Text(
-                    s.digestLockedHint,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.outline,
-                    ),
-                  ),
-                ),
-              ],
-            )
-          else
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _adjustController,
-                    minLines: 1,
-                    maxLines: 3,
-                    enabled: !editing,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => _submitAdjust(),
-                    decoration: InputDecoration(
-                      hintText: s.adjustSummaryHint,
-                      border: const OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: AppDimens.spacingSm),
-                IconButton.filledTonal(
-                  tooltip: s.adjustWithAi,
-                  onPressed: editing ? null : _submitAdjust,
-                  icon: editing
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.auto_fix_high),
-                ),
-              ],
-            ),
-          if (editing) ...[
-            const SizedBox(height: AppDimens.spacingXs),
-            // Live agent "thinking" steps while the digest is rewritten.
-            AskRepoLiveTraceStrip(steps: vm.liveSteps),
-          ],
-          if (vm.digestError != null) ...[
-            const SizedBox(height: AppDimens.spacingXs),
-            Text(
-              s.couldNotUpdateDigest,
-              style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
-            ),
-          ],
         ],
       ),
     );
@@ -925,32 +808,6 @@ class _BulletRow extends StatelessWidget {
           Expanded(
             child: Text(text, style: Theme.of(context).textTheme.bodyMedium),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CountChip extends StatelessWidget {
-  const _CountChip({required this.icon, required this.label});
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: scheme.onSurfaceVariant),
-          const SizedBox(width: 4),
-          Text(label, style: Theme.of(context).textTheme.labelSmall),
         ],
       ),
     );
