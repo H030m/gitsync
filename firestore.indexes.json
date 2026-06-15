@@ -23,6 +23,14 @@
       "collectionGroup": "commits",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "linkedTaskIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "committedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "commits",
+      "queryScope": "COLLECTION",
+      "fields": [
         { "fieldPath": "repoId", "order": "ASCENDING" },
         { "fieldPath": "author.login", "order": "ASCENDING" },
         {
