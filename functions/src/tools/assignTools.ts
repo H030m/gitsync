@@ -78,38 +78,79 @@ export async function searchMemberCommits(
   query: string,
 ): Promise<MemberCommitHit[]> {
   const userSnap = await db.doc(`apps/gitsync/users/${memberId}`).get();
-  const githubLogin = userSnap.data()?.githubLogin as string | undefined;
-  if (!githubLogin) return []; // can't map to commits → no signal
+  const data = userSnap.data() ?? {};
+  const githubLogin = (data.githubLogin as string | undefined)?.trim() ?? '';
+  const name = (data.name as string | undefined)?.trim() ?? '';
+  if (!githubLogin && !name) return []; // can't map to commits → no signal
 
-  try {
-    const queryVector = await embed(query);
-    const snap = await db
-      .collection(`apps/gitsync/repos/${repoId}/commits`)
-      .where('repoId', '==', repoId)
-      .where('author.login', '==', githubLogin)
-      .findNearest({
-        vectorField: 'messageEmbedding',
-        queryVector,
-        limit: 5,
-        distanceMeasure: 'COSINE',
-      })
-      .get();
+  const commits = db.collection(`apps/gitsync/repos/${repoId}/commits`);
+  // sha → hit, so the two passes below dedupe naturally.
+  const hits = new Map<string, MemberCommitHit>();
 
-    return snap.docs.map((d) => ({
-      sha: d.id,
-      message: (d.data()?.message as string | undefined) ?? '',
-    }));
-  } catch (err) {
-    // Optional/slow signal failed (embedding error, missing vector index, etc.).
-    // Degrade to no commit signal — the agent still has workload/expertise/dependents.
-    logger.warn('searchMemberCommits failed; returning [] (best-effort)', {
-      repoId,
-      memberId,
-      githubLogin,
-      err: String(err),
-    });
-    return [];
+  // (1) Semantic search by GitHub login (uses the existing vector index).
+  if (githubLogin) {
+    try {
+      const queryVector = await embed(query);
+      const snap = await commits
+        .where('repoId', '==', repoId)
+        .where('author.login', '==', githubLogin)
+        .findNearest({
+          vectorField: 'messageEmbedding',
+          queryVector,
+          limit: 5,
+          distanceMeasure: 'COSINE',
+        })
+        .get();
+      for (const d of snap.docs) {
+        hits.set(d.id, { sha: d.id, message: (d.data()?.message as string | undefined) ?? '' });
+      }
+    } catch (err) {
+      // Optional/slow signal failed (embedding error, missing vector index, etc.).
+      logger.warn('searchMemberCommits: login vector path failed (best-effort)', {
+        repoId,
+        memberId,
+        githubLogin,
+        err: String(err),
+      });
+    }
   }
+
+  // (2) Identity-alias fallback. A person often commits under a local git name
+  // whose email is NOT on their GitHub account, so GitHub can't attach a login
+  // and the commit lands with `author.login === ''` — invisible to the prefilter
+  // above. Catch those by matching the member's display NAME against
+  // `author.name` (equality-only → no extra index needed), then keep the ones
+  // most relevant to the query by an in-memory keyword score. This is what
+  // re-links a fragmented identity (e.g. login "H030m" ↔ commits authored as
+  // "倪嘉駿") so the assign agent sees the member's real body of work.
+  if (name) {
+    try {
+      const snap = await commits.where('author.name', '==', name).limit(50).get();
+      const terms = query
+        .toLowerCase()
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter((t) => t.length >= 2);
+      const scored = snap.docs
+        .map((d) => {
+          const message = (d.data()?.message as string | undefined) ?? '';
+          const hay = message.toLowerCase();
+          const score = terms.reduce((n, t) => (hay.includes(t) ? n + 1 : n), 0);
+          return { sha: d.id, message, score };
+        })
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5);
+      for (const c of scored) hits.set(c.sha, { sha: c.sha, message: c.message });
+    } catch (err) {
+      logger.warn('searchMemberCommits: name alias path failed (best-effort)', {
+        repoId,
+        memberId,
+        name,
+        err: String(err),
+      });
+    }
+  }
+
+  return [...hits.values()].slice(0, 8);
 }
 
 /**
