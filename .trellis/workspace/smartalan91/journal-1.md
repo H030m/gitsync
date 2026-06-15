@@ -208,3 +208,36 @@ Removed the leading status circle from _SectionTaskRow on the mobile sectioned b
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: Deep-link foreground notification taps to the task
+
+**Date**: 2026-06-16
+**Task**: Deep-link foreground notification taps to the task
+**Branch**: `feature/notify-deeplink-foreground`
+
+### Summary
+
+Foreground FCM notification taps landed on the placeholder NotifyScreen because the redrawn local notification carried only taskId (no repoId) and its onTap was hardwired to goNotify(). Encode the full data map as JSON payload and route through two pure unit-tested helpers (taskRouteFromData, decodeNotificationPayload) shared by foreground and background taps; valid repoId+taskId deep-links to the task, else /notify. No backend change. analyze 0/0 on changed files, flutter test 110/110 (+7 new).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1ba90b8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

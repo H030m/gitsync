@@ -112,6 +112,63 @@ export async function searchMemberCommits(
   }
 }
 
+/**
+ * Lists a member's recently-COMPLETED tasks (status='done') for the assign
+ * agent to read titles and judge whether the member has past experience
+ * relevant to the new task. Best-effort: returns [] on any Firestore error
+ * (mirrors searchMemberCommits's degrade-to-empty contract — the agent
+ * still has workload + expertise + commit-relevance signals to fall back
+ * on).
+ *
+ * Query shape: tasks where assigneeId == memberId AND status == 'done',
+ * ordered by updatedAt desc. Needs the composite index in
+ * firestore.indexes.json.
+ */
+export interface MemberCompletedTask {
+  taskId: string;
+  title: string;
+  completedAt: string | null;
+}
+
+export async function listMemberCompletedTasks(
+  repoId: string,
+  memberId: string,
+  limit = 20,
+): Promise<MemberCompletedTask[]> {
+  const capped = Math.max(1, Math.min(limit, 50));
+  try {
+    const snap = await db
+      .collection(`apps/gitsync/repos/${repoId}/tasks`)
+      .where('assigneeId', '==', memberId)
+      .where('status', '==', 'done')
+      .orderBy('updatedAt', 'desc')
+      .limit(capped)
+      .get();
+    return snap.docs.map((d) => {
+      const data = d.data();
+      const ts = data.updatedAt;
+      // Tolerate the field being missing / non-Timestamp; the agent doesn't
+      // strictly need the date, only the title.
+      const iso =
+        ts && typeof ts.toDate === 'function'
+          ? (ts.toDate() as Date).toISOString()
+          : null;
+      return {
+        taskId: d.id,
+        title: (data.title as string | undefined) ?? '',
+        completedAt: iso,
+      };
+    });
+  } catch (err) {
+    logger.warn('listMemberCompletedTasks failed (returning [])', {
+      repoId,
+      memberId,
+      err: String(err),
+    });
+    return [];
+  }
+}
+
 /** Max skill tags kept per member (oldest-first eviction beyond this). */
 export const MAX_TAGS = 8;
 

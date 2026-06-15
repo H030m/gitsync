@@ -15,6 +15,7 @@ import { assignTaskSystem } from '../prompts/assignTask';
 import {
   readTeamState,
   searchMemberCommits,
+  listMemberCompletedTasks,
   getTaskDependents,
   mergeLearnedTags,
 } from '../tools/assignTools';
@@ -69,6 +70,32 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           },
         },
         required: ['memberId', 'query'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'listMemberCompletedTasks',
+      description:
+        "List a member's most recently COMPLETED tasks (status='done'). " +
+        'Use this to JUDGE — yourself, by reading the titles — whether the ' +
+        'member has past experience semantically related to the new task. ' +
+        'Keyword overlap is NOT required: e.g. past titles like "type out ' +
+        'chapter 3" or "ten-minute speed drill" indicate typing experience ' +
+        'even if the new task says "typing" verbatim. Use the userId returned ' +
+        'by readTeamState as memberId.',
+      parameters: {
+        type: 'object',
+        properties: {
+          memberId: { type: 'string' },
+          limit: {
+            type: 'number',
+            description: 'Default 20, max 50.',
+          },
+        },
+        required: ['memberId'],
         additionalProperties: false,
       },
     },
@@ -307,6 +334,16 @@ async function runReadTool(
           repoId,
           String(args.memberId ?? ''),
           String(args.query ?? ''),
+        ),
+      );
+    case 'listMemberCompletedTasks':
+      return JSON.stringify(
+        await listMemberCompletedTasks(
+          repoId,
+          String((args as { memberId?: unknown }).memberId ?? ''),
+          typeof (args as { limit?: unknown }).limit === 'number'
+            ? ((args as { limit?: number }).limit as number)
+            : undefined,
         ),
       );
     case 'getTaskDependents':

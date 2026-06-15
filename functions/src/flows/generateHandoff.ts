@@ -33,6 +33,7 @@ import { readRepoPlanningDocs } from '../tools/repoDocs';
 import { listRelatedCommits, getCommitDiff } from '../tools/handoffTools';
 import { readProjectBrief, formatBriefForPrompt } from '../tools/projectBrief';
 import { recallForPrompt } from '../tools/memorySearch';
+import { writeObservation, type ObservationCategory } from '../tools/memoryWrite';
 import {
   startRun,
   appendStep,
@@ -462,6 +463,12 @@ export async function generateHandoffFlow(
     });
   }
 
+  // Best-effort: extract durable observations from the handoff (architecture
+  // decisions, gotchas, tech constraints) so future flows can recall them.
+  if (draft) {
+    extractHandoffObservations(repoId, taskId, taskTitle, draft).catch(() => {});
+  }
+
   // Close the agent-trace run (best-effort, no-op without a runId).
   await finishRun(repoId, runId, 'done');
 
@@ -473,6 +480,66 @@ export async function generateHandoffFlow(
     retries,
   });
   return { handoffMarkdown: draft, cached: false };
+}
+
+// ---- Observation extraction ------------------------------------------------
+
+const HANDOFF_EXTRACT_SYSTEM =
+  'You are a knowledge extractor. Given a handoff document for a software task, ' +
+  'extract 1-2 durable facts worth remembering for future agent sessions. ' +
+  'Focus on: architecture decisions, gotchas/pitfalls, technical constraints. ' +
+  'Skip task-specific TODOs (those expire). ' +
+  'Output JSON: { "observations": [{ "content": "...", "category": "...", "tags": ["..."] }] } ' +
+  'where category is one of: architecture_decision, convention, blocker, lesson. ' +
+  'If nothing is worth remembering, output { "observations": [] }. ' +
+  'Keep each content under 200 characters. Tags are lowercase keywords (max 5 per observation).';
+
+async function extractHandoffObservations(
+  repoId: string,
+  taskId: string,
+  taskTitle: string,
+  handoff: string,
+): Promise<void> {
+  try {
+    const completion = await getOpenAI().chat.completions.create({
+      model: MODELS.fast,
+      messages: [
+        { role: 'system', content: HANDOFF_EXTRACT_SYSTEM },
+        {
+          role: 'user',
+          content: `Task: ${taskTitle}\n\nHandoff:\n${handoff.slice(0, 3000)}`,
+        },
+      ],
+      response_format: { type: 'json_object' },
+    });
+
+    const raw = completion.choices[0]?.message?.content ?? '';
+    let parsed: Record<string, unknown>;
+    try { parsed = JSON.parse(raw); } catch { return; }
+
+    const observations = Array.isArray(parsed.observations)
+      ? parsed.observations
+      : [];
+    for (const obs of observations.slice(0, 2)) {
+      const o = obs as Record<string, unknown>;
+      if (!o.content) continue;
+      await writeObservation(repoId, {
+        content: String(o.content),
+        category: (o.category as ObservationCategory) || 'architecture_decision',
+        sourceFlow: 'generateHandoff',
+        sourceId: taskId,
+        tags: Array.isArray(o.tags)
+          ? (o.tags as unknown[]).map((t) => String(t).toLowerCase()).slice(0, 5)
+          : [],
+      });
+    }
+  } catch (err) {
+    logger.warn('extractHandoffObservations failed (best-effort)', {
+      repoId,
+      taskId,
+      err: String(err),
+    });
+  }
 }
 
 // ---- Helpers ---------------------------------------------------------------

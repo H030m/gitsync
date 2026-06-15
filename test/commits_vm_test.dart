@@ -81,6 +81,25 @@ class _CapturingFunctionsService implements FunctionsService {
       throw UnimplementedError(invocation.memberName.toString());
 }
 
+/// getCommitGraph throws [error]; used to exercise the 401 reconnect marker.
+class _ThrowingGraphFunctionsService implements FunctionsService {
+  _ThrowingGraphFunctionsService(this.error);
+  final Object error;
+
+  @override
+  Future<CommitGraph> getCommitGraph({
+    required String repoId,
+    String? startDate,
+    String? endDate,
+    bool force = false,
+  }) async =>
+      throw error;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError(invocation.memberName.toString());
+}
+
 void main() {
   group('Commit.fromMap legacy webhook shapes', () {
     test('ISO-string committedAt and numeric filesChanged do not throw', () {
@@ -138,6 +157,38 @@ void main() {
       expect(repo.subscriptions, 2);
       expect(vm.streamError, isNull);
       expect(vm.loading, isFalse);
+    });
+  });
+
+  group('CommitsViewModel graph token-invalid detection (06-16 D3)', () {
+    test('marker in graph error → graphTokenInvalid is true', () async {
+      final vm = CommitsViewModel(
+        repoId: 'r',
+        commitRepository: _StubCommitRepository(),
+        functionsService: _ThrowingGraphFunctionsService(
+          Exception(
+            'github-token-invalid: Your GitHub authorization has expired.',
+          ),
+        ),
+      );
+      // loadGraph fires from the constructor; let it settle.
+      await Future<void>.delayed(Duration.zero);
+
+      expect(vm.graphError, isNotNull);
+      expect(vm.graphTokenInvalid, isTrue);
+    });
+
+    test('a generic graph error is NOT treated as token-invalid', () async {
+      final vm = CommitsViewModel(
+        repoId: 'r',
+        commitRepository: _StubCommitRepository(),
+        functionsService:
+            _ThrowingGraphFunctionsService(Exception('rate limited')),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(vm.graphError, isNotNull);
+      expect(vm.graphTokenInvalid, isFalse);
     });
   });
 

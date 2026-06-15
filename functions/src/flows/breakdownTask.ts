@@ -33,6 +33,7 @@ import {
 import { readRepoPlanningDocs } from '../tools/repoDocs';
 import { readProjectBrief, formatBriefForPrompt } from '../tools/projectBrief';
 import { recallForPrompt } from '../tools/memorySearch';
+import { writeObservation } from '../tools/memoryWrite';
 import { searchPastCommits } from '../tools/dailyIntel';
 import {
   listExistingTaskTitles,
@@ -153,6 +154,15 @@ export async function breakdownTaskFlow(
     });
   }
   await batch.commit();
+
+  // Best-effort: record what was broken down so future flows can recall it.
+  const topTitles = resolved.slice(0, 3).map((s) => s.title).join('、');
+  writeObservation(repoId, {
+    content: `Goal "${goal.slice(0, 50)}" 拆成 ${resolved.length} 個子任務：${topTitles}`,
+    category: 'project_state',
+    sourceFlow: 'breakdownTask',
+    tags: ['breakdown'],
+  }).catch(() => {});
 
   await finishRun(repoId, runId, 'done');
   return {

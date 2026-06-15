@@ -7,6 +7,7 @@ import '../../services/navigation.dart';
 import '../../theme/app_dimens.dart';
 import '../../theme/app_motion.dart';
 import '../../widgets/section_card.dart';
+import 'add_todo_page.dart';
 import '../../view_models/members_vm.dart';
 import '../../view_models/tasks_board_vm.dart';
 import '../../widgets/staggered_entry.dart';
@@ -65,10 +66,27 @@ class TasksBoardPage extends StatelessWidget {
         floatingActionButton: FloatingActionButton(
           heroTag: 'tasks-board-add-fab',
           tooltip: s.addTaskTitle,
-          onPressed: () => Provider.of<NavigationService>(
-            context,
-            listen: false,
-          ).goAddTodo(repoId),
+          onPressed: () => Navigator.of(context).push(
+            PageRouteBuilder<void>(
+              pageBuilder: (_, _, _) => AddTodoPage(repoId: repoId),
+              transitionDuration: const Duration(milliseconds: 350),
+              reverseTransitionDuration: const Duration(milliseconds: 300),
+              transitionsBuilder: (_, animation, _, child) {
+                final curved = CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeOutCubic,
+                  reverseCurve: Curves.easeInCubic,
+                );
+                return SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 1),
+                    end: Offset.zero,
+                  ).animate(curved),
+                  child: child,
+                );
+              },
+            ),
+          ),
           child: const Icon(Icons.add),
         ),
         body: Consumer<TasksBoardViewModel>(

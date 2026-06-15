@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Confirms typecheck + lint + test are the truth signals."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Rule G (composite indexes) — the new two-where + orderBy query needs an index entry in firestore.indexes.json; also Rule F producer/consumer field-name consistency between the tool query and how tasks docs are written."}
+{"file": ".trellis/spec/backend/testing-guidelines.md", "reason": "Jest + ts-jest patterns; the new test extends __tests__/assignTask.test.ts and must mirror its existing boundary-mocking shape (OpenAI stub, fake Firestore, no live calls)."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Best-effort / degrade-to-empty contract for the new tool, mirroring searchMemberCommits."}

@@ -167,6 +167,13 @@ class AppStrings {
   );
   String get couldNotUpdateAssignee =>
       _('Could not update the assignee.', '無法更新負責人。');
+  String get aiAssign => _('AI assign', 'AI 指派');
+  String get aiAssigning =>
+      _('AI is picking the best assignee…', 'AI 正在挑選最適合的負責人…');
+  String get couldNotAiAssign =>
+      _('AI assignment failed. Please try again.', 'AI 指派失敗,請再試一次。');
+  String aiAssignedTo(String name) =>
+      _('AI assigned this task to $name', 'AI 已將此任務指派給 $name');
   String get couldNotGenerateHandoff =>
       _('Could not generate the handoff doc.', '無法產生交接文件。');
   String get couldNotOpenLink => _('Could not open the link.', '無法開啟連結。');
@@ -204,10 +211,37 @@ class AppStrings {
 
   // ---- Settings ----
   String get settingsTitle => _('Settings', '設定');
+  String get general => _('General', '一般');
   String get appearance => _('Appearance', '外觀');
   String get language => _('Language', '語言');
   String get account => _('Account', '帳號');
   String get signOut => _('Sign out', '登出');
+  String get signOutConfirmTitle => _('Sign out?', '確定要登出？');
+  String get signOutConfirmBody =>
+      _('You will need to sign in again to access your repos.',
+          '登出後需要重新登入才能存取你的 Repo。');
+  String get testNotificationSent =>
+      _('Test notification sent', '測試通知已送出');
+
+  // ---- GitHub connection (manual OAuth, task 06-16) ----
+  String get githubConnection => _('GitHub connection', 'GitHub 連結');
+  String get connectGitHub => _('Connect GitHub', '連結 GitHub');
+  String get reconnectGitHub => _('Reconnect GitHub', '重新連結 GitHub');
+  String get connectGitHubSubtitle => _(
+    'Authorize GitHub access (branch graph, issues). '
+        'Reconnect if your token has expired.',
+    '授權 GitHub 存取(分支圖、Issue)。Token 失效時請重新連結。',
+  );
+  String get githubConnected =>
+      _('GitHub connected.', '已連結 GitHub。');
+  String get githubConnectCancelled =>
+      _('GitHub connection cancelled.', '已取消 GitHub 連結。');
+  String githubConnectFailed(String err) =>
+      _('GitHub connection failed: $err', 'GitHub 連結失敗:$err');
+  String get githubTokenExpired => _(
+    'Your GitHub authorization has expired. Reconnect GitHub to continue.',
+    'GitHub 授權已失效。請重新連結 GitHub 以繼續。',
+  );
   String get notifications => _('Notifications', '通知');
   String get sendTestNotification => _('Send test notification', '傳送測試通知');
   String get testNotificationTitle => _('GitSync', 'GitSync');
@@ -408,4 +442,8 @@ class AppStrings {
     "Each author's commit share and AI work summary",
     '每位作者的 commit 佔比與 AI 工作統整',
   );
+  String authorCommitStats(int count, int pct) =>
+      _('$count commits · $pct%', '$count commits · $pct%');
+  String totalCommits(int n) => _('$n commits', '$n commits');
+  String totalTasks(int n) => _('$n tasks', '$n 任務');
 }

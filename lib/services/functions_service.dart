@@ -147,6 +147,18 @@ abstract class FunctionsService {
     bool force = false,
   });
 
+  // ---- GitHub OAuth ------------------------------------------------------
+
+  /// Completes the manual GitHub OAuth flow: hands the authorization [code]
+  /// (captured by the in-app browser) to the backend, which swaps it for a
+  /// `gho_` access token using the server-only client_secret and writes it to
+  /// `users/{uid}.githubAccessToken`. The token is never returned to the
+  /// client. [redirectUri] must match the one used in the authorize URL.
+  Future<void> exchangeGitHubCode({
+    required String code,
+    required String redirectUri,
+  });
+
   // ---- Discord -----------------------------------------------------------
 
   Future<void> setDiscordWebhook({
@@ -411,6 +423,17 @@ class _LiveFunctionsService implements FunctionsService {
       'force': force,
     });
     return CommitGraph.fromMap(Map<String, dynamic>.from(res.data as Map));
+  }
+
+  @override
+  Future<void> exchangeGitHubCode({
+    required String code,
+    required String redirectUri,
+  }) async {
+    await _callable('exchangeGitHubCode').call({
+      'code': code,
+      'redirectUri': redirectUri,
+    });
   }
 
   @override

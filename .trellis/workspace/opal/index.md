@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 16
-- **Last Active**: 2026-06-15
+- **Total Sessions**: 17
+- **Last Active**: 2026-06-16
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~555 | Active |
+| `journal-1.md` | ~590 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 17 | 2026-06-16 | Android GitHub token 取得/刷新(web-auth + exchangeGitHubCode CF) | `cd7ce53`, `8db09aa`, `9eacd26` | `feature/android-github-token` |
 | 16 | 2026-06-15 | 每日彙整精簡:移除 count chip/鎖/AI調整/locked + 修 digest 初始範圍 | `91a7968`, `6f130cd`, `e550e92` | `feature/remove-daily-chips-lock` |
 | 15 | 2026-06-15 | 每日彙整:合併 Discord+摘要為單一視圖、精簡卡片、全頁 AI 中文 | `bf02f40`, `0e98350`, `a5e8038` | `feature/merge-daily-digest` |
 | 14 | 2026-06-15 | 增量拆解可觀測性:記錄 agent 工具調用與依賴統計 | `3dd960b` | `feature/incremental-breakdown-observability` |

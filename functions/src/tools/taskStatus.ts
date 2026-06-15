@@ -92,6 +92,27 @@ export async function applyAssignment(
 }
 
 /**
+ * Release a DELETED task's workload from its assignee. Only an ACTIVE (non-done)
+ * assigned task still counts toward `activeIssueCount` — a `done` task already
+ * decremented it via {@link markTaskDone} — so callers must invoke this only for
+ * a non-done task. Clamps at 0 inside the transaction so a double-fire (the
+ * delete trigger re-running) can never drive the counter negative.
+ */
+export async function releaseDeletedTaskWorkload(
+  repoId: string,
+  assigneeId: string,
+): Promise<void> {
+  const memberRef = db.doc(`apps/gitsync/repos/${repoId}/members/${assigneeId}`);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(memberRef);
+    if (!snap.exists) return;
+    const current = (snap.data()?.activeIssueCount as number | undefined) ?? 0;
+    if (current <= 0) return; // already at the floor → nothing to release
+    tx.update(memberRef, { activeIssueCount: FieldValue.increment(-1) });
+  });
+}
+
+/**
  * Revert a task to `todo` (used when its mirror issue is reopened). Re-reads
  * inside the transaction; only reverts a task currently `done`, and reverses
  * the assignee counters set by {@link markTaskDone}.

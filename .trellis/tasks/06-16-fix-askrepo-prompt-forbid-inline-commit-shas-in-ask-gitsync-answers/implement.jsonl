@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "typecheck + lint + test are the truth signals; the change is a prompt string."}
+{"file": ".trellis/tasks/06-14-fix-prompt-preserve-discord-username-casing-in-digest-output/prd.md", "reason": "Reference: an earlier prompt-rule fix that used explicit example-style negative wording for the same model class — same approach for consistency."}
