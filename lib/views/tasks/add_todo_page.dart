@@ -243,17 +243,19 @@ class _AddTodoPageState extends State<AddTodoPage> {
     super.dispose();
   }
 
-  // Leave the add page back to the task board. The page is opened ON TOP of the
-  // board (go('/repos/:id/tasks/add')), so popping reliably returns there;
-  // calling go() to the parent can leave the nested 'add' page on screen under
-  // a ShellRoute, which is why the buttons appeared to "do nothing". Fall back
-  // to an explicit go() only when there is nothing to pop.
+  // Leave the add page back to the task board. The board opens this page with
+  // `Navigator.of(context).push(...)` (a raw Navigator route, NOT a go_router
+  // route), so it must be removed with the RAW Navigator — `router.go()` only
+  // changes the location UNDER the pushed page (so it stayed on screen and the
+  // buttons looked dead), and `router.pop()` targets the wrong navigator. Pop
+  // the Navigator; fall back to go() only if there's genuinely nothing to pop.
   void _leaveToBoard() {
-    final nav = Provider.of<NavigationService>(context, listen: false);
-    if (nav.router.canPop()) {
-      nav.router.pop();
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
     } else {
-      nav.goTasks(widget.repoId);
+      Provider.of<NavigationService>(context, listen: false)
+          .goTasks(widget.repoId);
     }
   }
 
