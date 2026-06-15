@@ -553,3 +553,38 @@ Daily 頁把 Summary/Discord 兩分頁合成單一每日視圖(每天:摘要+重
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: Android GitHub token 取得/刷新(web-auth + exchangeGitHubCode CF)
+
+**Date**: 2026-06-16
+**Task**: Android GitHub token 取得/刷新(web-auth + exchangeGitHubCode CF)
+**Branch**: `feature/android-github-token`
+
+### Summary
+
+firebase_auth 在 Android 拿不到 GitHub provider token,改用次要 OAuth:flutter_web_auth_2 取 code → 新 CF exchangeGitHubCode 以 defineSecret 的 client_secret 換 gho_ token 寫回 users/{uid}.githubAccessToken(回 {ok:true} 不回 token、CSRF state 驗證)。getCommitGraph 把 GitHub 401 對映成 HttpsError('failed-precondition','github-token-invalid: ...'),app 偵測後在 Settings/分支圖錯誤態顯示『重新連結 GitHub』CTA。client_secret 只在 CF;client_id 公開、寫進 app+functions config。owner 已建 OAuth App(callback gitsync://oauth/github)+設好 GITHUB_OAUTH_CLIENT_SECRET。functions 424 / flutter 108 綠。spec 記於 backend/error-handling。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cd7ce53` | (see git log) |
+| `8db09aa` | (see git log) |
+| `9eacd26` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
