@@ -12,8 +12,10 @@ import '../../services/navigation.dart';
 import '../../services/theme_mode_notifier.dart';
 import '../../theme/app_dimens.dart';
 import '../../view_models/auth_vm.dart';
+import '../../widgets/section_card.dart';
+import '../../widgets/staggered_entry.dart';
 
-// SettingsPage — language + theme selectors, backend-mode indicator, sign-out.
+// SettingsPage — grouped M3 settings with entrance animations.
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key, required this.repoId});
   final String repoId;
@@ -26,80 +28,304 @@ class SettingsPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
         children: [
-          const _BackendBanner(),
-          _SectionLabel(s.language),
-          const _LanguageSelector(),
-          const SizedBox(height: AppDimens.spacingSm),
-          _SectionLabel(s.appearance),
-          const _ThemeSelector(),
-          const SizedBox(height: AppDimens.spacingSm),
-          _SectionLabel(s.notifications),
-          ListTile(
-            leading: const Icon(Icons.notifications_active_outlined),
-            title: Text(s.sendTestNotification),
-            onTap: () async {
-              final messenger = ScaffoldMessenger.of(context);
-              try {
-                final permitted =
-                    await LocalNotificationsService.instance.ensurePermission();
-                if (!permitted) {
-                  // Permission denied at the OS level: show() would silently
-                  // no-op, so tell the user where to turn notifications on.
-                  messenger.showSnackBar(
-                    SnackBar(content: Text(s.notificationsDisabledHint)),
-                  );
-                  return;
-                }
-                await LocalNotificationsService.instance.show(
-                  title: s.testNotificationTitle,
-                  body: s.testNotificationBody,
-                );
-              } catch (e) {
-                // Most likely the app was hot-restarted without a full rebuild,
-                // so the native plugin isn't in the running APK.
-                messenger.showSnackBar(
-                  SnackBar(content: Text('${s.notificationFailed}: $e')),
-                );
-              }
-            },
+          StaggeredEntry(
+            key: const ValueKey('settings-banner'),
+            index: 0,
+            child: const _BackendBanner(),
+          ),
+          StaggeredEntry(
+            key: const ValueKey('settings-general'),
+            index: 1,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SectionHeader(s.general),
+                _GeneralCard(),
+              ],
+            ),
+          ),
+          StaggeredEntry(
+            key: const ValueKey('settings-notifications'),
+            index: 2,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SectionHeader(s.notifications),
+                _NotificationsCard(),
+              ],
+            ),
+          ),
+          StaggeredEntry(
+            key: const ValueKey('settings-github'),
+            index: 3,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SectionHeader(s.githubConnection),
+                const _GitHubCard(),
+              ],
+            ),
+          ),
+          StaggeredEntry(
+            key: const ValueKey('settings-danger'),
+            index: 4,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SectionHeader(s.dangerZone),
+                _DangerZoneCard(repoId: repoId),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppDimens.spacingLg),
+        ],
+      ),
+    );
+  }
+}
+
+// M3-style section header: natural case, onSurfaceVariant, labelLarge.
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppDimens.spacingMd,
+        AppDimens.spacingLg,
+        AppDimens.spacingMd,
+        AppDimens.spacingSm,
+      ),
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: scheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
+      ),
+    );
+  }
+}
+
+// Language + Appearance grouped in one card.
+class _GeneralCard extends StatelessWidget {
+  const _GeneralCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.l10n;
+    final scheme = Theme.of(context).colorScheme;
+    final notifier = context.watch<LocaleNotifier>();
+    final themeModeNotifier = context.watch<ThemeModeNotifier>();
+    return SectionCard(
+      margin: const EdgeInsets.symmetric(horizontal: AppDimens.spacingMd),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            s.language,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
           ),
           const SizedBox(height: AppDimens.spacingSm),
-          _SectionLabel(s.dangerZone),
-          ListTile(
-            leading: Icon(Icons.delete_sweep_outlined,
-                color: Theme.of(context).colorScheme.error),
-            title: Text(s.deleteAllTasks),
-            subtitle: Text(s.deleteAllTasksSubtitle),
-            textColor: Theme.of(context).colorScheme.error,
-            iconColor: Theme.of(context).colorScheme.error,
-            onTap: () => _confirmDeleteAllTasks(context),
+          SegmentedButton<AppLocale>(
+            segments: const [
+              ButtonSegment(value: AppLocale.zhHant, label: Text('中文（繁體）')),
+              ButtonSegment(value: AppLocale.en, label: Text('English')),
+            ],
+            selected: {notifier.locale},
+            showSelectedIcon: false,
+            onSelectionChanged: (sel) => notifier.setLocale(sel.first),
+          ),
+          const Divider(height: AppDimens.spacingLg),
+          Text(
+            s.appearance,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
           ),
           const SizedBox(height: AppDimens.spacingSm),
-          _SectionLabel(s.githubConnection),
-          const _ConnectGitHubTile(),
-          const SizedBox(height: AppDimens.spacingSm),
-          _SectionLabel(s.account),
-          ListTile(
-            title: Text(s.signOut),
-            leading:
-                Icon(Icons.logout, color: Theme.of(context).colorScheme.error),
-            textColor: Theme.of(context).colorScheme.error,
-            iconColor: Theme.of(context).colorScheme.error,
-            onTap: () async {
-              final nav = Provider.of<NavigationService>(context, listen: false);
-              Provider.of<LocaleNotifier>(context, listen: false).detachUser();
-              await Provider.of<AuthenticationService>(context, listen: false)
-                  .logOut();
-              nav.goSignIn();
-            },
+          SegmentedButton<ThemeMode>(
+            segments: [
+              ButtonSegment(
+                value: ThemeMode.system,
+                icon: const Icon(Icons.brightness_auto_outlined),
+                label: Text(s.themeSystem),
+              ),
+              ButtonSegment(
+                value: ThemeMode.light,
+                icon: const Icon(Icons.light_mode_outlined),
+                label: Text(s.themeLight),
+              ),
+              ButtonSegment(
+                value: ThemeMode.dark,
+                icon: const Icon(Icons.dark_mode_outlined),
+                label: Text(s.themeDark),
+              ),
+            ],
+            selected: {themeModeNotifier.mode},
+            showSelectedIcon: false,
+            onSelectionChanged: (sel) => themeModeNotifier.setMode(sel.first),
           ),
         ],
       ),
     );
   }
+}
 
-  // Confirm, then delete every task in this repo (demo reset). Captures the
-  // messenger/service before awaiting and guards on context.mounted after.
+// Notifications section — single action tile.
+class _NotificationsCard extends StatelessWidget {
+  const _NotificationsCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.l10n;
+    final scheme = Theme.of(context).colorScheme;
+    return SectionCard(
+      padding: EdgeInsets.zero,
+      margin: const EdgeInsets.symmetric(horizontal: AppDimens.spacingMd),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+        child: ListTile(
+          leading: const Icon(Icons.notifications_active_outlined),
+          title: Text(s.sendTestNotification),
+          trailing: Icon(Icons.chevron_right,
+              color: scheme.onSurfaceVariant, size: 20),
+          onTap: () async {
+            final messenger = ScaffoldMessenger.of(context);
+            try {
+              final permitted =
+                  await LocalNotificationsService.instance.ensurePermission();
+              if (!permitted) {
+                messenger.showSnackBar(
+                  SnackBar(content: Text(s.notificationsDisabledHint)),
+                );
+                return;
+              }
+              await LocalNotificationsService.instance.show(
+                title: s.testNotificationTitle,
+                body: s.testNotificationBody,
+              );
+            } catch (e) {
+              messenger.showSnackBar(
+                SnackBar(content: Text('${s.notificationFailed}: $e')),
+              );
+            }
+          },
+        ),
+      ),
+    );
+  }
+}
+
+// GitHub connection — runs OAuth flow to obtain/refresh githubAccessToken.
+class _GitHubCard extends StatelessWidget {
+  const _GitHubCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.l10n;
+    final auth = context.watch<AuthViewModel>();
+    final busy = auth.isConnectingGitHub;
+    return SectionCard(
+      padding: EdgeInsets.zero,
+      margin: const EdgeInsets.symmetric(horizontal: AppDimens.spacingMd),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+        child: ListTile(
+          leading: const Icon(Icons.link),
+          title: Text(s.connectGitHub),
+          subtitle: Text(s.connectGitHubSubtitle),
+          trailing: busy
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : null,
+          onTap: busy ? null : () => _connect(context),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _connect(BuildContext context) async {
+    final s = context.l10n;
+    final messenger = ScaffoldMessenger.of(context);
+    final auth = Provider.of<AuthViewModel>(context, listen: false);
+    final ok = await auth.connectGitHub();
+    if (!context.mounted) return;
+    if (ok) {
+      messenger.showSnackBar(SnackBar(content: Text(s.githubConnected)));
+    } else if (auth.lastError == null) {
+      messenger.showSnackBar(SnackBar(content: Text(s.githubConnectCancelled)));
+    } else {
+      messenger.showSnackBar(
+        SnackBar(content: Text(s.githubConnectFailed(auth.lastError!))),
+      );
+    }
+  }
+}
+
+// Danger zone — delete-all + sign-out in an error-tinted card.
+class _DangerZoneCard extends StatelessWidget {
+  const _DangerZoneCard({required this.repoId});
+  final String repoId;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.l10n;
+    final scheme = Theme.of(context).colorScheme;
+    return SectionCard(
+      color: scheme.errorContainer,
+      padding: EdgeInsets.zero,
+      margin: const EdgeInsets.symmetric(horizontal: AppDimens.spacingMd),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+        child: Column(
+          children: [
+            ListTile(
+              leading: Icon(Icons.delete_sweep_outlined,
+                  color: scheme.onErrorContainer),
+              title: Text(s.deleteAllTasks),
+              subtitle: Text(s.deleteAllTasksSubtitle),
+              textColor: scheme.onErrorContainer,
+              iconColor: scheme.onErrorContainer,
+              trailing: Icon(Icons.chevron_right,
+                  color: scheme.onErrorContainer, size: 20),
+              onTap: () => _confirmDeleteAllTasks(context),
+            ),
+            Divider(
+              height: 1,
+              color: scheme.onErrorContainer.withValues(alpha: 0.2),
+            ),
+            ListTile(
+              leading: Icon(Icons.logout, color: scheme.onErrorContainer),
+              title: Text(s.signOut),
+              textColor: scheme.onErrorContainer,
+              iconColor: scheme.onErrorContainer,
+              trailing: Icon(Icons.chevron_right,
+                  color: scheme.onErrorContainer, size: 20),
+              onTap: () async {
+                final nav =
+                    Provider.of<NavigationService>(context, listen: false);
+                Provider.of<LocaleNotifier>(context, listen: false)
+                    .detachUser();
+                await Provider.of<AuthenticationService>(context, listen: false)
+                    .logOut();
+                nav.goSignIn();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _confirmDeleteAllTasks(BuildContext context) async {
     final s = context.l10n;
     final messenger = ScaffoldMessenger.of(context);
@@ -138,136 +364,7 @@ class SettingsPage extends StatelessWidget {
   }
 }
 
-// Small uppercase section header used to group settings rows.
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel(this.text);
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppDimens.spacingMd,
-        AppDimens.spacingMd,
-        AppDimens.spacingMd,
-        AppDimens.spacingSm,
-      ),
-      child: Text(
-        text.toUpperCase(),
-        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: scheme.primary,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.8,
-            ),
-      ),
-    );
-  }
-}
-
-// 中文 / English language switch (persisted via LocaleNotifier).
-class _LanguageSelector extends StatelessWidget {
-  const _LanguageSelector();
-
-  @override
-  Widget build(BuildContext context) {
-    final notifier = context.watch<LocaleNotifier>();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppDimens.spacingMd),
-      child: SegmentedButton<AppLocale>(
-        segments: const [
-          ButtonSegment(value: AppLocale.zhHant, label: Text('中文（繁體）')),
-          ButtonSegment(value: AppLocale.en, label: Text('English')),
-        ],
-        selected: {notifier.locale},
-        showSelectedIcon: false,
-        onSelectionChanged: (sel) => notifier.setLocale(sel.first),
-      ),
-    );
-  }
-}
-
-// Three-way System / Light / Dark selector.
-class _ThemeSelector extends StatelessWidget {
-  const _ThemeSelector();
-
-  @override
-  Widget build(BuildContext context) {
-    final s = context.l10n;
-    final theme = context.watch<ThemeModeNotifier>();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppDimens.spacingMd),
-      child: SegmentedButton<ThemeMode>(
-        segments: [
-          ButtonSegment(
-            value: ThemeMode.system,
-            icon: const Icon(Icons.brightness_auto_outlined),
-            label: Text(s.themeSystem),
-          ),
-          ButtonSegment(
-            value: ThemeMode.light,
-            icon: const Icon(Icons.light_mode_outlined),
-            label: Text(s.themeLight),
-          ),
-          ButtonSegment(
-            value: ThemeMode.dark,
-            icon: const Icon(Icons.dark_mode_outlined),
-            label: Text(s.themeDark),
-          ),
-        ],
-        selected: {theme.mode},
-        showSelectedIcon: false,
-        onSelectionChanged: (sel) => theme.setMode(sel.first),
-      ),
-    );
-  }
-}
-
-// "Connect / Reconnect GitHub" — runs the manual OAuth flow so Android (and any
-// stale-token) users can (re)obtain a valid githubAccessToken (task 06-16).
-class _ConnectGitHubTile extends StatelessWidget {
-  const _ConnectGitHubTile();
-
-  @override
-  Widget build(BuildContext context) {
-    final s = context.l10n;
-    final auth = context.watch<AuthViewModel>();
-    final busy = auth.isConnectingGitHub;
-    return ListTile(
-      leading: const Icon(Icons.link),
-      title: Text(s.connectGitHub),
-      subtitle: Text(s.connectGitHubSubtitle),
-      trailing: busy
-          ? const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : const Icon(Icons.chevron_right),
-      onTap: busy ? null : () => _connect(context),
-    );
-  }
-
-  Future<void> _connect(BuildContext context) async {
-    final s = context.l10n;
-    final messenger = ScaffoldMessenger.of(context);
-    final auth = Provider.of<AuthViewModel>(context, listen: false);
-    final ok = await auth.connectGitHub();
-    if (!context.mounted) return;
-    if (ok) {
-      messenger.showSnackBar(SnackBar(content: Text(s.githubConnected)));
-    } else if (auth.lastError == null) {
-      // No error recorded → the user dismissed the browser tab.
-      messenger
-          .showSnackBar(SnackBar(content: Text(s.githubConnectCancelled)));
-    } else {
-      messenger.showSnackBar(
-        SnackBar(content: Text(s.githubConnectFailed(auth.lastError!))),
-      );
-    }
-  }
-}
-
+// Backend mode informational banner using SectionCard with tinted background.
 class _BackendBanner extends StatelessWidget {
   const _BackendBanner();
 
@@ -276,26 +373,15 @@ class _BackendBanner extends StatelessWidget {
     final s = context.l10n;
     final isFake = AppConfig.useFakeBackend;
     final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
+    final fgColor =
+        isFake ? scheme.onTertiaryContainer : scheme.onPrimaryContainer;
+    return SectionCard(
+      color: isFake ? scheme.tertiaryContainer : scheme.primaryContainer,
       margin: const EdgeInsets.fromLTRB(
         AppDimens.spacingMd,
         AppDimens.spacingSm,
         AppDimens.spacingMd,
         0,
-      ),
-      padding: const EdgeInsets.all(AppDimens.spacingMd),
-      decoration: BoxDecoration(
-        color: isFake ? scheme.tertiaryContainer : scheme.primaryContainer,
-        borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
-        boxShadow: [
-          BoxShadow(
-            color: scheme.shadow.withValues(alpha: 0.06),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -304,31 +390,25 @@ class _BackendBanner extends StatelessWidget {
             children: [
               Icon(
                 isFake ? Icons.bug_report : Icons.cloud_done,
-                color: isFake
-                    ? scheme.onTertiaryContainer
-                    : scheme.onPrimaryContainer,
+                color: fgColor,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppDimens.spacingSm),
               Expanded(
                 child: Text(
                   isFake ? s.backendFakeTitle : s.backendLiveTitle,
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: isFake
-                            ? scheme.onTertiaryContainer
-                            : scheme.onPrimaryContainer,
+                        color: fgColor,
                         fontWeight: FontWeight.bold,
                       ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppDimens.spacingSm),
           Text(
             isFake ? s.backendFakeBody : s.backendLiveBody,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: isFake
-                      ? scheme.onTertiaryContainer
-                      : scheme.onPrimaryContainer,
+                  color: fgColor,
                 ),
           ),
         ],

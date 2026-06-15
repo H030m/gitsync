@@ -12,6 +12,7 @@ class SectionCard extends StatelessWidget {
     required this.child,
     this.padding,
     this.margin,
+    this.color,
   });
 
   final Widget child;
@@ -22,6 +23,10 @@ class SectionCard extends StatelessWidget {
   /// Defaults to `null` (no outer margin).
   final EdgeInsetsGeometry? margin;
 
+  /// Override the default background color. When null, uses white (light) or
+  /// [ColorScheme.surfaceContainerHigh] (dark).
+  final Color? color;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -30,9 +35,10 @@ class SectionCard extends StatelessWidget {
       margin: margin,
       padding: padding ?? const EdgeInsets.all(AppDimens.spacingMd),
       decoration: BoxDecoration(
-        color: theme.brightness == Brightness.light
-            ? const Color(0xFFFFFFFF)
-            : scheme.surfaceContainerHigh,
+        color: color ??
+            (theme.brightness == Brightness.light
+                ? const Color(0xFFFFFFFF)
+                : scheme.surfaceContainerHigh),
         borderRadius: BorderRadius.circular(AppDimens.radiusMd),
         border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
         boxShadow: [

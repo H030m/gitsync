@@ -211,6 +211,7 @@ class AppStrings {
 
   // ---- Settings ----
   String get settingsTitle => _('Settings', '設定');
+  String get general => _('General', '一般');
   String get appearance => _('Appearance', '外觀');
   String get language => _('Language', '語言');
   String get account => _('Account', '帳號');
