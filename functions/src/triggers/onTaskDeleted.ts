@@ -12,7 +12,7 @@ import { logger } from 'firebase-functions/v2';
 import { db, REGION } from '../admin';
 import { closeIssue } from '../services/githubClient';
 import { markIdempotent } from '../tools/idempotency';
-import { releaseDeletedTaskWorkload } from '../tools/taskStatus';
+import { recomputeMemberActiveCount } from '../tools/taskStatus';
 
 /** Splits the repo doc `name` ("owner/repo") into owner/repo (names may contain `_`). */
 function ownerRepoFromName(name: unknown): { owner: string; repo: string } | null {
@@ -39,22 +39,22 @@ export const onTaskDeleted = onDocumentDeleted(
       taskId: string;
     };
 
-    // Release the deleted task's workload from its assignee. Only an ACTIVE
-    // (non-done) assigned task still counts toward activeIssueCount — a done
-    // task already decremented it at completion — so guard on status. Runs
-    // BEFORE the issue-close logic (which early-returns when there is no mirror
-    // issue / token) so deletion always frees the counter. Best-effort.
+    // Re-true the assignee's activeIssueCount from the live task list. Recompute
+    // (not decrement) so the counter can never drift, no matter how the deleted
+    // task got assigned/completed. Runs BEFORE the issue-close logic (which
+    // early-returns when there is no mirror issue / token) so deletion always
+    // fixes the counter. Best-effort.
     const assigneeId = task.assigneeId as string | undefined;
-    if (assigneeId && task.status !== 'done') {
+    if (assigneeId) {
       try {
-        await releaseDeletedTaskWorkload(repoId, assigneeId);
-        logger.info('onTaskDeleted: released assignee workload', {
+        await recomputeMemberActiveCount(repoId, assigneeId);
+        logger.info('onTaskDeleted: recomputed assignee active count', {
           repoId,
           taskId,
           assigneeId,
         });
       } catch (err) {
-        logger.warn('onTaskDeleted: release workload failed (best-effort)', {
+        logger.warn('onTaskDeleted: recompute active count failed (best-effort)', {
           repoId,
           taskId,
           err: String(err),
