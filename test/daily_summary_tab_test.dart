@@ -68,7 +68,9 @@ void main() {
     // Today's per-day card is expanded by default, showing the full report.
     expect(find.textContaining('Today'), findsWidgets);
     expect(find.textContaining('Sprint 1 skeleton merged'), findsOneWidget);
-    expect(find.text('Commit rollup'), findsOneWidget);
+    // D8: the commit-rollup sub-section was dropped from "Key activity".
+    expect(find.text('Commit rollup'), findsNothing);
+    expect(find.text('Key activity'), findsOneWidget);
     expect(find.text('Contributions'), findsOneWidget);
     // The lower chat is now the global, repo-wide "Ask GitSync" assistant.
     expect(find.text('Ask GitSync'), findsOneWidget);
@@ -144,15 +146,16 @@ void main() {
     );
 
     // Today's card is expanded — the full body (Regenerate + sub-cards) shows.
+    // D8: the body no longer has a "Commit rollup" section; use "Key activity".
     expect(find.widgetWithText(TextButton, 'Regenerate'), findsOneWidget);
-    expect(find.text('Commit rollup'), findsOneWidget);
+    expect(find.text('Key activity'), findsOneWidget);
 
     // Tap the header to collapse; the full body disappears (the one-line
     // summary preview remains in the collapsed header).
     await tester.tap(find.textContaining('Today ·'));
     await tester.pumpAndSettle();
     expect(find.widgetWithText(TextButton, 'Regenerate'), findsNothing);
-    expect(find.text('Commit rollup'), findsNothing);
+    expect(find.text('Key activity'), findsNothing);
   });
 
   testWidgets('the day-report panel collapses to a single header row', (

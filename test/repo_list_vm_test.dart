@@ -105,6 +105,7 @@ class _FakeFunctionsService implements FunctionsService {
     required String question,
     List<AskRepoTurn> history = const [],
     String? runId,
+    String? language,
   }) =>
       throw UnimplementedError();
 

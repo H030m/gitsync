@@ -247,10 +247,9 @@ class AppStrings {
     'No report for this day yet. Tap "Generate report" to let the AI summarize the day\'s commits, tasks and chat.',
     '這天還沒有日報。點「產生日報」讓 AI 整理當天的 commits、任務與聊天。',
   );
-  // D3: highlights + blockers + commit rollup are merged into one "Key activity"
-  // card; `commitRollup` stays as the rollup's internal sub-heading.
+  // D8: the "Key activity" card holds highlights + blockers (the commit rollup
+  // sub-section was dropped, so `commitRollup` is gone too).
   String get keyActivity => _('Key activity', '活動重點');
-  String get commitRollup => _('Commit rollup', '提交彙總');
   String get contributions => _('Contributions', '貢獻');
   String generatingDayProgress(int done, int total) =>
       _('Generating ($done/$total)', '產生中（$done/$total）');
@@ -302,8 +301,6 @@ class AppStrings {
   String get discordDigest => _('Discord digest', 'Discord 摘要');
   String discordDigestForDate(String date) =>
       _('Discord digest · $date', 'Discord 摘要 · $date');
-  String digestSourceMessages(int n) =>
-      _('Referenced messages ($n)', '參考訊息（$n）');
   String get noDigestInRange => _(
     'No digest in this range. Use "Refresh current range" above to pull messages.',
     '這個範圍還沒有摘要。用上方的「重新整理目前範圍」拉取訊息。',

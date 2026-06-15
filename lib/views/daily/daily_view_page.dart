@@ -235,7 +235,10 @@ class _DailyTabState extends State<_DailyTab> {
     final text = _controller.text;
     if (text.trim().isEmpty || vm.sending) return;
     _controller.clear();
-    vm.ask(text);
+    // D9: pass the app-locale language NAME so the answer comes back in the
+    // user's language (reuses the W6 locale→name plumbing; on this page that's
+    // Chinese).
+    vm.ask(text, language: context.l10n.backendLanguage);
     // Jump to the latest turn once it's laid out.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollController.hasClients) return;
@@ -673,8 +676,8 @@ class _DayReportCardState extends State<_DayReportCard> {
 }
 
 // The expanded report half of a unified day card: summary text, a regenerate
-// action, then the merged "Key activity" card (highlights + blockers + commit
-// rollup) and the per-member contributions card (D3).
+// action, then the "Key activity" card (highlights + blockers, D8) and the
+// per-member contributions card (D3).
 class _DayReportBody extends StatelessWidget {
   const _DayReportBody({
     required this.vm,
@@ -714,7 +717,7 @@ class _DayReportBody extends StatelessWidget {
             label: Text(generating ? s.generating : s.regenerateReport),
           ),
         ),
-        // D3: highlights + blockers + commit rollup are now ONE card.
+        // D8: highlights + blockers in ONE card (commit rollup dropped).
         _KeyActivityCard(report: report),
         _ContributionsCard(report: report),
       ],
@@ -798,7 +801,6 @@ class _DayDigestSectionState extends State<_DayDigestSection> {
     final locked = digest.locked;
     final editing = vm.isEditingDigest(digest.date);
     final toggling = vm.isTogglingLock(digest.date);
-    final sources = _digestSources(digest, vm);
 
     return Padding(
       padding: const EdgeInsets.only(top: AppDimens.spacingMd),
@@ -855,11 +857,6 @@ class _DayDigestSectionState extends State<_DayDigestSection> {
             width: double.infinity,
             child: MarkdownView(data: digest.markdown),
           ),
-          // ---- Referenced messages (collapsed by default) ----
-          if (sources.isNotEmpty) ...[
-            const SizedBox(height: AppDimens.spacingSm),
-            _DigestSourceMessages(sources: sources),
-          ],
           const SizedBox(height: AppDimens.spacingSm),
           // ---- Lock hint OR the AI-adjust input ----
           if (locked)
@@ -928,11 +925,11 @@ class _DayDigestSectionState extends State<_DayDigestSection> {
   }
 }
 
-// D3: the merged "Key activity" card — highlights (wins) + blockers + the
-// commit-message rollup (themes), all under ONE header with light internal
-// grouping instead of three separate titled cards. Each sub-section renders
-// only when it has data, and the whole card disappears when there's nothing,
-// so it stays compact. Light/dark are inherited from SectionCard + colorScheme.
+// D8: the "Key activity" card — highlights (wins) + blockers under ONE header.
+// (The commit-message rollup was dropped per D8; commitThemes can still exist in
+// the data, it's just not rendered here.) Each sub-section renders only when it
+// has data, and the whole card disappears when there's nothing, so it stays
+// compact. Light/dark are inherited from SectionCard + colorScheme.
 class _KeyActivityCard extends StatelessWidget {
   const _KeyActivityCard({required this.report});
   final DailyReport report;
@@ -941,23 +938,12 @@ class _KeyActivityCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasHighlights = report.highlights.isNotEmpty;
     final hasBlockers = report.blockers.isNotEmpty;
-    final hasThemes = report.commitThemes.isNotEmpty;
-    if (!hasHighlights && !hasBlockers && !hasThemes) {
+    if (!hasHighlights && !hasBlockers) {
       return const SizedBox.shrink();
     }
     final s = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-
-    // Tracks whether a blank line is needed before the next sub-section.
-    var needsGap = false;
-    Widget gap() {
-      final w = needsGap
-          ? const SizedBox(height: AppDimens.spacingSm)
-          : const SizedBox.shrink();
-      needsGap = true;
-      return w;
-    }
 
     return Padding(
       padding: const EdgeInsets.only(top: AppDimens.spacingMd),
@@ -997,88 +983,9 @@ class _KeyActivityCard extends StatelessWidget {
                   text: b,
                 ),
             ],
-            // ---- Commit rollup (a light sub-heading keeps the themes legible
-            // when they sit under highlights/blockers). ----
-            if (hasThemes) ...[
-              gap(),
-              _SubHeading(
-                icon: Icons.merge_type_outlined,
-                color: scheme.tertiary,
-                label: s.commitRollup,
-              ),
-              const SizedBox(height: AppDimens.spacingXs),
-              for (final t in report.commitThemes)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: AppDimens.spacingSm),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              t.theme,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            if (t.summary.isNotEmpty)
-                              Text(
-                                t.summary,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: scheme.onSurfaceVariant,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      if (t.commitCount > 0) ...[
-                        const SizedBox(width: AppDimens.spacingSm),
-                        _CountChip(
-                          icon: Icons.commit_outlined,
-                          label: '${t.commitCount}',
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-            ],
           ],
         ),
       ),
-    );
-  }
-}
-
-// A light, non-card sub-heading used inside the merged "Key activity" card to
-// label an internal group (e.g. the commit rollup) without spawning a second
-// titled SectionCard. Colors come from colorScheme (light/dark inherited).
-class _SubHeading extends StatelessWidget {
-  const _SubHeading({
-    required this.icon,
-    required this.color,
-    required this.label,
-  });
-  final IconData icon;
-  final Color color;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: color),
-        const SizedBox(width: AppDimens.spacingXs),
-        Text(
-          label,
-          style: theme.textTheme.labelLarge?.copyWith(
-            fontWeight: FontWeight.w700,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ],
     );
   }
 }
@@ -2593,117 +2500,6 @@ String _dayKey(DateTime d) =>
 // `MM/dd` for a date (used in the compact range button label).
 String _monthDay(DateTime d) =>
     '${d.month.toString().padLeft(2, '0')}/${d.day.toString().padLeft(2, '0')}';
-
-/// The messages a digest references, with timestamps. Prefers the set the
-/// backend persisted on the digest doc (`sourceMessages`); for older digests
-/// written before that field existed, falls back to the day's streamed messages
-/// (filtered to the digest's Asia/Taipei day) so the panel still appears. Capped
-/// to keep the list bounded.
-List<DiscordDigestSource> _digestSources(
-  DiscordDigest digest,
-  DiscordMessagesViewModel vm,
-) {
-  if (digest.sourceMessages.isNotEmpty) return digest.sourceMessages;
-  String taipeiKey(DateTime ts) {
-    final t = ts.toUtc().add(const Duration(hours: 8));
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${t.year}-${two(t.month)}-${two(t.day)}';
-  }
-
-  final sameDay =
-      vm.messages
-          .where((m) => taipeiKey(m.timestamp.toDate()) == digest.date)
-          .toList()
-        ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
-  return sameDay
-      .take(50)
-      .map(
-        (m) => DiscordDigestSource(
-          authorName: m.authorName,
-          content: m.content,
-          timestamp: m.timestamp.toDate().toLocal(),
-        ),
-      )
-      .toList();
-}
-
-// Collapsible "referenced messages" list under a digest: the messages the
-// summary was built from, each with its send time, so the user can see what was
-// discussed and WHEN (not just the outline). Collapsed by default.
-class _DigestSourceMessages extends StatelessWidget {
-  const _DigestSourceMessages({required this.sources});
-  final List<DiscordDigestSource> sources;
-
-  static String _stamp(DateTime? dt) {
-    if (dt == null) return '';
-    final d = dt.toLocal();
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${d.year}/${two(d.month)}/${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = context.l10n;
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Theme(
-      // Strip the default ExpansionTile dividers so it sits flush in the card.
-      data: theme.copyWith(dividerColor: Colors.transparent),
-      // The day card paints a background DecoratedBox; ExpansionTile's ListTile
-      // would otherwise warn its splash is invisible over it. A transparent
-      // Material gives the tile its own ink surface without changing the look.
-      child: Material(
-        type: MaterialType.transparency,
-        child: ExpansionTile(
-          tilePadding: EdgeInsets.zero,
-          childrenPadding: const EdgeInsets.only(bottom: AppDimens.spacingSm),
-          // ExpansionTile centers its children by default — left-align them.
-          expandedCrossAxisAlignment: CrossAxisAlignment.start,
-          expandedAlignment: Alignment.centerLeft,
-          dense: true,
-          leading: Icon(
-            Icons.forum_outlined,
-            size: 16,
-            color: scheme.secondary,
-          ),
-          title: Text(
-            s.digestSourceMessages(sources.length),
-            style: theme.textTheme.labelMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          children: [
-            for (final m in sources)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: RichText(
-                  text: TextSpan(
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                    children: [
-                      if (_stamp(m.timestamp).isNotEmpty)
-                        TextSpan(
-                          text: '${_stamp(m.timestamp)}  ',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
-                      TextSpan(
-                        text: '${m.authorName}: ',
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      TextSpan(text: m.content),
-                    ],
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 // Two-digit `HH:mm` for a chat-bubble timestamp.
 String _hhmm(DateTime t) =>
