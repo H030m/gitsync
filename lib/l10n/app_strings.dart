@@ -250,7 +250,6 @@ class AppStrings {
   // D8: the "Key activity" card holds highlights + blockers (the commit rollup
   // sub-section was dropped, so `commitRollup` is gone too).
   String get keyActivity => _('Key activity', '活動重點');
-  String get contributions => _('Contributions', '貢獻');
   String generatingDayProgress(int done, int total) =>
       _('Generating ($done/$total)', '產生中（$done/$total）');
   String get askAiAboutToday => _('Ask AI about today', '問 AI 今天的事');

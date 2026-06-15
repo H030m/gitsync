@@ -8,7 +8,6 @@ import '../../models/commit_graph.dart';
 import '../../models/daily_report.dart';
 import '../../models/discord_digest.dart';
 import '../../l10n/app_strings.dart';
-import '../../repositories/user_repo.dart';
 import '../../theme/app_dimens.dart';
 import '../../theme/app_motion.dart';
 import '../../widgets/section_card.dart';
@@ -27,8 +26,8 @@ import '../ask/ask_repo_chat.dart';
 // tab) re-scopes both tabs at once; clearing it returns each to its default.
 // The page subscribes to the shared range and fans changes out to the per-tab
 // ViewModels. The Daily tab merges the former Summary + Discord tabs into one
-// per-day view: each day shows its AI report (summary, merged "key activity",
-// contributions) AND its Discord digest, with a single "Ask GitSync" chat.
+// per-day view: each day shows its AI report (summary, merged "key activity")
+// AND its Discord digest, with a single "Ask GitSync" chat.
 class DailyViewPage extends StatefulWidget {
   const DailyViewPage({super.key, required this.repoId});
   final String repoId;
@@ -202,7 +201,7 @@ class _SharedRangeAction extends StatelessWidget {
 
 // The Daily tab is the developer "intelligence hub" (D1: merged Summary +
 // Discord). One collapsible card per day shows that day's AI report (summary,
-// the merged "Key activity" block, per-member contributions) AND its Discord
+// the merged "Key activity" block) AND its Discord
 // digest (markdown + referenced messages + lock / AI-adjust). A single,
 // repo-wide "Ask GitSync" assistant lives at the bottom — it drives the SHARED
 // [AskRepoViewModel] (the `askRepo` callable), the same instance the repo-shell
@@ -481,7 +480,7 @@ class _ReportsPanelState extends State<_ReportsPanel> {
 
 // One collapsible unified per-day card (D1). Collapsed shows the date and a
 // one-line summary; expanded shows the full AI report (summary + merged "Key
-// activity" + contributions) followed by the day's Discord digest (markdown +
+// activity") followed by the day's Discord digest (markdown +
 // referenced messages + lock / AI-adjust). A day may have a report, a digest,
 // both, or neither — each section renders only when its data exists, and the
 // "Generate report" button shows when there's no report yet.
@@ -676,8 +675,8 @@ class _DayReportCardState extends State<_DayReportCard> {
 }
 
 // The expanded report half of a unified day card: summary text, a regenerate
-// action, then the "Key activity" card (highlights + blockers, D8) and the
-// per-member contributions card (D3).
+// action, then the "Key activity" card (highlights + blockers, D8). The
+// per-member contributions card was removed (D10).
 class _DayReportBody extends StatelessWidget {
   const _DayReportBody({
     required this.vm,
@@ -718,8 +717,8 @@ class _DayReportBody extends StatelessWidget {
           ),
         ),
         // D8: highlights + blockers in ONE card (commit rollup dropped).
+        // D10: per-member contributions card removed from the daily report.
         _KeyActivityCard(report: report),
-        _ContributionsCard(report: report),
       ],
     );
   }
@@ -983,163 +982,6 @@ class _KeyActivityCard extends StatelessWidget {
                   text: b,
                 ),
             ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// Per-member contribution chips (tasks done + commits), keyed as the backend
-// reports them (userId, or author login for unmatched commits).
-class _ContributionsCard extends StatefulWidget {
-  const _ContributionsCard({required this.report});
-  final DailyReport report;
-
-  @override
-  State<_ContributionsCard> createState() => _ContributionsCardState();
-}
-
-class _ContributionsCardState extends State<_ContributionsCard> {
-  final UserRepository _users = UserRepository();
-  // UID -> display name, filled in for members the report named only by UID.
-  Map<String, String> _resolved = {};
-
-  @override
-  void initState() {
-    super.initState();
-    _resolveNames();
-  }
-
-  @override
-  void didUpdateWidget(covariant _ContributionsCard old) {
-    super.didUpdateWidget(old);
-    if (old.report != widget.report) _resolveNames();
-  }
-
-  // The report usually stores only the Firebase UID for roster members, so look
-  // the unnamed ones up in their user doc (UID -> githubLogin / name). Without
-  // this the chip shows a raw 28-char UID instead of the GitHub handle.
-  Future<void> _resolveNames() async {
-    final entries = widget.report.memberContributions.entries.where(
-      (e) => e.value.tasksDone > 0 || e.value.commits > 0,
-    );
-    final out = <String, String>{};
-    for (final e in entries) {
-      if (_reportLabel(e) != null) continue; // already named by the report
-      try {
-        final u = await _users.getUser(e.key);
-        if (u == null) continue;
-        final name = u.githubLogin.isNotEmpty
-            ? u.githubLogin
-            : (u.name.isNotEmpty ? u.name : null);
-        if (name != null) out[e.key] = name;
-      } catch (_) {
-        // leave unresolved -> UID fallback
-      }
-    }
-    if (mounted && out.isNotEmpty) setState(() => _resolved = out);
-  }
-
-  // Name the report itself carries (githubLogin -> displayName), or null.
-  static String? _reportLabel(MapEntry<String, MemberContribution> e) {
-    final login = e.value.githubLogin;
-    if (login != null && login.isNotEmpty) return login;
-    final name = e.value.displayName;
-    if (name != null && name.isNotEmpty) return name;
-    return null;
-  }
-
-  // Final label: report name -> resolved user-doc name -> raw key (UID).
-  String _memberLabel(MapEntry<String, MemberContribution> e) =>
-      _reportLabel(e) ?? _resolved[e.key] ?? e.key;
-
-  static String _initial(String key) =>
-      key.isEmpty ? '?' : key.substring(0, 1).toUpperCase();
-
-  @override
-  Widget build(BuildContext context) {
-    final report = widget.report;
-    final entries = report.memberContributions.entries
-        .where((e) => e.value.tasksDone > 0 || e.value.commits > 0)
-        .toList();
-    if (entries.isEmpty) return const SizedBox.shrink();
-    final s = context.l10n;
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(top: AppDimens.spacingMd),
-      child: SectionCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.groups_outlined, size: 20, color: scheme.secondary),
-                const SizedBox(width: AppDimens.spacingSm),
-                Text(
-                  s.contributions,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppDimens.spacingSm),
-            Wrap(
-              spacing: AppDimens.spacingSm,
-              runSpacing: AppDimens.spacingSm,
-              children: [
-                for (final e in entries)
-                  Semantics(
-                    label:
-                        '${_memberLabel(e)}: '
-                        '${e.value.tasksDone} tasks, '
-                        '${e.value.commits} commits',
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppDimens.spacingSm,
-                        vertical: AppDimens.spacingXs,
-                      ),
-                      decoration: BoxDecoration(
-                        color: scheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CircleAvatar(
-                            radius: 10,
-                            backgroundColor: scheme.primaryContainer,
-                            child: Text(
-                              _initial(_memberLabel(e)),
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: scheme.onPrimaryContainer,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: AppDimens.spacingXs),
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 120),
-                            child: Text(
-                              _memberLabel(e),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.labelMedium,
-                            ),
-                          ),
-                          const SizedBox(width: AppDimens.spacingXs),
-                          Text(
-                            '·  ${e.value.tasksDone}✓ ${e.value.commits}⎇',
-                            style: theme.textTheme.labelMedium,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-            ),
           ],
         ),
       ),

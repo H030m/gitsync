@@ -71,7 +71,8 @@ void main() {
     // D8: the commit-rollup sub-section was dropped from "Key activity".
     expect(find.text('Commit rollup'), findsNothing);
     expect(find.text('Key activity'), findsOneWidget);
-    expect(find.text('Contributions'), findsOneWidget);
+    // D10: the per-member Contributions card was removed from the daily report.
+    expect(find.text('Contributions'), findsNothing);
     // The lower chat is now the global, repo-wide "Ask GitSync" assistant.
     expect(find.text('Ask GitSync'), findsOneWidget);
     expect(
