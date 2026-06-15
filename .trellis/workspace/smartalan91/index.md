@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 6
-- **Last Active**: 2026-06-15
+- **Total Sessions**: 7
+- **Last Active**: 2026-06-16
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~210 | Active |
+| `journal-1.md` | ~243 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 7 | 2026-06-16 | Deep-link foreground notification taps to the task | `1ba90b8` | `feature/notify-deeplink-foreground` |
 | 6 | 2026-06-15 | Board row: drop status circle, avatar to left | `802ceed` | `feature/board-row-avatar-left` |
 | 5 | 2026-06-15 | Persist theme mode across web refresh | `71cbf3c` | `feature/persist-theme-mode` |
 | 4 | 2026-06-15 | Stats stale-while-revalidate commit cache | `41ff343` | `feature/stats-swr-cache` |
