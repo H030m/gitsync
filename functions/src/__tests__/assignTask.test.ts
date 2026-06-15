@@ -72,9 +72,19 @@ interface WhereClause {
   value: unknown;
 }
 
-function makeQuery(colPath: string, clauses: WhereClause[]) {
-  const matches = () =>
-    childDocsOf(colPath).filter(([, d]) =>
+interface OrderClause {
+  field: string;
+  dir: 'asc' | 'desc';
+}
+
+function makeQuery(
+  colPath: string,
+  clauses: WhereClause[],
+  orderBys: OrderClause[] = [],
+  limitN: number | null = null,
+) {
+  const matches = () => {
+    let rows = childDocsOf(colPath).filter(([, d]) =>
       clauses.every((c) => {
         const fv = getField(d, c.field);
         if (c.op === 'array-contains') {
@@ -83,9 +93,39 @@ function makeQuery(colPath: string, clauses: WhereClause[]) {
         return fv === c.value;
       }),
     );
+    for (const ob of orderBys) {
+      rows = [...rows].sort(([, a], [, b]) => {
+        const av = getField(a, ob.field) as number | string | undefined;
+        const bv = getField(b, ob.field) as number | string | undefined;
+        if (av === bv) return 0;
+        if (av === undefined) return 1;
+        if (bv === undefined) return -1;
+        const cmp = av < bv ? -1 : 1;
+        return ob.dir === 'asc' ? cmp : -cmp;
+      });
+    }
+    if (limitN !== null) rows = rows.slice(0, limitN);
+    return rows;
+  };
   return {
     where(field: string, op: string, value: unknown) {
-      return makeQuery(colPath, [...clauses, { field, op, value }]);
+      return makeQuery(
+        colPath,
+        [...clauses, { field, op, value }],
+        orderBys,
+        limitN,
+      );
+    },
+    orderBy(field: string, dir: 'asc' | 'desc' = 'asc') {
+      return makeQuery(
+        colPath,
+        clauses,
+        [...orderBys, { field, dir }],
+        limitN,
+      );
+    },
+    limit(n: number) {
+      return makeQuery(colPath, clauses, orderBys, n);
     },
     findNearest(_opts: unknown) {
       return {
@@ -338,6 +378,76 @@ describe('assignTaskFlow agentic loop', () => {
     expect(store.get(`apps/gitsync/repos/${REPO}/tasks/t1`)?.assigneeId).toBe('u2');
     expect(store.get(`apps/gitsync/repos/${REPO}/members/u1`)?.activeIssueCount).toBe(2);
     expect(store.get(`apps/gitsync/repos/${REPO}/members/u2`)?.activeIssueCount).toBe(2);
+  });
+});
+
+describe('assignTaskFlow tied-workload completed-task drill', () => {
+  it('tied workload — picks the candidate with semantically-related completed tasks', async () => {
+    seedTask('t1', { title: 'typing speed quiz' });
+    // Both candidates: identical workload, no expertiseTags, no commits.
+    seedMember('u1', { activeIssueCount: 0 }, { name: 'Ryan' });
+    seedMember('u2', { activeIssueCount: 0 }, { name: 'Alan' });
+
+    // u1 has 3 completed tasks with typing-related titles.
+    const REPO_TASKS = `apps/gitsync/repos/${REPO}/tasks`;
+    store.set(`${REPO_TASKS}/done-u1-a`, {
+      title: 'type out chapter 1',
+      status: 'done',
+      assigneeId: 'u1',
+      updatedAt: 3,
+    });
+    store.set(`${REPO_TASKS}/done-u1-b`, {
+      title: 'ten-minute speed drill',
+      status: 'done',
+      assigneeId: 'u1',
+      updatedAt: 2,
+    });
+    store.set(`${REPO_TASKS}/done-u1-c`, {
+      title: 'transcription practice',
+      status: 'done',
+      assigneeId: 'u1',
+      updatedAt: 1,
+    });
+    // u2: no completed tasks.
+
+    // Round 0: drill u1. Round 1: drill u2. Round 2: finalize u1.
+    createQueue.push(
+      readToolTurn('listMemberCompletedTasks', { memberId: 'u1' }, 'tc-u1'),
+    );
+    createQueue.push(
+      readToolTurn('listMemberCompletedTasks', { memberId: 'u2' }, 'tc-u2'),
+    );
+    createQueue.push(
+      finalizeTurn(
+        'u1',
+        'workload tied; u1 has 3 completed typing-related tasks, u2 has none.',
+      ),
+    );
+
+    const res = await assignTaskFlow({ repoId: REPO, taskId: 't1' });
+
+    expect(res.assigneeId).toBe('u1');
+    expect(mockCreate).toHaveBeenCalledTimes(3);
+    expect(store.get(`${REPO_TASKS}/t1`)?.assigneeId).toBe('u1');
+    expect(store.get(`apps/gitsync/repos/${REPO}/members/u1`)?.activeIssueCount).toBe(1);
+    expect(store.get(`apps/gitsync/repos/${REPO}/members/u2`)?.activeIssueCount).toBe(0);
+
+    // Verify the drill-down tool response delivered u1's completed-task titles
+    // to the model (so the test would catch a regression where the dispatch
+    // arm forgets to wire through the new tool).
+    const messages = (mockCreate.mock.calls[2] as unknown[])[0] as {
+      messages: Array<{ role: string; tool_call_id?: string; content?: string }>;
+    };
+    const u1Reply = messages.messages.find(
+      (m) => m.role === 'tool' && m.tool_call_id === 'tc-u1',
+    );
+    expect(u1Reply).toBeDefined();
+    expect(u1Reply!.content).toContain('type out chapter 1');
+    expect(u1Reply!.content).toContain('ten-minute speed drill');
+    const u2Reply = messages.messages.find(
+      (m) => m.role === 'tool' && m.tool_call_id === 'tc-u2',
+    );
+    expect(u2Reply!.content).toBe('[]');
   });
 });
 
