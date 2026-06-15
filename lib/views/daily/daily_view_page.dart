@@ -24,6 +24,46 @@ import '../../widgets/empty_state.dart';
 import '../../widgets/markdown_view.dart';
 import '../../widgets/staggered_entry.dart';
 import '../ask/ask_repo_chat.dart';
+import '../chat/chat_full_screen.dart';
+import '../chat/chat_preview_bar.dart';
+
+/// Slide-up page transition for full-screen chat. Enters from the bottom
+/// with a deceleration curve, exits downward with an acceleration curve.
+/// The previous route stays perfectly still (no slide or fade) because
+/// [canTransitionTo] returns false.
+Route<void> _slideUpRoute(Widget child) => _SlideUpRoute(child: child);
+
+class _SlideUpRoute extends PageRouteBuilder<void> {
+  _SlideUpRoute({required Widget child})
+      : super(
+          fullscreenDialog: true,
+          transitionDuration: AppMotion.nav,
+          reverseTransitionDuration: AppMotion.nav,
+          pageBuilder: (_, _, _) => child,
+          transitionsBuilder: (_, animation, _, child) {
+            final slideTween =
+                Tween(begin: const Offset(0, 1), end: Offset.zero);
+            final curvedAnimation = CurvedAnimation(
+              parent: animation,
+              curve: AppMotion.emphasizedDecel,
+              reverseCurve: AppMotion.emphasizedAccel,
+            );
+            return SlideTransition(
+              position: slideTween.animate(curvedAnimation),
+              child: child,
+            );
+          },
+        );
+
+  /// Returning false tells Flutter NOT to run the previous route's
+  /// secondaryAnimation when this route pushes on top. This prevents
+  /// the shell tab page from sliding left or fading out.
+  @override
+  bool canTransitionTo(TransitionRoute<dynamic> nextRoute) => false;
+
+  @override
+  bool canTransitionFrom(TransitionRoute<dynamic> previousRoute) => false;
+}
 
 // DailyViewPage — three tabs: Summary / Commits / Discord, all driven by ONE
 // shared date range (IntelRangeViewModel). A single picker in the AppBar (shown
@@ -229,33 +269,11 @@ class _SummaryTab extends StatefulWidget {
 
 class _SummaryTabState extends State<_SummaryTab> {
   final _controller = TextEditingController();
-  final _scrollController = ScrollController();
-
-  // Whether the upper day-report panel (D2) is expanded. Starts collapsed for
-  // multi-day ranges so the chat gets more room; single-day starts expanded.
-  bool? _reportsExpanded;
 
   @override
   void dispose() {
     _controller.dispose();
-    _scrollController.dispose();
     super.dispose();
-  }
-
-  void _send(AskRepoViewModel vm) {
-    final text = _controller.text;
-    if (text.trim().isEmpty || vm.sending) return;
-    _controller.clear();
-    vm.ask(text);
-    // Jump to the latest turn once it's laid out.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) return;
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: AppMotion.medium,
-        curve: AppMotion.emphasizedDecel,
-      );
-    });
   }
 
   // Builds one collapsible report card per day in the selected range. With no
@@ -284,62 +302,80 @@ class _SummaryTabState extends State<_SummaryTab> {
     ];
   }
 
+  void _openAskChat(BuildContext context, AskRepoViewModel chat) {
+    Navigator.of(context).push(_slideUpRoute(
+      ChangeNotifierProvider<AskRepoViewModel>.value(
+        value: chat,
+        child: _AskRepoFullScreenWrapper(controller: _controller),
+      ),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
+    final s = context.l10n;
     return Consumer2<DailyReportViewModel, AskRepoViewModel>(
       builder: (ctx, report, chat, _) {
         if (report.loading) {
           return const Center(child: CircularProgressIndicator());
         }
-        // Default: expanded for single-day, collapsed for multi-day ranges so
-        // the chat area gets more room.
-        final expanded = _reportsExpanded ?? report.isSingleDay;
-        // Cap the day-report panel at ~42% of the viewport so many days never
-        // push the chat off screen — it scrolls internally instead (D2).
-        final panelMaxHeight = MediaQuery.of(ctx).size.height * 0.42;
-        // Count how many days are currently generating (for progress label).
-        final generatingCount = report.rangeDays
-            .where((d) => report.isGeneratingDay(
-                DailyReportViewModel.dayKeyOf(d)))
-            .length;
+        // Last assistant message for the preview bar.
+        final lastAssistant = chat.turns
+            .where((t) => !t.isUser)
+            .toList();
+        final lastMsg = lastAssistant.isEmpty
+            ? null
+            : lastAssistant.last.content;
         return Column(
           children: [
-            // ---- Upper panel: collapsible, fixed-height, internally scrollable
-            _ReportsPanel(
-              dayCount: report.rangeDays.length,
-              expanded: expanded,
-              maxHeight: panelMaxHeight,
-              generatingCount: generatingCount,
-              onToggle: () =>
-                  setState(() => _reportsExpanded = !expanded),
-              cards: _dayCards(report),
-            ),
-            const Divider(height: 1),
-            // ---- Lower area: the global "Ask GitSync" chat, own scroll. Drives
-            // the shared AskRepoViewModel (same instance as the FAB sheet), so
-            // its transcript is repo-wide and shared across both entry points.
+            // ---- Day report cards: full-space, scrollable list (no height cap).
             Expanded(
               child: ListView(
-                controller: _scrollController,
                 padding: const EdgeInsets.all(AppDimens.spacingMd),
-                children: [
-                  const _AskRepoHeader(),
-                  const SizedBox(height: AppDimens.spacingSm),
-                  if (chat.turns.isEmpty)
-                    const AskRepoEmptyHint()
-                  else
-                    for (final turn in chat.turns) AskRepoTurnView(turn: turn),
-                  if (chat.sending) AskRepoLiveTraceStrip(steps: chat.liveSteps),
-                ],
+                children: _dayCards(report),
               ),
             ),
-            AskRepoInputBar(
-              controller: _controller,
+            // ---- Chat preview bar: tap to open full-screen Ask GitSync chat.
+            ChatPreviewBar(
+              title: s.askRepoTitle,
+              lastMessage: lastMsg,
               sending: chat.sending,
-              onSend: () => _send(chat),
-              onNewSession: chat.sending ? null : chat.newSession,
+              onTap: () => _openAskChat(ctx, chat),
             ),
           ],
+        );
+      },
+    );
+  }
+}
+
+/// Wrapper pushed via Navigator.push that re-provides the same
+/// [AskRepoViewModel] instance so [ChatFullScreen] can rebuild on changes.
+class _AskRepoFullScreenWrapper extends StatelessWidget {
+  const _AskRepoFullScreenWrapper({required this.controller});
+  final TextEditingController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.l10n;
+    return Consumer<AskRepoViewModel>(
+      builder: (ctx, chat, _) {
+        return ChatFullScreen(
+          title: s.askRepoTitle,
+          turnWidgets: [
+            for (final turn in chat.turns) AskRepoTurnView(turn: turn),
+          ],
+          emptyHint: const ChatEmptyHint(),
+          sending: chat.sending,
+          liveSteps: chat.liveSteps,
+          controller: controller,
+          onSend: () {
+            final text = controller.text;
+            if (text.trim().isEmpty || chat.sending) return;
+            controller.clear();
+            chat.ask(text);
+          },
+          onNewSession: chat.sending ? null : chat.newSession,
         );
       },
     );
@@ -357,7 +393,6 @@ class _ReportsPanel extends StatefulWidget {
     required this.maxHeight,
     required this.onToggle,
     required this.cards,
-    this.generatingCount = 0,
   });
 
   final int dayCount;
@@ -365,7 +400,6 @@ class _ReportsPanel extends StatefulWidget {
   final double maxHeight;
   final VoidCallback onToggle;
   final List<Widget> cards;
-  final int generatingCount;
 
   @override
   State<_ReportsPanel> createState() => _ReportsPanelState();
@@ -416,18 +450,6 @@ class _ReportsPanelState extends State<_ReportsPanel> {
                     icon: Icons.calendar_today_outlined,
                     label: '${widget.dayCount}',
                   ),
-                  if (widget.generatingCount > 0) ...[
-                    const SizedBox(width: AppDimens.spacingSm),
-                    Text(
-                      s.generatingDayProgress(
-                        widget.dayCount - widget.generatingCount,
-                        widget.dayCount,
-                      ),
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: scheme.primary,
-                      ),
-                    ),
-                  ],
                   const Spacer(),
                   AnimatedRotation(
                     turns: widget.expanded ? 0.5 : 0,
@@ -1063,45 +1085,6 @@ class _CountChip extends StatelessWidget {
           Text(label, style: Theme.of(context).textTheme.labelSmall),
         ],
       ),
-    );
-  }
-}
-
-// The global "Ask GitSync" section header for the Summary tab's chat. Repo-wide
-// framing (not date-scoped) — reuses the shared `askRepoTitle` string.
-class _AskRepoHeader extends StatelessWidget {
-  const _AskRepoHeader();
-
-  @override
-  Widget build(BuildContext context) {
-    final s = context.l10n;
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(Icons.auto_awesome, size: 20, color: scheme.primary),
-            const SizedBox(width: AppDimens.spacingSm),
-            Text(
-              s.askRepoTitle,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        Padding(
-          padding: const EdgeInsets.only(left: 28),
-          child: Text(
-            s.askRepoScope,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }
@@ -2397,15 +2380,28 @@ class _DiscordTab extends StatefulWidget {
 }
 
 class _DiscordTabState extends State<_DiscordTab> {
-  // Whether the upper digest panel is expanded. Collapsed shows just its header
-  // row, giving the chat the full height.
-  bool _digestExpanded = true;
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _openDiscordChat(BuildContext context, DiscordChatViewModel chatVm) {
+    Navigator.of(context).push(_slideUpRoute(
+      ChangeNotifierProvider<DiscordChatViewModel>.value(
+        value: chatVm,
+        child: _DiscordChatFullScreenWrapper(controller: _controller),
+      ),
+    ));
+  }
 
   @override
   Widget build(BuildContext context) {
     final s = context.l10n;
-    return Consumer<DiscordMessagesViewModel>(
-      builder: (ctx, vm, _) {
+    return Consumer2<DiscordMessagesViewModel, DiscordChatViewModel>(
+      builder: (ctx, vm, chatVm, _) {
         if (vm.loading) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -2419,21 +2415,88 @@ class _DiscordTabState extends State<_DiscordTab> {
             ).showSnackBar(SnackBar(content: Text(s.updated)));
           });
         }
-        // Cap the digest panel at ~45% of the viewport so many days never push
-        // the chat off screen — it scrolls internally instead (D4).
-        final panelMaxHeight = MediaQuery.of(ctx).size.height * 0.45;
+        // Last assistant message for the preview bar.
+        final lastAssistant = chatVm.turns
+            .where((t) => !t.isUser)
+            .toList();
+        final lastMsg = lastAssistant.isEmpty
+            ? null
+            : lastAssistant.last.content;
         return Column(
           children: [
-            _DigestPanel(
-              vm: vm,
-              expanded: _digestExpanded,
-              maxHeight: panelMaxHeight,
-              onToggle: () =>
-                  setState(() => _digestExpanded = !_digestExpanded),
+            // ---- Digest content: full-space, scrollable list (no height cap).
+            Expanded(
+              child: vm.digests.isEmpty
+                  ? Center(
+                      child: Text(
+                        s.noDigestInRange,
+                        style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    )
+                  : ListView(
+                      padding: const EdgeInsets.all(AppDimens.spacingMd),
+                      children: [
+                        for (var i = 0; i < vm.digests.length; i++) ...[
+                          _DigestCard(
+                            key: ValueKey(vm.digests[i].date),
+                            digest: vm.digests[i],
+                            vm: vm,
+                            initiallyExpanded: i == 0,
+                          ),
+                          const SizedBox(height: AppDimens.spacingMd),
+                        ],
+                      ],
+                    ),
             ),
-            const Divider(height: 1),
-            const Expanded(child: _DiscordChat()),
+            // ---- Chat preview bar: tap to open full-screen Discord chat.
+            ChatPreviewBar(
+              title: s.askAiAboutChat,
+              lastMessage: lastMsg,
+              sending: chatVm.sending,
+              onTap: () => _openDiscordChat(ctx, chatVm),
+            ),
           ],
+        );
+      },
+    );
+  }
+}
+
+/// Wrapper pushed via Navigator.push that re-provides the same
+/// [DiscordChatViewModel] instance so [ChatFullScreen] can rebuild on changes.
+class _DiscordChatFullScreenWrapper extends StatelessWidget {
+  const _DiscordChatFullScreenWrapper({required this.controller});
+  final TextEditingController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.l10n;
+    return Consumer<DiscordChatViewModel>(
+      builder: (ctx, chatVm, _) {
+        return ChatFullScreen(
+          title: s.askAiAboutChat,
+          turnWidgets: [
+            for (final turn in chatVm.turns) _ChatTurnView(turn: turn),
+          ],
+          emptyHint: Center(
+            child: EmptyState(
+              icon: Icons.auto_awesome_outlined,
+              title: s.askAiAboutChat,
+              message: s.askAiAboutChatHint,
+            ),
+          ),
+          sending: chatVm.sending,
+          liveSteps: chatVm.liveSteps,
+          controller: controller,
+          onSend: () {
+            final text = controller.text;
+            if (text.trim().isEmpty || chatVm.sending) return;
+            controller.clear();
+            chatVm.ask(text);
+          },
+          onNewSession: chatVm.sending ? null : chatVm.newSession,
         );
       },
     );
