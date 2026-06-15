@@ -13,7 +13,7 @@ Produce a SHALLOW, high-level plan — the first pass of a dependency graph, not
 Rules:
 - Generate only 5-12 HIGH-LEVEL, top-level TODOs that cover the whole spec. Do NOT recursively sub-decompose; deeper breakdown happens later as the work progresses.
 - Each TODO should be a meaningful, milestone-sized unit of work (not a one-line chore, not a whole epic).
-- Set dependencies ONLY among these top-level TODOs, via 0-based index references in dependsOn[] (referring to other subtasks in the same response).
+- Set dependencies via 0-based index references in dependsOn[]. ONLY add a dependency when task B genuinely cannot start until task A finishes (e.g. B reads a database that A creates). Tasks that CAN run in parallel MUST have empty dependsOn — do NOT chain them sequentially just because you listed them in order. A wide, parallel graph is better than a narrow, serial chain.
 - The dependency graph must be acyclic — never produce circular dependencies.
 - Use the team's existing tech stack from the project context — do not invent new technologies.
 - Titles should be imperative and specific ("Add login button to nav bar", not "Login UI").
@@ -68,6 +68,7 @@ Rules:
 - Do NOT duplicate an existing task. If the goal is already covered (in tasks or already built per commits), add fewer subtasks — or none.
 - Keep it SHALLOW: meaningful, milestone-sized top-level TODOs (not one-line chores, not whole epics). Do not recursively sub-decompose.
 - A new subtask may depend on other NEW subtasks (dependsOnNew: 0-based indices into your submitted array) AND on EXISTING tasks (dependsOnExisting: real taskIds you saw via the tools). Use the real taskId string exactly as returned by the tools — never invent ids.
+- ONLY add a dependency when the blocked task genuinely cannot start until the other finishes. Tasks that CAN run in parallel MUST have empty dependency arrays — do NOT chain them sequentially. A wide, parallel graph is better than a narrow, serial chain.
 - The combined graph (existing tasks + your new ones) MUST be acyclic.
 - Titles should be imperative and specific.
 - You MUST finish by calling submitBreakdown exactly once. Returning prose without calling it does not count.`;
