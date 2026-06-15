@@ -561,8 +561,7 @@ class _DayReportCardState extends State<_DayReportCard> {
                             ),
                           ),
                         // ---- Discord digest half (only when the day has one) --
-                        if (digest != null)
-                          _DayDigestSection(digest: digest, vm: widget.discord),
+                        if (digest != null) _DayDigestSection(digest: digest),
                       ],
                     ),
                   )
@@ -660,44 +659,16 @@ class _DayReportEmpty extends StatelessWidget {
 
 // D1: the Discord-digest half of a unified day card. Renders inline (no nested
 // card — it already lives inside the day card) under a divided "Discord digest"
-// sub-heading: the digest markdown, the referenced-messages expander, and the
-// lock / AI-adjust controls (carried over from the former _DigestCard). All
-// digest mutations go through DiscordMessagesViewModel; light/dark inherited.
-class _DayDigestSection extends StatefulWidget {
-  const _DayDigestSection({required this.digest, required this.vm});
+// sub-heading: just the digest markdown. Light/dark inherited via colorScheme.
+class _DayDigestSection extends StatelessWidget {
+  const _DayDigestSection({required this.digest});
   final DiscordDigest digest;
-  final DiscordMessagesViewModel vm;
-
-  @override
-  State<_DayDigestSection> createState() => _DayDigestSectionState();
-}
-
-class _DayDigestSectionState extends State<_DayDigestSection> {
-  final _adjustController = TextEditingController();
-
-  @override
-  void dispose() {
-    _adjustController.dispose();
-    super.dispose();
-  }
-
-  void _submitAdjust() {
-    final text = _adjustController.text;
-    if (text.trim().isEmpty || widget.vm.isEditingDigest(widget.digest.date)) {
-      return;
-    }
-    _adjustController.clear();
-    widget.vm.editDigest(widget.digest.date, text);
-  }
 
   @override
   Widget build(BuildContext context) {
     final s = context.l10n;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final digest = widget.digest;
-    final vm = widget.vm;
-    final editing = vm.isEditingDigest(digest.date);
 
     return Padding(
       padding: const EdgeInsets.only(top: AppDimens.spacingMd),
@@ -726,52 +697,6 @@ class _DayDigestSectionState extends State<_DayDigestSection> {
             width: double.infinity,
             child: MarkdownView(data: digest.markdown),
           ),
-          const SizedBox(height: AppDimens.spacingSm),
-          // ---- AI-adjust input ----
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _adjustController,
-                  minLines: 1,
-                  maxLines: 3,
-                  enabled: !editing,
-                  textInputAction: TextInputAction.send,
-                  onSubmitted: (_) => _submitAdjust(),
-                  decoration: InputDecoration(
-                    hintText: s.adjustSummaryHint,
-                    border: const OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppDimens.spacingSm),
-              IconButton.filledTonal(
-                tooltip: s.adjustWithAi,
-                onPressed: editing ? null : _submitAdjust,
-                icon: editing
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.auto_fix_high),
-              ),
-            ],
-          ),
-          if (editing) ...[
-            const SizedBox(height: AppDimens.spacingXs),
-            // Live agent "thinking" steps while the digest is rewritten.
-            AskRepoLiveTraceStrip(steps: vm.liveSteps),
-          ],
-          if (vm.digestError != null) ...[
-            const SizedBox(height: AppDimens.spacingXs),
-            Text(
-              s.couldNotUpdateDigest,
-              style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
-            ),
-          ],
         ],
       ),
     );

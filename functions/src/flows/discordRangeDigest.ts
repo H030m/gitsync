@@ -5,7 +5,6 @@
 //
 // Efficiency guards (so we don't re-summarize the whole range on every refresh):
 //   - empty days  → skipped (no digest doc, no OpenAI call)
-//   - locked days → skipped (the user pinned that digest)
 //   - unchanged   → skipped when the stored digest's messageCount already equals
 //                   the day's current message count (a cheap count() aggregation,
 //                   no OpenAI call)
@@ -21,7 +20,7 @@ const MAX_DAYS = 92;
 export interface DiscordRangeDigestResult {
   days: number; // days in range considered (after the cap)
   generated: number; // digests (re)written
-  skipped: number; // empty / locked / unchanged days
+  skipped: number; // empty / unchanged days
   capped: boolean; // true if the range exceeded MAX_DAYS
 }
 
@@ -86,20 +85,16 @@ export async function discordRangeDigestFlow(
       continue;
     }
 
-    // Skip locked or unchanged days (no OpenAI call for those).
+    // Skip unchanged days (no OpenAI call for those).
     const ref = db.doc(`apps/gitsync/repos/${repoId}/discordDigests/${date}`);
     const existing = await ref.get();
     const data = existing.data();
-    if (data?.locked === true) {
-      skipped++;
-      continue;
-    }
     if (existing.exists && data?.messageCount === count) {
       skipped++;
       continue; // already summarized at this message count
     }
 
-    // (Re)generate. discordDailyDigestFlow re-checks locked + writes the doc.
+    // (Re)generate the day's digest.
     await discordDailyDigestFlow({ repoId, date });
     generated++;
   }

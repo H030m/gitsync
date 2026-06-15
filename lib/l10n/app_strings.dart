@@ -312,11 +312,6 @@ class AppStrings {
     'No digest in this range. Use "Refresh current range" above to pull messages.',
     '這個範圍還沒有摘要。用上方的「重新整理目前範圍」拉取訊息。',
   );
-  String get adjustSummaryHint =>
-      _('Ask AI to adjust this summary…', '請 AI 調整此摘要…');
-  String get adjustWithAi => _('Adjust with AI', '用 AI 調整');
-  String get couldNotUpdateDigest =>
-      _('Could not update the digest. Please try again.', '無法更新摘要，請再試一次。');
   String get thinking => _('Thinking…', '思考中…');
 
   // ---- Ask GitSync (global repo-wide chat) ----
@@ -375,9 +370,6 @@ class AppStrings {
         return _("Listing the author's nearby commits…", '查詢作者鄰近 commit…');
       case 'Writing the explanation…':
         return _('Writing the explanation…', '撰寫說明…');
-      // editDiscordDigest
-      case 'Revising the digest…':
-        return _('Revising the digest…', '改寫摘要…');
     }
     // generateHandoff self-review carries a dynamic score, e.g.
     // "Reviewing draft (score 4/5)…" — match by prefix.

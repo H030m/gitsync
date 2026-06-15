@@ -93,28 +93,4 @@ class FakeDiscordDigestRepository implements DiscordDigestRepository {
     }
     _ticks.clear();
   }
-
-  /// Mutates the current digest for [date] in fake mode (used by the fake
-  /// FunctionsService for AI edits / lock toggles). No-ops if there's no digest
-  /// yet. Respects the lock for [markdown] edits.
-  void applyEdit(
-    String repoId,
-    String date, {
-    String? markdown,
-    bool? locked,
-  }) {
-    final current = _state(repoId, date).value;
-    if (current == null) return;
-    if (markdown != null && current.locked) return; // frozen
-    _state(repoId, date).update(
-      DiscordDigest(
-        date: current.date,
-        markdown: markdown ?? current.markdown,
-        messageCount: current.messageCount,
-        locked: locked ?? current.locked,
-        generatedAt: current.generatedAt,
-      ),
-    );
-    _tick(repoId).add(null);
-  }
 }

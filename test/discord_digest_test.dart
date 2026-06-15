@@ -53,12 +53,11 @@ Widget _harness() {
 }
 
 // Seeds an explicit digest doc for [date] (YYYY-MM-DD) in the fake repo.
-DiscordDigest _seed(String date, {bool locked = false}) {
+DiscordDigest _seed(String date) {
   final digest = DiscordDigest(
     date: date,
     markdown: '**Digest for $date**',
     messageCount: 3,
-    locked: locked,
   );
   FakeDiscordDigestRepository().seedDigest(_repoId, digest);
   return digest;
