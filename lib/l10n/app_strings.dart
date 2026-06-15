@@ -39,6 +39,12 @@ class AppStrings {
   String get done => _('Done', '完成');
   String get view => _('View', '查看');
 
+  // ---- Bottom navigation ----
+  String get navTasks => _('Tasks', '任務');
+  String get navDaily => _('Daily', '每日彙整');
+  String get navStats => _('Stats', '統計');
+  String get navSettings => _('Settings', '設定');
+
   // ---- Status ----
   String get statusTodo => _('To do', '待辦');
   String get statusInProgress => _('In progress', '進行中');
@@ -112,6 +118,8 @@ class AppStrings {
   String get breakingDown => _('Breaking down…', '拆解中…');
   String generatedNSubtasks(int n) => _('Generated $n subtasks', '產生了 $n 個子任務');
   String get reBreakdown => _('Re-breakdown', '重新拆解');
+  String get swipeToDelete =>
+      _('Swipe left on a task to remove it', '向左滑動可移除不需要的任務');
   String get taskAdded => _('Task added.', '已新增任務。');
   String taskAddedWithTitle(String title) => _('Added: $title', '已新增：$title');
   String get couldNotAddTask =>

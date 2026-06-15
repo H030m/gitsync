@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Confirms the AppStrings convention (single-file _(en, zh) helper) and the centralized-theme rule the FittedBox-wrapped Text must respect (no inline fontSize overrides)."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "flutter build web is the truth signal; analyze skipped on CJK path."}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "_items moving from static const to a per-build local helper interacts with how repo_shell.dart reads context-scoped strings; verify no notifier semantics are broken."}

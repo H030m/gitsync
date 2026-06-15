@@ -77,7 +77,13 @@ class _SpyFunctions implements FunctionsService {
     required String repoId,
     required String goal,
     String? language,
-  }) => _fake.breakdownTask(repoId: repoId, goal: goal, language: language);
+    String? runId,
+  }) => _fake.breakdownTask(
+    repoId: repoId,
+    goal: goal,
+    language: language,
+    runId: runId,
+  );
   @override
   Future<void> forceUnlockBreakdown({required String repoId}) =>
       _fake.forceUnlockBreakdown(repoId: repoId);
@@ -350,10 +356,9 @@ void main() {
     intel.setRange(DateTimeRange(start: now, end: now));
     await tester.pumpAndSettle();
 
-    // The single day-report panel header is present (no separate Discord panel).
-    expect(find.text('Daily report'), findsOneWidget);
     // Today's card is expanded by default → its Discord digest sub-section shows
-    // the digest markdown AND the inline "Discord digest" sub-heading.
+    // the digest markdown AND the inline "Discord digest" sub-heading (no
+    // separate Discord panel/tab).
     expect(find.text('Discord digest'), findsOneWidget);
     expect(find.textContaining('Digest for $todayKey'), findsOneWidget);
 
@@ -386,36 +391,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Discord digest'), findsNothing);
     expect(find.textContaining('Digest for $todayKey'), findsNothing);
-
-    await tester.pump(const Duration(seconds: 1));
-  });
-
-  testWidgets('the day panel bounds its height to ≤45% of viewport', (
-    tester,
-  ) async {
-    await tall(tester);
-    await tester.pumpWidget(_harness());
-    await tester.pumpAndSettle();
-
-    final ctx = tester.element(find.byType(DailyViewPage));
-    final intel = ctx.read<IntelRangeViewModel>();
-    // A multi-day range so the panel holds several cards and is collapsed by
-    // default; expand it to render the ConstrainedBox.
-    final now = DateTime.now();
-    intel.setRange(
-      DateTimeRange(start: now.subtract(const Duration(days: 4)), end: now),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('日報'));
-    await tester.pumpAndSettle();
-
-    // The ConstrainedBox wrapping the scrollable cards caps at 45% height.
-    final screenH =
-        tester.view.physicalSize.height / tester.view.devicePixelRatio;
-    final box = tester
-        .widgetList<ConstrainedBox>(find.byType(ConstrainedBox))
-        .firstWhere((c) => c.constraints.maxHeight == screenH * 0.45);
-    expect(box.constraints.maxHeight, screenH * 0.45);
 
     await tester.pump(const Duration(seconds: 1));
   });

@@ -70,6 +70,44 @@ Task _task(
 Member _member(String id) => Member(userId: id, role: MemberRole.member);
 
 void main() {
+  // The commit cache is static (survives VM disposal) — clear it before each
+  // test so the stale-while-revalidate seed never leaks across cases.
+  setUp(StatsViewModel.debugClearCommitCache);
+
+  group('stale-while-revalidate commit cache', () {
+    test('second VM for the same repo seeds from cache (no spinner)', () async {
+      final commits = [_commit('alice-dev'), _commit('bob-ml')];
+
+      // First VM populates the cache via its initial fetch.
+      final first = StatsViewModel(
+        repoId: 'r',
+        commitRepository: _FakeCommitRepo(commits),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(first.commitsLoading, isFalse);
+      expect(first.authorGroups, isNotEmpty);
+
+      // Second VM (re-entering the page) starts with data already in hand:
+      // commitsLoading is false from construction, authorGroups ready.
+      final second = StatsViewModel(
+        repoId: 'r',
+        commitRepository: _FakeCommitRepo(commits),
+      );
+      expect(second.commitsLoading, isFalse);
+      expect(second.authorGroups.map((g) => g.label).toList(),
+          ['alice-dev', 'bob-ml']);
+    });
+
+    test('first VM for a cold repo still shows the loading spinner', () {
+      final vm = StatsViewModel(
+        repoId: 'cold',
+        commitRepository: _FakeCommitRepo(const []),
+      );
+      // No cache seed → spinner until the first fetch lands.
+      expect(vm.commitsLoading, isTrue);
+    });
+  });
+
   group('computeContributions', () {
     test('per-member share of done tasks, sorted by done count desc', () {
       final tasks = [

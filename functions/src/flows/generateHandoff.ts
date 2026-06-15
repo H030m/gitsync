@@ -32,6 +32,7 @@ import { searchPastCommits } from '../tools/dailyIntel';
 import { readRepoPlanningDocs } from '../tools/repoDocs';
 import { listRelatedCommits, getCommitDiff } from '../tools/handoffTools';
 import { readProjectBrief, formatBriefForPrompt } from '../tools/projectBrief';
+import { recallForPrompt } from '../tools/memorySearch';
 import {
   startRun,
   appendStep,
@@ -277,13 +278,20 @@ export async function generateHandoffFlow(
 
   // ---- W3a project-brief prefix (stable, cache-friendly; empty brief → '' →
   // byte-identical seed message, zero behavior change) -----------------------
-  const briefPrefix = formatBriefForPrompt(await readProjectBrief(repoId));
+  const brief = await readProjectBrief(repoId);
+  const briefPrefix = formatBriefForPrompt(brief);
+
+  // Best-effort active recall using task title.
+  const memoryContext = await recallForPrompt(repoId, {
+    query: taskTitle,
+    briefContent: brief?.content,
+  });
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: 'system', content: generateHandoffSystemPrompt(language) },
     {
       role: 'user',
-      content: briefPrefix + generateHandoffSeedContext({
+      content: briefPrefix + memoryContext + generateHandoffSeedContext({
         task: {
           title: taskTitle,
           description: taskDescription,

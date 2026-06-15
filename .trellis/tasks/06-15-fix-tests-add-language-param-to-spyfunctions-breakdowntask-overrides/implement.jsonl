@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/testing-guidelines.md", "reason": "Confirms the spy pattern (per-test _SpyFunctions implementing FunctionsService) the fix preserves."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "flutter test + flutter build web are the truth signals; analyze skipped on CJK path."}

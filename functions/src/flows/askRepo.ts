@@ -27,6 +27,8 @@ import { askRepoSystem } from '../prompts/askRepo';
 import { askRepoPlannerSystem, formatPlanForPrompt } from '../prompts/askRepoPlanner';
 import { AskRepoPlanSchema, type AskRepoPlan } from '../types';
 import { readProjectBrief, formatBriefForPrompt } from '../tools/projectBrief';
+import { recallForPrompt } from '../tools/memorySearch';
+import { writeObservation, type ObservationCategory } from '../tools/memoryWrite';
 import {
   listRangeCommits,
   listRangeCompletedTasks,
@@ -284,7 +286,8 @@ export async function askRepoFlow(input: AskRepoInput): Promise<AskRepoResult> {
     taipeiDateKey(new Date(Date.now() - (days - 1) * 24 * 60 * 60 * 1000));
 
   // Best-effort project-brief prefix (stable, cache-friendly; empty → '').
-  const briefPrefix = formatBriefForPrompt(await readProjectBrief(repoId));
+  const brief = await readProjectBrief(repoId);
+  const briefPrefix = formatBriefForPrompt(brief);
 
   const openai = getOpenAI();
 
@@ -295,10 +298,17 @@ export async function askRepoFlow(input: AskRepoInput): Promise<AskRepoResult> {
   // leaves `planGuidance` empty and the flow runs exactly as before.
   const planGuidance = await planQuery(openai, today, question, history);
 
+  // Best-effort active recall: search observations for relevant memory and
+  // format as a prompt block. Empty when no observations exist (day 0).
+  const memoryContext = await recallForPrompt(repoId, {
+    query: question,
+    briefContent: brief?.content,
+  });
+
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     {
       role: 'system',
-      content: askRepoSystem(today, DEFAULT_DAYS, briefPrefix + planGuidance, language),
+      content: askRepoSystem(today, DEFAULT_DAYS, briefPrefix + planGuidance + memoryContext, language),
     },
     ...history
       .slice(-MAX_HISTORY_TURNS)
@@ -368,7 +378,10 @@ export async function askRepoFlow(input: AskRepoInput): Promise<AskRepoResult> {
       const toolCalls = choice.tool_calls ?? [];
       if (toolCalls.length === 0) {
         await finishRun(repoId, runId, 'done');
-        return buildResult(choice.content ?? '');
+        const answer = choice.content ?? '';
+        // Fire-and-forget observation extraction (never blocks the response).
+        maybeExtractObservation(repoId, question, answer, runId).catch(() => {});
+        return buildResult(answer);
       }
 
       const results = await Promise.all(
@@ -400,7 +413,10 @@ export async function askRepoFlow(input: AskRepoInput): Promise<AskRepoResult> {
       ],
     });
     await finishRun(repoId, runId, 'done');
-    return buildResult(finalCompletion.choices[0]?.message?.content ?? '');
+    const finalAnswer = finalCompletion.choices[0]?.message?.content ?? '';
+    // Fire-and-forget observation extraction (never blocks the response).
+    maybeExtractObservation(repoId, question, finalAnswer, runId).catch(() => {});
+    return buildResult(finalAnswer);
   } catch (err) {
     // The flow failed (e.g. OpenAI down) — mark the run errored, then rethrow so
     // the handler still surfaces the failure to the client.
@@ -564,5 +580,64 @@ function safeParse(raw: string | undefined): Record<string, unknown> {
     return JSON.parse(raw) as Record<string, unknown>;
   } catch {
     return {};
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Observation extraction — fire-and-forget after the answer is produced
+// ---------------------------------------------------------------------------
+
+const EXTRACT_OBSERVATION_SYSTEM =
+  'You are a knowledge extractor. Given a Q&A from a repo-intelligence assistant, ' +
+  'decide if there is ONE durable fact worth remembering for future agent sessions. ' +
+  'Output JSON: { "content": "...", "category": "...", "tags": ["..."] } where ' +
+  'category is one of: architecture_decision, convention, blocker, lesson, team_insight, project_state. ' +
+  'If nothing is worth remembering, output { "skip": true }. ' +
+  'Keep content under 200 characters. Tags are lowercase keywords (max 5).';
+
+/**
+ * Fire-and-forget: extract a durable observation from a Q&A exchange.
+ * NEVER throws — swallows all errors. The caller does not await this if it
+ * does not want to block the response.
+ */
+async function maybeExtractObservation(
+  repoId: string,
+  question: string,
+  answer: string,
+  runId?: string,
+): Promise<void> {
+  try {
+    if (!answer.trim() || answer.length < 50) return; // trivial answer, skip
+
+    const completion = await getOpenAI().chat.completions.create({
+      model: MODELS.fast,
+      messages: [
+        { role: 'system', content: EXTRACT_OBSERVATION_SYSTEM },
+        {
+          role: 'user',
+          content: `Question: ${question}\n\nAnswer: ${answer.slice(0, 2000)}`,
+        },
+      ],
+      response_format: { type: 'json_object' },
+    });
+
+    const raw = completion.choices[0]?.message?.content ?? '';
+    const parsed = safeParse(raw);
+    if (parsed.skip || !parsed.content) return;
+
+    await writeObservation(repoId, {
+      content: String(parsed.content),
+      category: (parsed.category as ObservationCategory) || 'project_state',
+      sourceFlow: 'askRepo',
+      sourceId: runId,
+      tags: Array.isArray(parsed.tags)
+        ? parsed.tags.map((t: unknown) => String(t).toLowerCase()).slice(0, 5)
+        : [],
+    });
+  } catch (err) {
+    logger.warn('maybeExtractObservation failed (best-effort)', {
+      repoId,
+      err: String(err),
+    });
   }
 }

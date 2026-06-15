@@ -45,6 +45,7 @@ class FakeFunctionsService implements FunctionsService {
     required String repoId,
     required String goal,
     String? language,
+    String? runId,
   }) async {
     await Future.delayed(AppConfig.simulatedLatency * 6);
     // Pretend the LLM split the goal into 4 generic subtasks.

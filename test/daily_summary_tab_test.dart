@@ -9,6 +9,7 @@ import 'package:gitsync/view_models/commits_vm.dart';
 import 'package:gitsync/view_models/daily_report_vm.dart';
 import 'package:gitsync/view_models/discord_messages_vm.dart';
 import 'package:gitsync/view_models/intel_range_vm.dart';
+import 'package:gitsync/views/chat/chat_preview_bar.dart';
 import 'package:gitsync/views/daily/daily_view_page.dart';
 
 import '_helpers/locale.dart';
@@ -73,22 +74,25 @@ void main() {
     expect(find.text('Key activity'), findsOneWidget);
     // D10: the per-member Contributions card was removed from the daily report.
     expect(find.text('Contributions'), findsNothing);
-    // The lower chat is now the global, repo-wide "Ask GitSync" assistant.
+    // The lower chat is now the global, repo-wide "Ask GitSync" assistant,
+    // collapsed into a preview bar (develop's shared full-screen chat
+    // architecture) — tapping it opens the full-screen chat.
+    expect(find.byType(ChatPreviewBar), findsOneWidget);
     expect(find.text('Ask GitSync'), findsOneWidget);
-    expect(
-      find.byWidgetPredicate(
-        (w) =>
-            w is TextField &&
-            w.decoration?.hintText == 'Ask GitSync about this repo…',
-      ),
-      findsOneWidget,
-    );
+    // The preview bar shows the prompt as a one-line hint (the real input field
+    // lives in the full-screen chat, not inline on the tab).
+    expect(find.text('Ask GitSync about this repo…'), findsOneWidget);
   });
 
   testWidgets('asking a question adds an AI answer with source commits', (
     tester,
   ) async {
     await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+
+    // The chat is now full-screen: tap the preview bar to open it, then the
+    // real input field appears.
+    await tester.tap(find.byType(ChatPreviewBar));
     await tester.pumpAndSettle();
 
     final field = find.byWidgetPredicate(
@@ -133,13 +137,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // The reports panel defaults to collapsed for multi-day ranges (single-day
-    // stays expanded), so tap its header to reveal the per-day cards.
-    await tester.tap(find.text('Daily report'));
-    await tester.pumpAndSettle();
-
-    // The report VM took the range → exactly 3 day cards, rendered inside the
-    // upper day-report panel.
+    // The merged Daily tab renders the day cards directly in a ListView (the
+    // collapsible reports panel was removed; the chat moved to a full-screen
+    // route). The report VM took the range → exactly 3 day cards.
     expect(report.rangeDays.length, 3);
     expect(
       find.byKey(ValueKey(DailyReportViewModel.dayKeyOf(now))),
@@ -159,7 +159,7 @@ void main() {
     expect(find.text('Key activity'), findsNothing);
   });
 
-  testWidgets('the day-report panel collapses to a single header row', (
+  testWidgets('day cards render directly (no collapsible reports panel)', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1200, 3000);
@@ -180,26 +180,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // The reports panel defaults to collapsed for multi-day ranges; the header
-    // is always present, so tap it to expand and reveal the day cards.
-    expect(find.text('Daily report'), findsOneWidget);
-    await tester.tap(find.text('Daily report'));
-    await tester.pumpAndSettle();
+    // The merged tab has NO collapsible "Daily report" panel header — the day
+    // cards are rendered straight into the tab's ListView, with the chat in a
+    // preview bar below (develop's full-screen chat architecture).
+    expect(find.text('Daily report'), findsNothing);
     expect(
       find.byKey(ValueKey(DailyReportViewModel.dayKeyOf(now))),
       findsOneWidget,
     );
-    // The expanded panel pins a Scrollbar flush to its right edge.
-    expect(find.byType(Scrollbar), findsWidgets);
-
-    // Collapsing the whole panel via its header hides every day card.
-    await tester.tap(find.text('Daily report'));
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(ValueKey(DailyReportViewModel.dayKeyOf(now))),
-      findsNothing,
-    );
-    expect(find.text('Daily report'), findsOneWidget);
+    expect(find.byType(ChatPreviewBar), findsOneWidget);
   });
 
   testWidgets('the new-session button clears the chat thread', (tester) async {
@@ -211,7 +200,11 @@ void main() {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
-    // Seed a turn by asking a question.
+    // Open the full-screen chat from the preview bar, then seed a turn by
+    // asking a question.
+    await tester.tap(find.byType(ChatPreviewBar));
+    await tester.pumpAndSettle();
+
     final field = find.byWidgetPredicate(
       (w) =>
           w is TextField && w.decoration?.hintText == '問問 GitSync 關於這個 repo…',
@@ -221,7 +214,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('OAuth 進度?'), findsOneWidget);
 
-    // Tap "開啟新 session" → the thread empties immediately.
+    // Tap "開啟新 session" (now in the full-screen chat AppBar) → the thread
+    // empties immediately.
     await tester.tap(find.byTooltip('開啟新 session'));
     await tester.pumpAndSettle();
     expect(find.text('OAuth 進度?'), findsNothing);

@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "測試與品質門檻（analyze 0/0、test 全綠、static 不汙染測試）"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "驗證快取/notify 行為與 VM 慣例一致"}

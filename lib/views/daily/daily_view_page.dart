@@ -20,6 +20,46 @@ import '../../widgets/empty_state.dart';
 import '../../widgets/markdown_view.dart';
 import '../../widgets/staggered_entry.dart';
 import '../ask/ask_repo_chat.dart';
+import '../chat/chat_full_screen.dart';
+import '../chat/chat_preview_bar.dart';
+
+/// Slide-up page transition for full-screen chat. Enters from the bottom
+/// with a deceleration curve, exits downward with an acceleration curve.
+/// The previous route stays perfectly still (no slide or fade) because
+/// [canTransitionTo] returns false.
+Route<void> _slideUpRoute(Widget child) => _SlideUpRoute(child: child);
+
+class _SlideUpRoute extends PageRouteBuilder<void> {
+  _SlideUpRoute({required Widget child})
+      : super(
+          fullscreenDialog: true,
+          transitionDuration: AppMotion.nav,
+          reverseTransitionDuration: AppMotion.nav,
+          pageBuilder: (_, _, _) => child,
+          transitionsBuilder: (_, animation, _, child) {
+            final slideTween =
+                Tween(begin: const Offset(0, 1), end: Offset.zero);
+            final curvedAnimation = CurvedAnimation(
+              parent: animation,
+              curve: AppMotion.emphasizedDecel,
+              reverseCurve: AppMotion.emphasizedAccel,
+            );
+            return SlideTransition(
+              position: slideTween.animate(curvedAnimation),
+              child: child,
+            );
+          },
+        );
+
+  /// Returning false tells Flutter NOT to run the previous route's
+  /// secondaryAnimation when this route pushes on top. This prevents
+  /// the shell tab page from sliding left or fading out.
+  @override
+  bool canTransitionTo(TransitionRoute<dynamic> nextRoute) => false;
+
+  @override
+  bool canTransitionFrom(TransitionRoute<dynamic> previousRoute) => false;
+}
 
 // DailyViewPage — two tabs: Daily / Commits, all driven by ONE shared date
 // range (IntelRangeViewModel). A single picker in the AppBar (shown from every
@@ -217,41 +257,18 @@ class _DailyTab extends StatefulWidget {
 
 class _DailyTabState extends State<_DailyTab> {
   final _controller = TextEditingController();
-  final _scrollController = ScrollController();
-
-  // Whether the upper per-day panel (D2) is expanded. Starts collapsed for
-  // multi-day ranges so the chat gets more room; single-day starts expanded.
-  bool? _reportsExpanded;
 
   @override
   void dispose() {
     _controller.dispose();
-    _scrollController.dispose();
     super.dispose();
-  }
-
-  void _send(AskRepoViewModel vm) {
-    final text = _controller.text;
-    if (text.trim().isEmpty || vm.sending) return;
-    _controller.clear();
-    // D9: pass the app-locale language NAME so the answer comes back in the
-    // user's language (reuses the W6 locale→name plumbing; on this page that's
-    // Chinese).
-    vm.ask(text, language: context.l10n.backendLanguage);
-    // Jump to the latest turn once it's laid out.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) return;
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: AppMotion.medium,
-        curve: AppMotion.emphasizedDecel,
-      );
-    });
   }
 
   // Builds one collapsible unified day card per day in the selected range. With
   // no range (single day) it's just today's card; with a range it's one card
-  // per day, today expanded by default and the rest collapsed.
+  // per day, today expanded by default and the rest collapsed. Each card is the
+  // unified per-day view: AI report (summary + Key activity) AND that day's
+  // Discord digest, so it needs the DiscordMessagesViewModel.
   List<Widget> _dayCards(
     DailyReportViewModel report,
     DiscordMessagesViewModel discord,
@@ -279,65 +296,56 @@ class _DailyTabState extends State<_DailyTab> {
     ];
   }
 
+  void _openAskChat(BuildContext context, AskRepoViewModel chat) {
+    Navigator.of(context).push(_slideUpRoute(
+      ChangeNotifierProvider<AskRepoViewModel>.value(
+        value: chat,
+        child: _AskRepoFullScreenWrapper(controller: _controller),
+      ),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Consumer3<
-      DailyReportViewModel,
-      DiscordMessagesViewModel,
-      AskRepoViewModel
-    >(
-      builder: (ctx, report, discord, chat, _) {
+    final s = context.l10n;
+    // Split into independent Consumers so the (potentially expensive) day report
+    // list only rebuilds when its data (DailyReportViewModel /
+    // DiscordMessagesViewModel) changes, NOT when AskRepoViewModel fires
+    // notifyListeners (which happens frequently during live trace streaming).
+    return Consumer<DailyReportViewModel>(
+      builder: (ctx, report, _) {
         if (report.loading) {
           return const Center(child: CircularProgressIndicator());
         }
-        // Default: expanded for single-day, collapsed for multi-day ranges so
-        // the chat area gets more room.
-        final expanded = _reportsExpanded ?? report.isSingleDay;
-        // Cap the day panel at ~45% of the viewport so many days never push the
-        // chat off screen — it scrolls internally instead (D2).
-        final panelMaxHeight = MediaQuery.of(ctx).size.height * 0.45;
-        // Count how many days are currently generating (for progress label).
-        final generatingCount = report.rangeDays
-            .where(
-              (d) => report.isGeneratingDay(DailyReportViewModel.dayKeyOf(d)),
-            )
-            .length;
         return Column(
           children: [
-            // ---- Upper panel: collapsible, fixed-height, internally scrollable
-            _ReportsPanel(
-              dayCount: report.rangeDays.length,
-              expanded: expanded,
-              maxHeight: panelMaxHeight,
-              generatingCount: generatingCount,
-              onToggle: () => setState(() => _reportsExpanded = !expanded),
-              cards: _dayCards(report, discord),
-            ),
-            const Divider(height: 1),
-            // ---- Lower area: the global "Ask GitSync" chat, own scroll. Drives
-            // the shared AskRepoViewModel (same instance as the FAB sheet), so
-            // its transcript is repo-wide and shared across both entry points.
+            // ---- Unified per-day cards: AI report + that day's Discord digest.
+            // Wrapped in its own Consumer so the digest data drives rebuilds too,
+            // without coupling to the chat VM.
             Expanded(
-              child: ListView(
-                controller: _scrollController,
-                padding: const EdgeInsets.all(AppDimens.spacingMd),
-                children: [
-                  const _AskRepoHeader(),
-                  const SizedBox(height: AppDimens.spacingSm),
-                  if (chat.turns.isEmpty)
-                    const AskRepoEmptyHint()
-                  else
-                    for (final turn in chat.turns) AskRepoTurnView(turn: turn),
-                  if (chat.sending)
-                    AskRepoLiveTraceStrip(steps: chat.liveSteps),
-                ],
+              child: Consumer<DiscordMessagesViewModel>(
+                builder: (ctx2, discord, _) => ListView(
+                  padding: const EdgeInsets.all(AppDimens.spacingMd),
+                  children: _dayCards(report, discord),
+                ),
               ),
             ),
-            AskRepoInputBar(
-              controller: _controller,
-              sending: chat.sending,
-              onSend: () => _send(chat),
-              onNewSession: chat.sending ? null : chat.newSession,
+            // ---- Chat preview bar: only rebuilds on chat VM changes.
+            Consumer<AskRepoViewModel>(
+              builder: (ctx2, chat, _) {
+                final lastAssistant = chat.turns
+                    .where((t) => !t.isUser)
+                    .toList();
+                final lastMsg = lastAssistant.isEmpty
+                    ? null
+                    : lastAssistant.last.content;
+                return ChatPreviewBar(
+                  title: s.askRepoTitle,
+                  lastMessage: lastMsg,
+                  sending: chat.sending,
+                  onTap: () => _openAskChat(ctx2, chat),
+                );
+              },
             ),
           ],
         );
@@ -346,134 +354,40 @@ class _DailyTabState extends State<_DailyTab> {
   }
 }
 
-// D2: the upper per-day panel. A tappable header row ("每日彙整" + day count +
-// chevron) collapses/expands the whole panel; when expanded the day cards live
-// in a fixed-height, internally scrollable region (so many days don't push the
-// chat off screen). The day cards keep their own per-card collapse.
-class _ReportsPanel extends StatefulWidget {
-  const _ReportsPanel({
-    required this.dayCount,
-    required this.expanded,
-    required this.maxHeight,
-    required this.onToggle,
-    required this.cards,
-    this.generatingCount = 0,
-  });
-
-  final int dayCount;
-  final bool expanded;
-  final double maxHeight;
-  final VoidCallback onToggle;
-  final List<Widget> cards;
-  final int generatingCount;
-
-  @override
-  State<_ReportsPanel> createState() => _ReportsPanelState();
-}
-
-class _ReportsPanelState extends State<_ReportsPanel> {
-  final ScrollController _scrollController = ScrollController();
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
+/// Wrapper pushed via Navigator.push that re-provides the same
+/// [AskRepoViewModel] instance so [ChatFullScreen] can rebuild on changes.
+/// Uses develop's shared full-screen chat architecture; the single remaining
+/// "Ask GitSync" chat passes the app-locale language NAME (D9) so the answer
+/// comes back in the user's language (on this page that's Chinese).
+class _AskRepoFullScreenWrapper extends StatelessWidget {
+  const _AskRepoFullScreenWrapper({required this.controller});
+  final TextEditingController controller;
 
   @override
   Widget build(BuildContext context) {
     final s = context.l10n;
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Semantics(
-          expanded: widget.expanded,
-          button: true,
-          label: s.dailyReport,
-          child: InkWell(
-            onTap: widget.onToggle,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppDimens.spacingMd,
-                AppDimens.spacingSm,
-                AppDimens.spacingSm,
-                AppDimens.spacingSm,
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.summarize_outlined,
-                    size: 20,
-                    color: scheme.primary,
-                  ),
-                  const SizedBox(width: AppDimens.spacingSm),
-                  Text(
-                    s.dailyReport,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(width: AppDimens.spacingSm),
-                  _CountChip(
-                    icon: Icons.calendar_today_outlined,
-                    label: '${widget.dayCount}',
-                  ),
-                  if (widget.generatingCount > 0) ...[
-                    const SizedBox(width: AppDimens.spacingSm),
-                    Text(
-                      s.generatingDayProgress(
-                        widget.dayCount - widget.generatingCount,
-                        widget.dayCount,
-                      ),
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: scheme.primary,
-                      ),
-                    ),
-                  ],
-                  const Spacer(),
-                  AnimatedRotation(
-                    turns: widget.expanded ? 0.5 : 0,
-                    duration: AppMotion.short,
-                    child: const Icon(Icons.expand_more),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        if (widget.expanded)
-          ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: widget.maxHeight),
-            // Scrollbar pinned flush to the panel's far-right edge: the ListView
-            // carries no right padding, so the scrollbar gutter sits at the
-            // outermost right. Each child gets its own right inset instead.
-            child: Scrollbar(
-              controller: _scrollController,
-              thumbVisibility: true,
-              child: ListView(
-                controller: _scrollController,
-                padding: const EdgeInsets.fromLTRB(
-                  AppDimens.spacingMd,
-                  0,
-                  0,
-                  AppDimens.spacingMd,
-                ),
-                shrinkWrap: true,
-                children: [
-                  for (final card in widget.cards)
-                    Padding(
-                      padding: const EdgeInsets.only(
-                        right: AppDimens.spacingSm,
-                      ),
-                      child: card,
-                    ),
-                ],
-              ),
-            ),
-          ),
-      ],
+    return Consumer<AskRepoViewModel>(
+      builder: (ctx, chat, _) {
+        return ChatFullScreen(
+          title: s.askRepoTitle,
+          turnWidgets: [
+            for (final turn in chat.turns) AskRepoTurnView(turn: turn),
+          ],
+          emptyHint: const ChatEmptyHint(),
+          sending: chat.sending,
+          liveSteps: chat.liveSteps,
+          controller: controller,
+          onSend: () {
+            final text = controller.text;
+            if (text.trim().isEmpty || chat.sending) return;
+            controller.clear();
+            // D9: pass the app-locale language NAME (Chinese on this page) so the
+            // answer returns in the user's language.
+            chat.ask(text, language: ctx.l10n.backendLanguage);
+          },
+          onNewSession: chat.sending ? null : chat.newSession,
+        );
+      },
     );
   }
 }
@@ -1039,45 +953,6 @@ class _CountChip extends StatelessWidget {
           Text(label, style: Theme.of(context).textTheme.labelSmall),
         ],
       ),
-    );
-  }
-}
-
-// The global "Ask GitSync" section header for the Daily tab's chat. Repo-wide
-// framing (not date-scoped) — reuses the shared `askRepoTitle` string.
-class _AskRepoHeader extends StatelessWidget {
-  const _AskRepoHeader();
-
-  @override
-  Widget build(BuildContext context) {
-    final s = context.l10n;
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(Icons.auto_awesome, size: 20, color: scheme.primary),
-            const SizedBox(width: AppDimens.spacingSm),
-            Text(
-              s.askRepoTitle,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        Padding(
-          padding: const EdgeInsets.only(left: 28),
-          child: Text(
-            s.askRepoScope,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

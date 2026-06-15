@@ -71,7 +71,9 @@ void main() {
 
   // Pumps the page, scopes the shared range over [start]..[end] (so the report
   // produces a day card per day, and the digest VM shows those days' digests),
-  // expands the day panel, and returns the Discord VM.
+  // and returns the Discord VM. After the 06-15 merge the day cards render
+  // directly in the tab's ListView (the collapsible reports panel was removed
+  // when the chat moved to a full-screen route), so there's no panel to expand.
   Future<DiscordMessagesViewModel> openRange(
     WidgetTester tester,
     DateTime start,
@@ -89,10 +91,6 @@ void main() {
     ctx.read<IntelRangeViewModel>().setRange(
       DateTimeRange(start: start, end: end),
     );
-    await tester.pumpAndSettle();
-
-    // Multi-day ranges collapse the day panel by default — expand it.
-    await tester.tap(find.text('Daily report'));
     await tester.pumpAndSettle();
 
     return ctx.read<DiscordMessagesViewModel>();

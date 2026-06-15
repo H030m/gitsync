@@ -442,9 +442,9 @@ String _statusLabel(AppStrings s, TaskStatus st) {
         scheme.primary,
       ),
     TaskStatus.done => (
-        scheme.secondaryContainer,
-        scheme.onSecondaryContainer,
-        scheme.secondary,
+        scheme.tertiaryContainer,
+        scheme.onTertiaryContainer,
+        scheme.tertiary,
       ),
   };
 }
@@ -476,8 +476,12 @@ class _StatusLegend extends StatelessWidget {
               width: 8,
               height: 8,
               decoration: BoxDecoration(
-                color: _statusColors(scheme, status).$3,
+                color: _statusColors(scheme, status).$1,
                 shape: BoxShape.circle,
+                border: Border.all(
+                  color: scheme.outlineVariant.withValues(alpha: 0.6),
+                  width: 0.5,
+                ),
               ),
             ),
             const SizedBox(width: AppDimens.spacingXs),

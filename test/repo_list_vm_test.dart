@@ -53,6 +53,7 @@ class _FakeFunctionsService implements FunctionsService {
     required String repoId,
     required String goal,
     String? language,
+    String? runId,
   }) =>
       throw UnimplementedError();
 

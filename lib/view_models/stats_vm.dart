@@ -95,8 +95,26 @@ class StatsViewModel with ChangeNotifier {
         _commitRepo = commitRepository ?? CommitRepository(),
         _userRepo = userRepository ?? UserRepository(),
         _functions = functionsService ?? FunctionsService() {
+    // Stale-while-revalidate: seed from the cross-VM cache so re-entering the
+    // Stats page shows last-known commits instantly (no spinner). A fresh fetch
+    // always follows to revalidate.
+    final cached = _commitCache[repoId];
+    if (cached != null) {
+      _allCommits = cached;
+      _authorGroups = buildAuthorGroups(cached);
+      _commitsLoading = false;
+    }
     _loadAllCommits();
   }
+
+  // Survives VM disposal so re-entering Stats shows last-known commits instantly
+  // (stale-while-revalidate). repoId → last successfully fetched commits.
+  static final Map<String, List<Commit>> _commitCache = {};
+
+  /// Clears the cross-VM commit cache. Test-only — keeps the static cache from
+  /// leaking between tests.
+  @visibleForTesting
+  static void debugClearCommitCache() => _commitCache.clear();
 
   final String _repoId;
   final CommitRepository _commitRepo;
@@ -143,11 +161,13 @@ class StatsViewModel with ChangeNotifier {
 
   Future<void> _loadAllCommits() async {
     try {
-      _allCommits = await _commitRepo.fetchAllCommits(_repoId);
+      final fresh = await _commitRepo.fetchAllCommits(_repoId);
+      _allCommits = fresh;
+      _commitCache[_repoId] = fresh;
     } catch (_) {
-      // Tolerate a fetch failure: degrade to an empty list so the tab still
-      // renders (the task basis is unaffected).
-      _allCommits = const [];
+      // Tolerate a fetch failure: keep any stale data we seeded from the cache;
+      // only degrade to an empty list when we have nothing to show.
+      if (_allCommits.isEmpty) _allCommits = const [];
     } finally {
       _commitsLoading = false;
       _authorGroups = buildAuthorGroups(_allCommits);

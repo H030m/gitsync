@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Confirms v2 syntax + typecheck/lint/test are the truth signals; the swap is the only edit."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Confirms surgical per-site model swap is correct rather than mutating MODELS in config.ts — the latter would affect unrelated flows."}

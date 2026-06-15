@@ -50,6 +50,7 @@ abstract class FunctionsService {
     required String repoId,
     required String goal,
     String? language,
+    String? runId,
   });
   Future<void> forceUnlockBreakdown({required String repoId});
 
@@ -259,12 +260,14 @@ class _LiveFunctionsService implements FunctionsService {
     required String repoId,
     required String goal,
     String? language,
+    String? runId,
   }) async {
     final res = await _callable('breakdownTask').call({
       'repoId': repoId,
       'goal': goal,
       // Only sent when present; absent → backend follows the spec's language.
       'language': ?language,
+      'runId': ?runId,
     });
     final data = Map<String, dynamic>.from(res.data as Map);
     return (data['subtasks'] as List)

@@ -13,6 +13,8 @@ import type OpenAI from 'openai';
 
 import { getOpenAI, MODELS } from '../config';
 import { discordChatSystem } from '../prompts/discordChat';
+import { readProjectBrief, formatBriefForPrompt } from '../tools/projectBrief';
+import { recallForPrompt } from '../tools/memorySearch';
 import { taipeiRangeBounds } from '../tools/dailyIntel';
 import {
   searchDiscordMessages,
@@ -165,9 +167,17 @@ export async function discordChatFlow(
     ? `${discordChatSystem}\n\nScope: only messages and digests between ${range.startDate} and ${range.endDate} (inclusive, Asia/Taipei) are available. Do NOT ask for or reference days outside this window.`
     : discordChatSystem;
 
+  // Best-effort project-brief + active recall (empty → '' → no behavior change).
+  const brief = await readProjectBrief(repoId);
+  const briefPrefix = formatBriefForPrompt(brief);
+  const memoryContext = await recallForPrompt(repoId, {
+    query: question,
+    briefContent: brief?.content,
+  });
+
   const openai = getOpenAI();
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: 'system', content: systemPrompt },
+    { role: 'system', content: systemPrompt + briefPrefix + memoryContext },
     ...history
       .slice(-MAX_HISTORY_TURNS)
       .filter((t) => t && (t.role === 'user' || t.role === 'assistant') && t.content)
