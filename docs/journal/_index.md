@@ -23,6 +23,7 @@
 - **嘉駿 — Final demo 衝刺開工（W1–W5 計畫定案 + 多代理分工）**：對照評分標準定案五個工作項——W1 agentic 交接文件（工具循環＋self-review）、W2 語意搜尋強化（Discord embedding 補 stub＋向量優先＋backfill）、W3 專案記憶（滾動 projectBrief＋expertiseTags 寫回）、W4 讀 repo 的 `.trellis`/`AGENTS.md` 工具、W5 統一問答入口 `askRepo`＋工具軌跡顯示。完整計畫與 3 分鐘 demo 腳本見 [`docs/FINAL_DEMO_PLAN.md`](../FINAL_DEMO_PLAN.md)。分支：`feature/agentic-final-demo`（整合）← `feat/w2-semantic-search`、`feat/w4-repo-docs`、`feat/w1-agentic-handoff`、`feat/w3-project-memory`、`feat/w5-ask-repo`，全從 develop @ `92f858a` 出。FCM 由廷煥的分支完成，本批不碰。
 ## 2026-06-15
 
+- **廷煥 — 主題模式持久化（F5 重整不再回深色）**：使用者回報 web 按 F5 後主題回預設深色。根因是 `ThemeModeNotifier` 完全沒持久化（只在記憶體、預設 system），F5 重建就回 system。照 `LocaleNotifier` 模式補 SharedPreferences：建構子 `_load()` 讀回、`setMode`/`toggle` 寫入（key `theme_mode`、值 enum `.name`），公開 API/provider 接線/UI 不變、零新相依。改動檔 analyze 0/0、`flutter test` **104/104**（+4 新測試）。trellis `06-15-persist-theme-mode-across-refresh`，分支 `feature/persist-theme-mode`。詳見 [113062340_tinghuan.md](./113062340_tinghuan.md)。
 - **廷煥 — 統計頁 stale-while-revalidate 快取**：修「每次點進統計都先轉圈」。根因是 stats 路由用 `CustomTransitionPage`（go_router push），每次導頁重建 `StatsViewPage`→新 `StatsViewModel`→從零抓 all-history commits。在 `StatsViewModel` 加 repoId-keyed `static _commitCache`：建構子命中就同步種子資料並關 spinner、背景 revalidate、fetch 失敗保留舊資料；`@visibleForTesting debugClearCommitCache()` + 兩 stats 測試檔 setUp 清快取防 static 汙染。改動檔 analyze 0/0、`flutter test` **100/100**、模擬器手測退出再進無 spinner。trellis `06-15-stats-stale-while-revalidate-cache`，分支 `feature/stats-swr-cache`。詳見 [113062340_tinghuan.md](./113062340_tinghuan.md)。
 
 ## 2026-06-13

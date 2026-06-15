@@ -1,0 +1,1 @@
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "ChangeNotifier + SharedPreferences 持久化慣例，需與 LocaleNotifier 對齊"}
