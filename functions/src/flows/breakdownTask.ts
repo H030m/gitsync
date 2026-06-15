@@ -193,7 +193,7 @@ async function firstPassBreakdown(
   ];
 
   const completion = await openai.beta.chat.completions.parse({
-    model: MODELS.reasoning,
+    model: MODELS.fast,
     messages,
     response_format: zodResponseFormat(BreakdownOutputSchema, 'breakdown'),
   });
@@ -224,7 +224,7 @@ async function firstPassBreakdown(
     });
 
     const retry = await openai.beta.chat.completions.parse({
-      model: MODELS.reasoning,
+      model: MODELS.fast,
       messages,
       response_format: zodResponseFormat(BreakdownOutputSchema, 'breakdown'),
     });
@@ -400,7 +400,7 @@ async function incrementalBreakdown(
     logger.info('incrementalBreakdown: agentic round', { repoId, round });
 
     const completion = await openai.chat.completions.create({
-      model: MODELS.reasoning,
+      model: MODELS.fast,
       messages,
       tools: INCREMENTAL_TOOLS,
       tool_choice: 'auto',
