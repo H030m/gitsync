@@ -67,8 +67,19 @@ class SettingsPage extends StatelessWidget {
             ),
           ),
           StaggeredEntry(
-            key: const ValueKey('settings-danger'),
+            key: const ValueKey('settings-account'),
             index: 4,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SectionHeader(s.account),
+                const _AccountCard(),
+              ],
+            ),
+          ),
+          StaggeredEntry(
+            key: const ValueKey('settings-danger'),
+            index: 5,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -184,7 +195,6 @@ class _NotificationsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = context.l10n;
-    final scheme = Theme.of(context).colorScheme;
     return SectionCard(
       padding: EdgeInsets.zero,
       margin: const EdgeInsets.symmetric(horizontal: AppDimens.spacingMd),
@@ -193,8 +203,6 @@ class _NotificationsCard extends StatelessWidget {
         child: ListTile(
           leading: const Icon(Icons.notifications_active_outlined),
           title: Text(s.sendTestNotification),
-          trailing: Icon(Icons.chevron_right,
-              color: scheme.onSurfaceVariant, size: 20),
           onTap: () async {
             final messenger = ScaffoldMessenger.of(context);
             try {
@@ -209,6 +217,9 @@ class _NotificationsCard extends StatelessWidget {
               await LocalNotificationsService.instance.show(
                 title: s.testNotificationTitle,
                 body: s.testNotificationBody,
+              );
+              messenger.showSnackBar(
+                SnackBar(content: Text(s.testNotificationSent)),
               );
             } catch (e) {
               messenger.showSnackBar(
@@ -271,7 +282,62 @@ class _GitHubCard extends StatelessWidget {
   }
 }
 
-// Danger zone — delete-all + sign-out in an error-tinted card.
+// Account section — sign-out with confirmation.
+class _AccountCard extends StatelessWidget {
+  const _AccountCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.l10n;
+    final scheme = Theme.of(context).colorScheme;
+    return SectionCard(
+      padding: EdgeInsets.zero,
+      margin: const EdgeInsets.symmetric(horizontal: AppDimens.spacingMd),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+        child: ListTile(
+          leading: Icon(Icons.logout, color: scheme.error),
+          title: Text(s.signOut),
+          textColor: scheme.error,
+          onTap: () => _confirmSignOut(context),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmSignOut(BuildContext context) async {
+    final s = context.l10n;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(s.signOutConfirmTitle),
+        content: Text(s.signOutConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(s.cancel),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(s.signOut),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    if (!context.mounted) return;
+    final nav = Provider.of<NavigationService>(context, listen: false);
+    Provider.of<LocaleNotifier>(context, listen: false).detachUser();
+    await Provider.of<AuthenticationService>(context, listen: false).logOut();
+    nav.goSignIn();
+  }
+}
+
+// Danger zone — irreversible destructive actions only.
 class _DangerZoneCard extends StatelessWidget {
   const _DangerZoneCard({required this.repoId});
   final String repoId;
@@ -286,41 +352,14 @@ class _DangerZoneCard extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: AppDimens.spacingMd),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-        child: Column(
-          children: [
-            ListTile(
-              leading: Icon(Icons.delete_sweep_outlined,
-                  color: scheme.onErrorContainer),
-              title: Text(s.deleteAllTasks),
-              subtitle: Text(s.deleteAllTasksSubtitle),
-              textColor: scheme.onErrorContainer,
-              iconColor: scheme.onErrorContainer,
-              trailing: Icon(Icons.chevron_right,
-                  color: scheme.onErrorContainer, size: 20),
-              onTap: () => _confirmDeleteAllTasks(context),
-            ),
-            Divider(
-              height: 1,
-              color: scheme.onErrorContainer.withValues(alpha: 0.2),
-            ),
-            ListTile(
-              leading: Icon(Icons.logout, color: scheme.onErrorContainer),
-              title: Text(s.signOut),
-              textColor: scheme.onErrorContainer,
-              iconColor: scheme.onErrorContainer,
-              trailing: Icon(Icons.chevron_right,
-                  color: scheme.onErrorContainer, size: 20),
-              onTap: () async {
-                final nav =
-                    Provider.of<NavigationService>(context, listen: false);
-                Provider.of<LocaleNotifier>(context, listen: false)
-                    .detachUser();
-                await Provider.of<AuthenticationService>(context, listen: false)
-                    .logOut();
-                nav.goSignIn();
-              },
-            ),
-          ],
+        child: ListTile(
+          leading:
+              Icon(Icons.delete_sweep_outlined, color: scheme.onErrorContainer),
+          title: Text(s.deleteAllTasks),
+          subtitle: Text(s.deleteAllTasksSubtitle),
+          textColor: scheme.onErrorContainer,
+          iconColor: scheme.onErrorContainer,
+          onTap: () => _confirmDeleteAllTasks(context),
         ),
       ),
     );

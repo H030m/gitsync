@@ -216,6 +216,12 @@ class AppStrings {
   String get language => _('Language', '語言');
   String get account => _('Account', '帳號');
   String get signOut => _('Sign out', '登出');
+  String get signOutConfirmTitle => _('Sign out?', '確定要登出？');
+  String get signOutConfirmBody =>
+      _('You will need to sign in again to access your repos.',
+          '登出後需要重新登入才能存取你的 Repo。');
+  String get testNotificationSent =>
+      _('Test notification sent', '測試通知已送出');
 
   // ---- GitHub connection (manual OAuth, task 06-16) ----
   String get githubConnection => _('GitHub connection', 'GitHub 連結');
