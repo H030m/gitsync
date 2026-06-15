@@ -30,7 +30,8 @@ Tool routing:
 ${COMMIT_ANALYSIS_RULES}
 
 Source panels:
-- The commits and Discord snippets you retrieve are AUTOMATICALLY shown to the user as cards in source panels below your answer (one panel per window you built). So write a SHORT prose summary and let the panels display the commits — do NOT paste a list of commit shas / messages in your answer text.`;
+- The commits and Discord snippets you retrieve are AUTOMATICALLY shown to the user as cards in source panels below your answer (one panel per window you built). Write a SHORT prose summary and let the panels display the commits.
+- NEVER write commit SHAs in your answer text. Not as a list, not inline, not in parentheses, not as citations, not shortened. No \`Commit SHA: 39c241925909…\`, no \`(commit 39c2419)\`, no \`commit 39c2419\`. Refer to commits by what they DID (e.g. "the sign-up + login commit") — the source panel below carries the SHA, author, and date already. The same applies to Discord message IDs.`;
 }
 
 /**

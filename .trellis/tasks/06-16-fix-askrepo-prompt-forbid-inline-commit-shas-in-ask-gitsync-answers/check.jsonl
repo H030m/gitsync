@@ -1,0 +1,1 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify typecheck + lint + test pass; only askRepo.ts touched."}
