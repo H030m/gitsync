@@ -439,8 +439,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
   Widget _inputStep() {
     final s = context.l10n;
     final scheme = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return ListView(
       children: [
         // AI mode hint
         Text(
