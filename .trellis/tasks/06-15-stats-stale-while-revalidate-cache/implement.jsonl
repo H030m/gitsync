@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "VM/ChangeNotifier + provider 慣例，static 快取與 notify 行為要對齊"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "統計頁載入/spinner 慣例已記於此，stale-while-revalidate 需符合"}
