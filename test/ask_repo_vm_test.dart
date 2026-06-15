@@ -16,6 +16,7 @@ import 'package:gitsync/view_models/ask_repo_vm.dart';
 class _RecordingFunctions implements FunctionsService {
   final _fake = FakeFunctionsService();
   final List<String?> runIds = [];
+  final List<String?> languages = [];
 
   @override
   Future<AskRepoReply> askRepo({
@@ -23,13 +24,16 @@ class _RecordingFunctions implements FunctionsService {
     required String question,
     List<AskRepoTurn> history = const [],
     String? runId,
+    String? language,
   }) {
     runIds.add(runId);
+    languages.add(language);
     return _fake.askRepo(
       repoId: repoId,
       question: question,
       history: history,
       runId: runId,
+      language: language,
     );
   }
 
@@ -97,6 +101,20 @@ void main() {
     expect(fns.runIds[0], isNot(fns.runIds[1]));
     // The same runId was used to subscribe to the trace stream.
     expect(runs.watched, equals(fns.runIds));
+  });
+
+  test('ask threads the language NAME (W6) through to the callable', () async {
+    final fns = _RecordingFunctions();
+    final vm = AskRepoViewModel(
+      repoId: DummyData.demoRepoId,
+      functionsService: fns,
+      agentRunRepository: _RecordingAgentRuns(),
+    );
+
+    await vm.ask('progress?', language: 'Traditional Chinese');
+    await vm.ask('no language here');
+
+    expect(fns.languages, equals(['Traditional Chinese', null]));
   });
 
   test('newSession clears the transcript (no-op while sending)', () async {

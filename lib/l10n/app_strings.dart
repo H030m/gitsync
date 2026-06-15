@@ -51,44 +51,46 @@ class AppStrings {
   String get statusDone => _('Done', '完成');
 
   // ---- Sign in ----
-  String get appTagline =>
-      _("Your team's repos, tasks, and daily activity in one place.",
-          '在一個地方掌握團隊的 repo、任務與每日動態。');
+  String get appTagline => _(
+    "Your team's repos, tasks, and daily activity in one place.",
+    '在一個地方掌握團隊的 repo、任務與每日動態。',
+  );
   String get signInWithGitHub => _('Sign in with GitHub', '使用 GitHub 登入');
   String get signingIn => _('Signing in…', '登入中…');
 
   // ---- Repo list ----
   String get yourRepos => _('Your repos', '你的 Repo');
   String get noReposTitle => _('No repos yet', '還沒有 Repo');
-  String get noReposMsg => _('Tap + to connect your first GitHub repository.',
-      '點 + 連結你的第一個 GitHub repo。');
+  String get noReposMsg => _(
+    'Tap + to connect your first GitHub repository.',
+    '點 + 連結你的第一個 GitHub repo。',
+  );
   String get notSignedIn => _('Not signed in', '尚未登入');
   String get removeRepoTitle => _('Remove repo?', '移除 Repo?');
   String removeRepoBody(String name) => _(
-      'Remove $name? This deletes the repo and all its tasks/data. This cannot be undone.',
-      '確定移除 $name?這會刪除該 repo 及其所有任務/資料,且無法復原。');
+    'Remove $name? This deletes the repo and all its tasks/data. This cannot be undone.',
+    '確定移除 $name?這會刪除該 repo 及其所有任務/資料,且無法復原。',
+  );
   String get removeRepoFailed => _('Failed to remove repo', '移除 repo 失敗');
 
   // ---- Tasks board ----
   String get tasksTitle => _('Tasks', '任務');
   String get dangerZone => _('Danger zone', '危險操作');
   String get deleteAllTasks => _('Delete all tasks', '刪除所有任務');
-  String get deleteAllTasksSubtitle =>
-      _('Remove every task in this repo (e.g. to reset before a demo).',
-          '移除這個 repo 的所有任務（例如 demo 前重置）。');
-  String get deleteAllTasksConfirmTitle =>
-      _('Delete all tasks?', '刪除所有任務？');
+  String get deleteAllTasksSubtitle => _(
+    'Remove every task in this repo (e.g. to reset before a demo).',
+    '移除這個 repo 的所有任務（例如 demo 前重置）。',
+  );
+  String get deleteAllTasksConfirmTitle => _('Delete all tasks?', '刪除所有任務？');
   String get deleteAllTasksConfirmBody => _(
-      'This permanently removes every task in this repo. This cannot be undone.',
-      '這會永久刪除這個 repo 的所有任務，且無法復原。');
-  String deleteAllTasksDone(int n) =>
-      _('Deleted $n task(s)', '已刪除 $n 個任務');
-  String get deleteAllTasksFailed =>
-      _('Failed to delete tasks', '刪除任務失敗');
+    'This permanently removes every task in this repo. This cannot be undone.',
+    '這會永久刪除這個 repo 的所有任務，且無法復原。',
+  );
+  String deleteAllTasksDone(int n) => _('Deleted $n task(s)', '已刪除 $n 個任務');
+  String get deleteAllTasksFailed => _('Failed to delete tasks', '刪除任務失敗');
   String get boardTab => _('Board', '看板');
   String get graphTab => _('Graph', '關聯圖');
-  String get emptyBoardTitle =>
-      _('No project structure yet', '您還未輸入專案架構');
+  String get emptyBoardTitle => _('No project structure yet', '您還未輸入專案架構');
   String get emptyBoardMsg =>
       _('Tap the + button to add tasks.', '請點擊右下角 + 號來新增任務');
   String updateStatusFailed(Object e) =>
@@ -100,31 +102,30 @@ class AppStrings {
   String get manual => _('Manual', '手動');
   String get aiBreakdown => _('AI breakdown', 'AI 拆解');
   String get aiBreakdownHint => _(
-      'Paste a project spec and let AI split it into subtasks.',
-      '貼上專案規格，讓 AI 自動拆成多個子任務。');
+    'Paste a project spec and let AI split it into subtasks.',
+    '貼上專案規格，讓 AI 自動拆成多個子任務。',
+  );
   String get taskTitleLabel => _('Task title', '任務標題');
   String get descriptionOptional => _('Description (optional)', '描述(選填)');
   String get assigneeOptional => _('Assignee (optional)', '負責人(選填)');
   String get addingTask => _('Adding…', '新增中…');
   String get projectSpec => _('Project spec', '專案規格');
   String get projectSpecHint => _(
-      'Paste your SPEC.md (Markdown) here — the AI breaks it into a high-level TODO list.',
-      '把你的 SPEC.md(Markdown)貼在這裡 —— AI 會拆成一份高層次的任務清單。');
+    'Paste your SPEC.md (Markdown) here — the AI breaks it into a high-level TODO list.',
+    '把你的 SPEC.md(Markdown)貼在這裡 —— AI 會拆成一份高層次的任務清單。',
+  );
   String get breakDownWithAI => _('Break down with AI', '用 AI 拆解');
   String get breakingDown => _('Breaking down…', '拆解中…');
-  String generatedNSubtasks(int n) =>
-      _('Generated $n subtasks', '產生了 $n 個子任務');
+  String generatedNSubtasks(int n) => _('Generated $n subtasks', '產生了 $n 個子任務');
   String get reBreakdown => _('Re-breakdown', '重新拆解');
   String get swipeToDelete =>
       _('Swipe left on a task to remove it', '向左滑動可移除不需要的任務');
   String get taskAdded => _('Task added.', '已新增任務。');
-  String taskAddedWithTitle(String title) =>
-      _('Added: $title', '已新增：$title');
+  String taskAddedWithTitle(String title) => _('Added: $title', '已新增：$title');
   String get couldNotAddTask =>
       _('Could not add the task. Please try again.', '無法新增任務，請檢查網路後重試。');
-  String get couldNotBreakdown => _(
-      'Could not break down the spec. Please try again.',
-      '無法拆解規格，請再試一次。');
+  String get couldNotBreakdown =>
+      _('Could not break down the spec. Please try again.', '無法拆解規格，請再試一次。');
   String get openFullPage => _('Open full page', '開啟完整頁面');
 
   // ---- Task details ----
@@ -143,8 +144,9 @@ class AppStrings {
   String get generate => _('Generate', '產生');
   String get regenerate => _('Regenerate', '重新產生');
   String get noHandoffYet => _(
-      'No handoff doc yet. It is generated automatically when this task\'s prerequisites are completed, or tap Generate.',
-      '還沒有交接文件。會在前置任務完成時自動產生,或點「產生」。');
+    'No handoff doc yet. It is generated automatically when this task\'s prerequisites are completed, or tap Generate.',
+    '還沒有交接文件。會在前置任務完成時自動產生,或點「產生」。',
+  );
   String get assignToTitle => _('Assign to', '指派給');
   String get unassign => _('Unassign', '取消指派');
   String get importCollaborators =>
@@ -152,15 +154,17 @@ class AppStrings {
   String get importCollaboratorsSub =>
       _('Adds teammates who already use GitSync', '加入已使用 GitSync 的隊友');
   String get noPrerequisites => _(
-      'No prerequisites. Tap Add to choose a parent task.',
-      '沒有前置任務。點「新增」選一個父任務。');
+    'No prerequisites. Tap Add to choose a parent task.',
+    '沒有前置任務。點「新增」選一個父任務。',
+  );
   String get addPrerequisite => _('Add a prerequisite', '新增前置任務');
   String get removePrerequisite => _('Remove prerequisite', '移除前置任務');
   String get noEligibleTasks => _('No eligible tasks to add.', '沒有可加入的任務。');
   String get deleteTaskQuestion => _('Delete task?', '刪除任務?');
   String deleteTaskBody(String title) => _(
-      'Delete "$title"? Its prerequisites will be reconnected to the tasks that depend on it.',
-      '確定刪除「$title」?它的前置任務會自動接到依賴它的任務上。');
+    'Delete "$title"? Its prerequisites will be reconnected to the tasks that depend on it.',
+    '確定刪除「$title」?它的前置任務會自動接到依賴它的任務上。',
+  );
   String get couldNotUpdateAssignee =>
       _('Could not update the assignee.', '無法更新負責人。');
   String get couldNotGenerateHandoff =>
@@ -168,13 +172,13 @@ class AppStrings {
   String get couldNotOpenLink => _('Could not open the link.', '無法開啟連結。');
   String get couldNotAddPrereq =>
       _('Could not add that prerequisite.', '無法新增該前置任務。');
-  String get couldNotImport =>
-      _('Could not import collaborators.', '無法匯入協作者。');
+  String get couldNotImport => _('Could not import collaborators.', '無法匯入協作者。');
   String get importingCollaborators =>
       _('Importing GitHub collaborators…', '正在匯入 GitHub 協作者…');
   String importedSummary(int added, int already, int pending) => _(
-      'Added $added member(s)${already > 0 ? ' · $already already in' : ''}${pending > 0 ? ' · $pending not signed in yet' : ''}. Reopen the picker to assign them.',
-      '已加入 $added 位成員${already > 0 ? '・$already 位已在' : ''}${pending > 0 ? '・$pending 位尚未登入' : ''}。重新開啟選單即可指派。');
+    'Added $added member(s)${already > 0 ? ' · $already already in' : ''}${pending > 0 ? ' · $pending not signed in yet' : ''}. Reopen the picker to assign them.',
+    '已加入 $added 位成員${already > 0 ? '・$already 位已在' : ''}${pending > 0 ? '・$pending 位尚未登入' : ''}。重新開啟選單即可指派。',
+  );
 
   // ---- Graph ----
   String get noTasksYet => _('No tasks yet', '還沒有任務');
@@ -184,8 +188,9 @@ class AppStrings {
   String get linkFromHere => _('Link from here…', '從這裡連線…');
   String get dependencyAdded => _('Dependency added.', '已新增依賴。');
   String get cannotLink => _(
-      "Can't link — it already exists or would create a cycle.",
-      '無法連線 —— 已存在或會造成循環。');
+    "Can't link — it already exists or would create a cycle.",
+    '無法連線 —— 已存在或會造成循環。',
+  );
   String linkTargetPrompt(String title) =>
       _('Tap the task that depends on "$title"', '點選依賴「$title」的任務');
 
@@ -204,23 +209,19 @@ class AppStrings {
   String get account => _('Account', '帳號');
   String get signOut => _('Sign out', '登出');
   String get notifications => _('Notifications', '通知');
-  String get sendTestNotification =>
-      _('Send test notification', '傳送測試通知');
-  String get testNotificationTitle =>
-      _('GitSync', 'GitSync');
-  String get testNotificationBody => _(
-        'This is a test notification 🎉',
-        '這是一則測試通知 🎉',
-      );
+  String get sendTestNotification => _('Send test notification', '傳送測試通知');
+  String get testNotificationTitle => _('GitSync', 'GitSync');
+  String get testNotificationBody =>
+      _('This is a test notification 🎉', '這是一則測試通知 🎉');
   String get notificationsDisabledHint => _(
-        'Notifications are disabled. Enable them for GitSync in system '
+    'Notifications are disabled. Enable them for GitSync in system '
         'settings to receive them.',
-        '通知已停用。請到系統設定為 GitSync 開啟通知。',
-      );
+    '通知已停用。請到系統設定為 GitSync 開啟通知。',
+  );
   String get notificationFailed => _(
-        "Notification failed (try a full rebuild, not just hot restart)",
-        '通知未送出(請完整重新編譯，非只 hot restart)',
-      );
+    "Notification failed (try a full rebuild, not just hot restart)",
+    '通知未送出(請完整重新編譯，非只 hot restart)',
+  );
   String get themeSystem => _('System', '系統');
   String get themeLight => _('Light', '淺色');
   String get themeDark => _('Dark', '深色');
@@ -229,17 +230,19 @@ class AppStrings {
   String get backendLiveTitle =>
       _('Backend: LIVE (Firebase)', '後端:正式(Firebase)');
   String get backendFakeBody => _(
-      'No real Firebase / OpenAI / GitHub calls. Mutations live in memory and reset on restart. To switch: stop the app and re-run with `--dart-define=BACKEND=live`.',
-      '不會呼叫真正的 Firebase / OpenAI / GitHub。所有變更只存在記憶體、重啟即重置。要切換:停止 app 並用 `--dart-define=BACKEND=live` 重跑。');
+    'No real Firebase / OpenAI / GitHub calls. Mutations live in memory and reset on restart. To switch: stop the app and re-run with `--dart-define=BACKEND=live`.',
+    '不會呼叫真正的 Firebase / OpenAI / GitHub。所有變更只存在記憶體、重啟即重置。要切換:停止 app 並用 `--dart-define=BACKEND=live` 重跑。',
+  );
   String get backendLiveBody => _(
-      'Hitting real Firebase project. Be careful with destructive actions.',
-      '連到正式 Firebase 專案,執行破壞性操作請小心。');
+    'Hitting real Firebase project. Be careful with destructive actions.',
+    '連到正式 Firebase 專案,執行破壞性操作請小心。',
+  );
 
   // ---- Daily ----
   String get dailyTitle => _('Daily', '每日彙整');
-  String get dailyTabSummary => _('Summary', '摘要');
+  // D1: the merged Summary + Discord view is now one "Daily" tab.
+  String get dailyTabDaily => _('Daily', '每日');
   String get dailyTabCommits => _('Commits', '提交紀錄');
-  String get dailyTabDiscord => _('Discord', 'Discord');
   String get refreshCurrentRange => _('Refresh current range', '重新整理目前範圍');
   String get today => _('Today', '今天');
   String get resetRange => _('Reset range', '重設範圍');
@@ -249,24 +252,24 @@ class AppStrings {
   String get regenerateReport => _('Regenerate', '重新產生');
   String get generateReport => _('Generate report', '產生日報');
   String get dayNoReportHint => _(
-      'No report for this day yet. Tap "Generate report" to let the AI summarize the day\'s commits, tasks and chat.',
-      '這天還沒有日報。點「產生日報」讓 AI 整理當天的 commits、任務與聊天。');
-  String get highlights => _('Highlights', '重點');
-  String get commitRollup => _('Commit rollup', '提交彙總');
-  String get contributions => _('Contributions', '貢獻');
+    'No report for this day yet. Tap "Generate report" to let the AI summarize the day\'s commits, tasks and chat.',
+    '這天還沒有日報。點「產生日報」讓 AI 整理當天的 commits、任務與聊天。',
+  );
+  // D8: the "Key activity" card holds highlights + blockers (the commit rollup
+  // sub-section was dropped, so `commitRollup` is gone too).
+  String get keyActivity => _('Key activity', '活動重點');
   String generatingDayProgress(int done, int total) =>
       _('Generating ($done/$total)', '產生中（$done/$total）');
   String get askAiAboutToday => _('Ask AI about today', '問 AI 今天的事');
   String get askAiAboutTodayHint => _('Ask AI about today…', '問 AI 今天的事…');
   String get briefHint => _(
-      'e.g. "Which commits today are about OAuth?", "Did anyone mention a blocker?", "Who changed breakdownTask recently?"',
-      'e.g. 「今天有哪些 commit 跟 OAuth 有關？」、「有沒有人提到 blocker？」、'
-      '「breakdownTask 最近誰改的？」');
-  String sourceCommits(int n) =>
-      _('Source commits ($n)', '來源提交（$n）');
+    'e.g. "Which commits today are about OAuth?", "Did anyone mention a blocker?", "Who changed breakdownTask recently?"',
+    'e.g. 「今天有哪些 commit 跟 OAuth 有關？」、「有沒有人提到 blocker？」、'
+        '「breakdownTask 最近誰改的？」',
+  );
+  String sourceCommits(int n) => _('Source commits ($n)', '來源提交（$n）');
   String get newSession => _('New session', '開啟新 session');
-  String get couldNotLoadCommits =>
-      _('Could not load commits', '無法載入提交紀錄');
+  String get couldNotLoadCommits => _('Could not load commits', '無法載入提交紀錄');
   String get retry => _('Retry', '重試');
   String get commitMap => _('Commit map', '提交地圖');
   String get branchGraph => _('Branch graph', '分支圖');
@@ -276,10 +279,10 @@ class AppStrings {
   String get saving => _('Saving…', '儲存中…');
   String get noCommits => _('No commits', '沒有提交紀錄');
   String get noCommitsInPeriod => _(
-      'No commits in this period. Pick another range or go back to the recent commits.',
-      '這段期間沒有提交紀錄。請選擇其他範圍或回到最近的提交。');
-  String get noMatchingCommits =>
-      _('No matching commits', '沒有符合的提交紀錄');
+    'No commits in this period. Pick another range or go back to the recent commits.',
+    '這段期間沒有提交紀錄。請選擇其他範圍或回到最近的提交。',
+  );
+  String get noMatchingCommits => _('No matching commits', '沒有符合的提交紀錄');
   String get noCommitsMatchFilters =>
       _('No commits match the current filters.', '沒有符合目前篩選條件的提交紀錄。');
   String get clearFilters => _('Clear filters', '清除篩選');
@@ -289,52 +292,38 @@ class AppStrings {
   String branchCount(int n) => _('Branch ($n)', '分支（$n）');
   String get searchMessageHint => _('Search message…', '搜尋訊息…');
   String get clear => _('Clear', '清除');
-  String get nothingToFilterBy =>
-      _('Nothing to filter by yet.', '目前沒有可篩選的項目。');
+  String get nothingToFilterBy => _('Nothing to filter by yet.', '目前沒有可篩選的項目。');
   String get couldNotLoadBranchGraph =>
       _('Could not load the branch graph', '無法載入分支圖');
   String get largeHistoryNotice => _(
-      'Large history — showing the most recent branches/commits.',
-      '歷史紀錄較多 — 僅顯示最近的分支/提交。');
+    'Large history — showing the most recent branches/commits.',
+    '歷史紀錄較多 — 僅顯示最近的分支/提交。',
+  );
   String get branchesInRow => _('Branches in this row', '這一列的分支');
   String get noBranchInfo => _('No branch info', '沒有分支資訊');
   String get aiWorkSummary => _('AI work summary', 'AI 工作摘要');
-  String get couldNotGenerateSummary => _(
-      'Could not generate the summary. Please try again.',
-      '無法產生摘要，請再試一次。');
+  String get couldNotGenerateSummary =>
+      _('Could not generate the summary. Please try again.', '無法產生摘要，請再試一次。');
   String get updated => _('Updated ✓', '已更新 ✓');
   String get discordDigest => _('Discord digest', 'Discord 摘要');
   String discordDigestForDate(String date) =>
       _('Discord digest · $date', 'Discord 摘要 · $date');
-  String digestSourceMessages(int n) =>
-      _('Referenced messages ($n)', '參考訊息（$n）');
   String get noDigestInRange => _(
-      'No digest in this range. Use "Refresh current range" above to pull messages.',
-      '這個範圍還沒有摘要。用上方的「重新整理目前範圍」拉取訊息。');
+    'No digest in this range. Use "Refresh current range" above to pull messages.',
+    '這個範圍還沒有摘要。用上方的「重新整理目前範圍」拉取訊息。',
+  );
   String get lockDigest => _('Lock digest', '鎖定摘要');
   String get unlockDigest => _('Unlock digest', '解鎖摘要');
   String get digestLockedHint => _(
-      'Locked — unlock to let AI adjust this summary.',
-      '已鎖定 — 解鎖後 AI 才能調整此摘要。');
-  String get adjustSummaryHint => _(
-      'Ask AI to adjust this summary…', '請 AI 調整此摘要…');
+    'Locked — unlock to let AI adjust this summary.',
+    '已鎖定 — 解鎖後 AI 才能調整此摘要。',
+  );
+  String get adjustSummaryHint =>
+      _('Ask AI to adjust this summary…', '請 AI 調整此摘要…');
   String get adjustWithAi => _('Adjust with AI', '用 AI 調整');
-  String get couldNotUpdateDigest => _(
-      'Could not update the digest. Please try again.',
-      '無法更新摘要，請再試一次。');
-  String get askAiAboutChat => _('Ask AI about the chat', '問 AI 聊天內容');
-  String get askAiAboutChatHint => _(
-      'e.g. "Where did the OAuth progress discussion get to?" — the AI finds the relevant Discord messages.',
-      '例如「OAuth 的進度討論到哪了？」— AI 會找出相關的 Discord 訊息。');
-  String get askAiDiscordHint =>
-      _('Ask AI about the Discord chat…', '問 AI 關於 Discord 的聊天…');
-  String get unknownAuthor => _('Unknown', '未知');
-  String relatedConversations(int n) =>
-      _('Related conversations ($n)', '相關對話（$n）');
+  String get couldNotUpdateDigest =>
+      _('Could not update the digest. Please try again.', '無法更新摘要，請再試一次。');
   String get thinking => _('Thinking…', '思考中…');
-
-  String get askDiscordScope =>
-      _('Based on Discord messages', '基於 Discord 訊息');
 
   // ---- Ask GitSync (global repo-wide chat) ----
   String get askRepoTitle => _('Ask GitSync', '問 GitSync');
@@ -342,11 +331,11 @@ class AppStrings {
   String get askRepoHint =>
       _('Ask GitSync about this repo…', '問問 GitSync 關於這個 repo…');
   String get askRepoScope =>
-      _('Based on commits, tasks, and team discussion',
-        '基於 commit、任務與團隊討論');
+      _('Based on commits, tasks, and team discussion', '基於 commit、任務與團隊討論');
   String get askRepoEmptyHint => _(
-      'Ask anything about this repo — progress, people, code, commits, or team discussion.',
-      '關於這個 repo 的任何事都可以問 —— 進度、成員、程式碼、commit，或團隊討論。');
+    'Ask anything about this repo — progress, people, code, commits, or team discussion.',
+    '關於這個 repo 的任何事都可以問 —— 進度、成員、程式碼、commit，或團隊討論。',
+  );
   String get askRepoThinking => _('Thinking…', '思考中…');
 
   /// Localizes one agent tool-trace step. The backend writes fixed ENGLISH
@@ -403,6 +392,7 @@ class AppStrings {
     }
     return label;
   }
+
   String get askRepoNewSession => _('New session', '開啟新 session');
   String askRepoCommitSources(int n) =>
       _('Source commits ($n)', '來源 commit（$n）');
@@ -429,6 +419,7 @@ class AppStrings {
       _('Generation failed, tap to retry', '產生失敗，點此重試');
   String get aiWorkSummaryTitle => _('AI work summary', 'AI 工作總結');
   String get authorContributionCaption => _(
-      "Each author's commit share and AI work summary",
-      '每位作者的 commit 佔比與 AI 工作統整');
+    "Each author's commit share and AI work summary",
+    '每位作者的 commit 佔比與 AI 工作統整',
+  );
 }

@@ -62,6 +62,9 @@ export interface AskRepoInput {
   history?: AskRepoTurn[];
   /** Client-generated id for the agent-trace doc. Absent → trace is a no-op. */
   runId?: string;
+  /** W6: English language NAME (e.g. "Traditional Chinese"). Absent → the model
+   *  mirrors the input language (base rule). */
+  language?: string;
 }
 
 /** One labeled commit "window" the agent surfaced — the result of a single
@@ -275,7 +278,7 @@ function clampDays(raw: unknown): number {
 }
 
 export async function askRepoFlow(input: AskRepoInput): Promise<AskRepoResult> {
-  const { repoId, question, runId } = input;
+  const { repoId, question, runId, language } = input;
   const history = Array.isArray(input.history) ? input.history : [];
 
   const today = taipeiDateKey(new Date());
@@ -305,7 +308,7 @@ export async function askRepoFlow(input: AskRepoInput): Promise<AskRepoResult> {
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     {
       role: 'system',
-      content: askRepoSystem(today, DEFAULT_DAYS, briefPrefix + planGuidance + memoryContext),
+      content: askRepoSystem(today, DEFAULT_DAYS, briefPrefix + planGuidance + memoryContext, language),
     },
     ...history
       .slice(-MAX_HISTORY_TURNS)

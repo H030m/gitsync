@@ -297,6 +297,7 @@ class FakeFunctionsService implements FunctionsService {
     required String question,
     List<AskRepoTurn> history = const [],
     String? runId,
+    String? language,
   }) async {
     // Outlast the FakeAgentRunRepository's 4-step canned trace (one step per
     // simulatedLatency) so the sheet shows the trace appear live BEFORE the

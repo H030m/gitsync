@@ -483,3 +483,38 @@ incrementalBreakdown 加結構化 log:每輪每個 tool call 記 {round,tool,arg
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: 每日彙整:合併 Discord+摘要為單一視圖、精簡卡片、全頁 AI 中文
+
+**Date**: 2026-06-15
+**Task**: 每日彙整:合併 Discord+摘要為單一視圖、精簡卡片、全頁 AI 中文
+**Branch**: `feature/merge-daily-digest`
+
+### Summary
+
+Daily 頁把 Summary/Discord 兩分頁合成單一每日視圖(每天:摘要+重點(含blockers)+Discord摘要),移除提交彙總/貢獻卡與參考訊息、改用單一 Ask GitSync 聊天。全頁 AI 輸出強制中文:askRepo 端到端加 W6 language(Flutter→callable→flow→buildSystemPrompt),discordDailyDigest prompt 改繁中、偏平鋪 bullet。順手修 repo_list_vm_test 的 FunctionsService interface drift。flutter 99 / functions 403 全綠。亮暗色皆用 colorScheme token。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bf02f40` | (see git log) |
+| `0e98350` | (see git log) |
+| `a5e8038` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

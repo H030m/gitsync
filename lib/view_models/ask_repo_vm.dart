@@ -69,8 +69,10 @@ class AskRepoViewModel with ChangeNotifier {
   /// Sends [question] to the AI. Appends a user turn immediately, subscribes to
   /// the run's trace doc to surface live steps, then appends an assistant turn
   /// (with sources) once the callable returns. No-ops on empty input or while a
-  /// previous question is still in flight.
-  Future<void> ask(String question) async {
+  /// previous question is still in flight. [language] (W6) is the English
+  /// language NAME for the app locale, derived in the View (a ViewModel holds no
+  /// BuildContext); when set, the answer comes back in that language.
+  Future<void> ask(String question, {String? language}) async {
     final trimmed = question.trim();
     if (trimmed.isEmpty || _sending) return;
 
@@ -101,6 +103,7 @@ class AskRepoViewModel with ChangeNotifier {
         question: trimmed,
         history: history,
         runId: runId,
+        language: language,
       );
       _turns.add(AskRepoTurn(
         role: 'assistant',

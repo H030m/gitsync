@@ -14,9 +14,7 @@ import 'package:gitsync/services/fake/fake_functions_service.dart';
 import 'package:gitsync/services/functions_service.dart';
 import 'package:gitsync/view_models/ask_repo_vm.dart';
 import 'package:gitsync/view_models/commits_vm.dart';
-import 'package:gitsync/view_models/daily_brief_vm.dart';
 import 'package:gitsync/view_models/daily_report_vm.dart';
-import 'package:gitsync/view_models/discord_chat_vm.dart';
 import 'package:gitsync/view_models/discord_messages_vm.dart';
 import 'package:gitsync/view_models/intel_range_vm.dart';
 import 'package:gitsync/views/daily/daily_view_page.dart';
@@ -75,108 +73,141 @@ class _SpyFunctions implements FunctionsService {
   Future<void> removeRepo({required String repoId}) =>
       _fake.removeRepo(repoId: repoId);
   @override
-  Future<List<SubTask>> breakdownTask(
-          {required String repoId, required String goal, String? language}) =>
-      _fake.breakdownTask(repoId: repoId, goal: goal, language: language);
+  Future<List<SubTask>> breakdownTask({
+    required String repoId,
+    required String goal,
+    String? language,
+    String? runId,
+  }) => _fake.breakdownTask(
+    repoId: repoId,
+    goal: goal,
+    language: language,
+    runId: runId,
+  );
   @override
   Future<void> forceUnlockBreakdown({required String repoId}) =>
       _fake.forceUnlockBreakdown(repoId: repoId);
   @override
-  Future<({String assigneeId, String reasoning})> assignTask(
-          {required String repoId, required String taskId}) =>
-      _fake.assignTask(repoId: repoId, taskId: taskId);
+  Future<({String assigneeId, String reasoning})> assignTask({
+    required String repoId,
+    required String taskId,
+  }) => _fake.assignTask(repoId: repoId, taskId: taskId);
   @override
-  Future<String> generateHandoff(
-          {required String repoId,
-          required String taskId,
-          String? language,
-          String? runId}) =>
-      _fake.generateHandoff(
-          repoId: repoId, taskId: taskId, language: language, runId: runId);
+  Future<String> generateHandoff({
+    required String repoId,
+    required String taskId,
+    String? language,
+    String? runId,
+  }) => _fake.generateHandoff(
+    repoId: repoId,
+    taskId: taskId,
+    language: language,
+    runId: runId,
+  );
   @override
-  Future<String> summarizeDay(
-          {required String repoId,
-          required String startDate,
-          String? endDate,
-          String? language}) =>
-      _fake.summarizeDay(
-          repoId: repoId,
-          startDate: startDate,
-          endDate: endDate,
-          language: language);
+  Future<String> summarizeDay({
+    required String repoId,
+    required String startDate,
+    String? endDate,
+    String? language,
+  }) => _fake.summarizeDay(
+    repoId: repoId,
+    startDate: startDate,
+    endDate: endDate,
+    language: language,
+  );
   @override
-  Future<DailyBriefReply> dailyBrief(
-          {required String repoId,
-          required String date,
-          String? endDate,
-          required String question,
-          List<DailyBriefTurn> history = const []}) =>
-      _fake.dailyBrief(
-          repoId: repoId,
-          date: date,
-          endDate: endDate,
-          question: question,
-          history: history);
+  Future<DailyBriefReply> dailyBrief({
+    required String repoId,
+    required String date,
+    String? endDate,
+    required String question,
+    List<DailyBriefTurn> history = const [],
+  }) => _fake.dailyBrief(
+    repoId: repoId,
+    date: date,
+    endDate: endDate,
+    question: question,
+    history: history,
+  );
   @override
-  Future<String> explainCommit(
-          {required String repoId,
-          required String sha,
-          bool force = false,
-          String? language,
-          String? runId}) =>
-      _fake.explainCommit(
-          repoId: repoId, sha: sha, force: force, language: language, runId: runId);
+  Future<String> explainCommit({
+    required String repoId,
+    required String sha,
+    bool force = false,
+    String? language,
+    String? runId,
+  }) => _fake.explainCommit(
+    repoId: repoId,
+    sha: sha,
+    force: force,
+    language: language,
+    runId: runId,
+  );
   @override
-  Future<void> setDiscordWebhook(
-          {required String repoId,
-          required String webhookUrl,
-          required List<String> channelIds}) =>
-      _fake.setDiscordWebhook(
-          repoId: repoId, webhookUrl: webhookUrl, channelIds: channelIds);
+  Future<void> setDiscordWebhook({
+    required String repoId,
+    required String webhookUrl,
+    required List<String> channelIds,
+  }) => _fake.setDiscordWebhook(
+    repoId: repoId,
+    webhookUrl: webhookUrl,
+    channelIds: channelIds,
+  );
   @override
-  Future<void> setDiscordStartDate(
-          {required String repoId, required String startDate}) =>
-      _fake.setDiscordStartDate(repoId: repoId, startDate: startDate);
+  Future<void> setDiscordStartDate({
+    required String repoId,
+    required String startDate,
+  }) => _fake.setDiscordStartDate(repoId: repoId, startDate: startDate);
   @override
-  Future<void> setDiscordRange(
-          {required String repoId,
-          required String startDate,
-          required String endDate}) =>
-      _fake.setDiscordRange(
-          repoId: repoId, startDate: startDate, endDate: endDate);
+  Future<void> setDiscordRange({
+    required String repoId,
+    required String startDate,
+    required String endDate,
+  }) => _fake.setDiscordRange(
+    repoId: repoId,
+    startDate: startDate,
+    endDate: endDate,
+  );
   @override
-  Future<String> editDiscordDigest(
-          {required String repoId,
-          required String date,
-          required String instruction,
-          String? runId}) =>
-      _fake.editDiscordDigest(
-          repoId: repoId, date: date, instruction: instruction, runId: runId);
+  Future<String> editDiscordDigest({
+    required String repoId,
+    required String date,
+    required String instruction,
+    String? runId,
+  }) => _fake.editDiscordDigest(
+    repoId: repoId,
+    date: date,
+    instruction: instruction,
+    runId: runId,
+  );
   @override
-  Future<void> setDigestLock(
-          {required String repoId,
-          required String date,
-          required bool locked}) =>
-      _fake.setDigestLock(repoId: repoId, date: date, locked: locked);
+  Future<void> setDigestLock({
+    required String repoId,
+    required String date,
+    required bool locked,
+  }) => _fake.setDigestLock(repoId: repoId, date: date, locked: locked);
   @override
-  Future<DiscordChatReply> discordChat(
-          {required String repoId,
-          required String question,
-          List<DiscordChatTurn> history = const [],
-          String? startDate,
-          String? endDate,
-          String? runId}) =>
-      _fake.discordChat(
-          repoId: repoId,
-          question: question,
-          history: history,
-          startDate: startDate,
-          endDate: endDate,
-          runId: runId);
+  Future<DiscordChatReply> discordChat({
+    required String repoId,
+    required String question,
+    List<DiscordChatTurn> history = const [],
+    String? startDate,
+    String? endDate,
+    String? runId,
+  }) => _fake.discordChat(
+    repoId: repoId,
+    question: question,
+    history: history,
+    startDate: startDate,
+    endDate: endDate,
+    runId: runId,
+  );
   @override
-  Future<void> subscribeToTopic(
-          {required String token, required String topic}) =>
-      _fake.subscribeToTopic(token: token, topic: topic);
+  Future<void> subscribeToTopic({
+    required String token,
+    required String topic,
+  }) => _fake.subscribeToTopic(token: token, topic: topic);
 }
 
 // `locale` pins `context.l10n` to a known UI language so finders match the
@@ -184,7 +215,10 @@ class _SpyFunctions implements FunctionsService {
 // (the production default since the i18n switch in `5b7e562`) so pre-existing
 // tests that look for zh strings (e.g. `'重新整理目前範圍'`) keep passing; tests
 // that look for English strings pass `AppLocale.en`.
-Widget _harness({FunctionsService? functions, AppLocale locale = AppLocale.zhHant}) {
+Widget _harness({
+  FunctionsService? functions,
+  AppLocale locale = AppLocale.zhHant,
+}) {
   // [pinLocale] wraps the MaterialApp itself (rather than its `home`) so the
   // `LocaleNotifier` provider sits ABOVE MaterialApp's Navigator — that way
   // routes pushed via `showModalBottomSheet` also resolve `context.l10n` to
@@ -195,20 +229,22 @@ Widget _harness({FunctionsService? functions, AppLocale locale = AppLocale.zhHan
       home: MultiProvider(
         providers: [
           ChangeNotifierProvider(
-              create: (_) =>
-                  CommitsViewModel(repoId: _repoId, functionsService: functions)),
+            create: (_) =>
+                CommitsViewModel(repoId: _repoId, functionsService: functions),
+          ),
           ChangeNotifierProvider(
-              create: (_) => DiscordMessagesViewModel(
-                  repoId: _repoId, functionsService: functions)),
+            create: (_) => DiscordMessagesViewModel(
+              repoId: _repoId,
+              functionsService: functions,
+            ),
+          ),
           ChangeNotifierProvider(
-              create: (_) => DiscordChatViewModel(
-                  repoId: _repoId, functionsService: functions)),
+            create: (_) => DailyReportViewModel(repoId: _repoId),
+          ),
+          // The unified Daily chat reads the shared, repo-wide AskRepoViewModel.
           ChangeNotifierProvider(
-              create: (_) => DailyReportViewModel(repoId: _repoId)),
-          ChangeNotifierProvider(
-              create: (_) => DailyBriefChatViewModel(repoId: _repoId)),
-          // The Summary tab's chat now reads the shared, repo-wide AskRepoViewModel.
-          ChangeNotifierProvider(create: (_) => AskRepoViewModel(repoId: _repoId)),
+            create: (_) => AskRepoViewModel(repoId: _repoId),
+          ),
           ChangeNotifierProvider(create: (_) => IntelRangeViewModel()),
         ],
         child: const DailyViewPage(repoId: _repoId),
@@ -249,10 +285,9 @@ void main() {
     // Scope a 3-day window so the Discord sweep is observable (3 fetch calls).
     final ctx = tester.element(find.byType(DailyViewPage));
     final now = DateTime.now();
-    ctx.read<IntelRangeViewModel>().setRange(DateTimeRange(
-          start: now.subtract(const Duration(days: 2)),
-          end: now,
-        ));
+    ctx.read<IntelRangeViewModel>().setRange(
+      DateTimeRange(start: now.subtract(const Duration(days: 2)), end: now),
+    );
     await tester.pumpAndSettle();
 
     final graphBefore = spy.graphCalls;
@@ -269,21 +304,9 @@ void main() {
     expect(spy.fetchDates.length, 3);
   });
 
-  testWidgets('the Discord tab has NO local refresh / backfill / date buttons',
-      (tester) async {
-    await tall(tester);
-    await tester.pumpWidget(_harness());
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Discord'));
-    await tester.pumpAndSettle();
-
-    expect(find.widgetWithText(OutlinedButton, '設定回補範圍'), findsNothing);
-    expect(find.widgetWithText(FilledButton, 'Refresh'), findsNothing);
-    expect(find.widgetWithText(FilledButton, 'Fetching…'), findsNothing);
-  });
-
-  testWidgets('the Commits tab has no local refresh button (shared only)',
-      (tester) async {
+  testWidgets('the Commits tab has no local refresh button (shared only)', (
+    tester,
+  ) async {
     await tall(tester);
     // Pin English so the `Commits` tab label and `Refresh current range`
     // tooltip below match the production strings.
@@ -297,83 +320,78 @@ void main() {
     expect(find.byTooltip('Refresh current range'), findsOneWidget);
   });
 
-  testWidgets('the Discord digest panel collapses, hiding the day cards',
-      (tester) async {
+  testWidgets(
+    'D1: the Daily tab is no longer split into Summary/Discord tabs',
+    (tester) async {
+      await tall(tester);
+      await tester.pumpWidget(_harness(locale: AppLocale.en));
+      await tester.pumpAndSettle();
+
+      // The merged tab is "Daily"; the old "Summary"/"Discord" tabs are gone.
+      expect(find.widgetWithText(Tab, 'Daily'), findsOneWidget);
+      expect(find.widgetWithText(Tab, 'Commits'), findsOneWidget);
+      expect(find.widgetWithText(Tab, 'Summary'), findsNothing);
+      expect(find.widgetWithText(Tab, 'Discord'), findsNothing);
+    },
+  );
+
+  testWidgets('D1: a day card shows that day\'s Discord digest inline with the '
+      'report (one unified card)', (tester) async {
     await tall(tester);
-    // Pin English so the `Discord digest` header + `Discord digest · <date>`
-    // card labels below match the production strings.
+    // Pin English so the `Discord digest` sub-heading + `Daily report` panel
+    // header below match the production strings.
     await tester.pumpWidget(_harness(locale: AppLocale.en));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Discord'));
     await tester.pumpAndSettle();
 
     final ctx = tester.element(find.byType(DailyViewPage));
-    final vm = ctx.read<DiscordMessagesViewModel>();
-    // Seed two days and scope the window over them.
-    seed('2026-06-03');
-    seed('2026-06-04');
-    vm.setViewRange(DateTime(2026, 6, 3), DateTime(2026, 6, 5));
+    final intel = ctx.read<IntelRangeViewModel>();
+    final discord = ctx.read<DiscordMessagesViewModel>();
+
+    // Seed a digest for today and scope the shared range to today so the day
+    // card (today) aligns with the seeded digest.
+    final now = DateTime.now();
+    final todayKey = DailyReportViewModel.dayKeyOf(now);
+    seed(todayKey);
+    discord.setViewRange(now, now);
+    intel.setRange(DateTimeRange(start: now, end: now));
     await tester.pumpAndSettle();
 
-    // Expanded: the panel header + the day cards are visible.
-    expect(find.text('Discord digest'), findsOneWidget); // panel header
-    expect(find.text('Discord digest · 2026-06-04'), findsOneWidget);
-    // The expanded digest panel pins a Scrollbar flush to its right edge.
-    expect(find.byType(Scrollbar), findsWidgets);
-
-    // Collapse the panel via its header → day cards disappear, header stays.
-    await tester.tap(find.text('Discord digest'));
-    await tester.pumpAndSettle();
+    // Today's card is expanded by default → its Discord digest sub-section shows
+    // the digest markdown AND the inline "Discord digest" sub-heading (no
+    // separate Discord panel/tab).
     expect(find.text('Discord digest'), findsOneWidget);
-    expect(find.text('Discord digest · 2026-06-04'), findsNothing);
-    expect(find.text('Discord digest · 2026-06-03'), findsNothing);
+    expect(find.textContaining('Digest for $todayKey'), findsOneWidget);
+
+    // Drain any fake-backend delayed timers (range fan-out → discord.setRange).
+    await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('the Discord digest panel bounds its height to ≤45% of viewport',
-      (tester) async {
+  testWidgets('D1: collapsing a day card hides BOTH its report body and its '
+      'Discord digest', (tester) async {
     await tall(tester);
-    await tester.pumpWidget(_harness());
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Discord'));
+    await tester.pumpWidget(_harness(locale: AppLocale.en));
     await tester.pumpAndSettle();
 
     final ctx = tester.element(find.byType(DailyViewPage));
-    final vm = ctx.read<DiscordMessagesViewModel>();
-    for (final d in ['2026-06-01', '2026-06-02', '2026-06-03', '2026-06-04']) {
-      seed(d);
-    }
-    vm.setViewRange(DateTime(2026, 6, 1), DateTime(2026, 6, 5));
+    final intel = ctx.read<IntelRangeViewModel>();
+    final discord = ctx.read<DiscordMessagesViewModel>();
+
+    final now = DateTime.now();
+    final todayKey = DailyReportViewModel.dayKeyOf(now);
+    seed(todayKey);
+    discord.setViewRange(now, now);
+    intel.setRange(DateTimeRange(start: now, end: now));
     await tester.pumpAndSettle();
 
-    // The ConstrainedBox wrapping the scrollable cards caps at 45% height.
-    final screenH = tester.view.physicalSize.height / tester.view.devicePixelRatio;
-    final box = tester.widgetList<ConstrainedBox>(find.byType(ConstrainedBox))
-        .firstWhere((c) => c.constraints.maxHeight == screenH * 0.45);
-    expect(box.constraints.maxHeight, screenH * 0.45);
-  });
+    // Expanded: digest sub-heading visible.
+    expect(find.text('Discord digest'), findsOneWidget);
 
-  testWidgets('the Discord chat new-session button clears the thread',
-      (tester) async {
-    await tall(tester);
-    // Pin English so the `Ask AI about the Discord chat…` hint and the
-    // `New session` tooltip below match the production strings.
-    await tester.pumpWidget(_harness(locale: AppLocale.en));
+    // Collapse the day card via its header → the digest disappears with it.
+    await tester.tap(find.textContaining('Today ·'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Discord'));
-    await tester.pumpAndSettle();
+    expect(find.text('Discord digest'), findsNothing);
+    expect(find.textContaining('Digest for $todayKey'), findsNothing);
 
-    final field = find.byWidgetPredicate((w) =>
-        w is TextField &&
-        w.decoration?.hintText == 'Ask AI about the Discord chat…');
-    expect(field, findsOneWidget);
-
-    await tester.enterText(field, 'OAuth 進度?');
-    await tester.testTextInput.receiveAction(TextInputAction.send);
-    await tester.pumpAndSettle();
-    expect(find.text('OAuth 進度?'), findsOneWidget);
-
-    await tester.tap(find.byTooltip('New session'));
-    await tester.pumpAndSettle();
-    expect(find.text('OAuth 進度?'), findsNothing);
+    await tester.pump(const Duration(seconds: 1));
   });
 }
