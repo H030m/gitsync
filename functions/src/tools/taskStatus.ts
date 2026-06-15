@@ -92,24 +92,27 @@ export async function applyAssignment(
 }
 
 /**
- * Release a DELETED task's workload from its assignee. Only an ACTIVE (non-done)
- * assigned task still counts toward `activeIssueCount` — a `done` task already
- * decremented it via {@link markTaskDone} — so callers must invoke this only for
- * a non-done task. Clamps at 0 inside the transaction so a double-fire (the
- * delete trigger re-running) can never drive the counter negative.
+ * Recompute a member's `activeIssueCount` from the LIVE task list — the number
+ * of tasks currently assigned to them that are not `done`. Used by the delete
+ * trigger (and any path that needs to re-true the counter) so the stored value
+ * can never drift: it is overwritten with the actual count, regardless of how
+ * the deleted/completed task got there (AI vs manual assignment/completion).
+ *
+ * Queries by `assigneeId` only (auto single-field index) and filters status in
+ * memory, so no composite index is required. Best-effort callers wrap this.
  */
-export async function releaseDeletedTaskWorkload(
+export async function recomputeMemberActiveCount(
   repoId: string,
-  assigneeId: string,
+  memberId: string,
 ): Promise<void> {
-  const memberRef = db.doc(`apps/gitsync/repos/${repoId}/members/${assigneeId}`);
-  await db.runTransaction(async (tx) => {
-    const snap = await tx.get(memberRef);
-    if (!snap.exists) return;
-    const current = (snap.data()?.activeIssueCount as number | undefined) ?? 0;
-    if (current <= 0) return; // already at the floor → nothing to release
-    tx.update(memberRef, { activeIssueCount: FieldValue.increment(-1) });
-  });
+  const snap = await db
+    .collection(`apps/gitsync/repos/${repoId}/tasks`)
+    .where('assigneeId', '==', memberId)
+    .get();
+  const active = snap.docs.filter((d) => (d.data() ?? {}).status !== 'done').length;
+  await db
+    .doc(`apps/gitsync/repos/${repoId}/members/${memberId}`)
+    .set({ activeIssueCount: active }, { merge: true });
 }
 
 /**
