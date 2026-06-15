@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "service/navigation 慣例；payload→路由純函式與 NavigationService 用法要對齊"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "通知/權限回饋既有慣例（FCM 06-03 沉澱於此）"}
