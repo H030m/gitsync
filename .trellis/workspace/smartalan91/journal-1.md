@@ -175,3 +175,36 @@ ThemeModeNotifier kept the theme only in memory, so F5 / fresh load reset to The
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Board row: drop status circle, avatar to left
+
+**Date**: 2026-06-15
+**Task**: Board row: drop status circle, avatar to left
+**Branch**: `feature/board-row-avatar-left`
+
+### Summary
+
+Removed the leading status circle from _SectionTaskRow on the mobile sectioned board and moved the assignee avatar from the trailing to the leading edge (avatar + title). Dropped the circle-only _markDone helper and isDone local; long-press still opens the status picker, tap still navigates to details. Removed the obsolete circle test. analyze 0/0 on changed files, tasks_board_test 11/11. Note: daily_* tests already red on develop from the chat/daily refactor merge (not this change).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `802ceed` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
