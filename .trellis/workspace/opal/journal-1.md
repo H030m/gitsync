@@ -588,3 +588,36 @@ firebase_auth 在 Android 拿不到 GitHub provider token,改用次要 OAuth:flu
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: Daily 範圍全空空狀態 + 空白天收合一行
+
+**Date**: 2026-06-16
+**Task**: Daily 範圍全空空狀態 + 空白天收合一行
+**Branch**: `develop`
+
+### Summary
+
+Daily 頁:範圍內全空 → 單一置中空狀態(含『調整日期範圍』開 picker,復用共用 helper);混合範圍裡的空白天(無 report 無 digest)收成精簡一行『無活動』,點開才露出『產生報告』。純 UI、亮暗色 colorScheme。合進大幅演進過的 develop(token CTA/stats overhaul 等)為乾淨 auto-merge,analyze 乾淨、119 tests 綠。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `198869f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

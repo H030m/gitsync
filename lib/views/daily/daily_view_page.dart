@@ -207,6 +207,24 @@ class _SharedRefreshAction extends StatelessWidget {
   }
 }
 
+// Single source of truth for the shared date-range picker. Both the AppBar
+// range action and the Daily tab's whole-range empty-state CTA call this so
+// there's one picker code path. Opens the OS date-range picker seeded with the
+// current shared range (or today), and on a non-null pick commits it to the
+// shared [IntelRangeViewModel].
+Future<void> _pickSharedRange(BuildContext context) async {
+  final vm = context.read<IntelRangeViewModel>();
+  final now = DateTime.now();
+  final picked = await showDateRangePicker(
+    context: context,
+    firstDate: DateTime(2020),
+    lastDate: now,
+    initialDateRange: vm.range ?? DateTimeRange(start: now, end: now),
+  );
+  if (picked == null) return;
+  vm.setRange(picked);
+}
+
 // The one shared date-range picker for both tabs, pinned in the AppBar so it's
 // reachable from Daily / Commits alike. Picking sets the shared range; the reset
 // icon (shown only while a range is active) clears it.
@@ -226,18 +244,7 @@ class _SharedRangeAction extends StatelessWidget {
               style: TextButton.styleFrom(
                 foregroundColor: Theme.of(ctx).colorScheme.onSurface,
               ),
-              onPressed: () async {
-                final now = DateTime.now();
-                final picked = await showDateRangePicker(
-                  context: ctx,
-                  firstDate: DateTime(2020),
-                  lastDate: now,
-                  initialDateRange:
-                      range ?? DateTimeRange(start: now, end: now),
-                );
-                if (picked == null) return;
-                vm.setRange(picked);
-              },
+              onPressed: () => _pickSharedRange(ctx),
               icon: const Icon(Icons.date_range_outlined, size: 18),
               label: Text(
                 range == null
@@ -288,12 +295,29 @@ class _DailyTabState extends State<_DailyTab> {
   // per day, today expanded by default and the rest collapsed. Each card is the
   // unified per-day view: AI report (summary + Key activity) AND that day's
   // Discord digest, so it needs the DiscordMessagesViewModel.
+  // A day "has activity" (06-16) when it has either a report OR a Discord
+  // digest; an "empty day" is neither. Matches the prd definition exactly
+  // (presence, not [DailyReport.isEmpty] — a stored-but-empty report still
+  // counts as a day that has been generated).
+  bool _dayIsEmpty(
+    DailyReportViewModel report,
+    DiscordMessagesViewModel discord,
+    DateTime day,
+  ) {
+    final key = DailyReportViewModel.dayKeyOf(day);
+    return report.reportForDay(key) == null &&
+        discord.digestForDate(key) == null;
+  }
+
   List<Widget> _dayCards(
     DailyReportViewModel report,
     DiscordMessagesViewModel discord,
   ) {
     final todayKey = DailyReportViewModel.dayKeyOf(DateTime.now());
     final days = report.rangeDays;
+    // The whole-range-empty case is handled in [build] (a centered empty state
+    // that fills the list area), so here we only build per-day children: a full
+    // card for active days, a compact row for blank days.
     return [
       for (var i = 0; i < days.length; i++) ...[
         // Stagger keyed by day-key so a range change doesn't replay the
@@ -301,14 +325,23 @@ class _DailyTabState extends State<_DailyTab> {
         StaggeredEntry(
           key: ValueKey('day-${DailyReportViewModel.dayKeyOf(days[i])}'),
           index: i,
-          child: _DayReportCard(
-            key: ValueKey(DailyReportViewModel.dayKeyOf(days[i])),
-            vm: report,
-            discord: discord,
-            day: days[i],
-            initiallyExpanded:
-                DailyReportViewModel.dayKeyOf(days[i]) == todayKey,
-          ),
+          // 06-16 #2: a blank day inside an otherwise-active range collapses to
+          // a compact one-line row (date + "No activity") that expands to reveal
+          // the existing Generate action, instead of a full empty card.
+          child: _dayIsEmpty(report, discord, days[i])
+              ? _EmptyDayRow(
+                  key: ValueKey('empty-${DailyReportViewModel.dayKeyOf(days[i])}'),
+                  vm: report,
+                  day: days[i],
+                )
+              : _DayReportCard(
+                  key: ValueKey(DailyReportViewModel.dayKeyOf(days[i])),
+                  vm: report,
+                  discord: discord,
+                  day: days[i],
+                  initiallyExpanded:
+                      DailyReportViewModel.dayKeyOf(days[i]) == todayKey,
+                ),
         ),
         const SizedBox(height: AppDimens.spacingSm),
       ],
@@ -343,10 +376,22 @@ class _DailyTabState extends State<_DailyTab> {
             // without coupling to the chat VM.
             Expanded(
               child: Consumer<DiscordMessagesViewModel>(
-                builder: (ctx2, discord, _) => ListView(
-                  padding: const EdgeInsets.all(AppDimens.spacingMd),
-                  children: _dayCards(report, discord),
-                ),
+                builder: (ctx2, discord, _) {
+                  final days = report.rangeDays;
+                  // 06-16 #1: whole range blank → one centered empty state that
+                  // fills the list area (with a CTA to re-open the picker),
+                  // instead of a ListView of empty cards.
+                  final allEmpty =
+                      days.isNotEmpty &&
+                      days.every((d) => _dayIsEmpty(report, discord, d));
+                  if (allEmpty) {
+                    return const _RangeEmptyState();
+                  }
+                  return ListView(
+                    padding: const EdgeInsets.all(AppDimens.spacingMd),
+                    children: _dayCards(report, discord),
+                  );
+                },
               ),
             ),
             // ---- Chat preview bar: only rebuilds on chat VM changes.
@@ -672,6 +717,152 @@ class _DayReportEmpty extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// 06-16 #1: the single centered empty state shown when EVERY day in the
+// selected range is blank (no report AND no Discord digest). Replaces the
+// column of empty cards. The CTA re-opens the SAME shared range picker the
+// AppBar uses ([_pickSharedRange]). Light/dark inherited via colorScheme
+// (EmptyState already mutes its icon/text through the scheme).
+class _RangeEmptyState extends StatelessWidget {
+  const _RangeEmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.l10n;
+    return EmptyState(
+      icon: Icons.event_busy_outlined,
+      title: s.rangeNoActivityTitle,
+      message: s.rangeNoActivityMessage,
+      action: FilledButton.tonalIcon(
+        onPressed: () => _pickSharedRange(context),
+        icon: const Icon(Icons.date_range_outlined, size: 18),
+        label: Text(s.adjustDateRange),
+      ),
+    );
+  }
+}
+
+// 06-16 #2: a blank day inside an otherwise-active range. Renders as a compact,
+// tappable one-line row (date + muted "No activity") that expands to reveal the
+// existing "Generate report" action — so report generation is never lost, it
+// just no longer occupies a full empty card by default. Light/dark inherited
+// via colorScheme.
+class _EmptyDayRow extends StatefulWidget {
+  const _EmptyDayRow({super.key, required this.vm, required this.day});
+  final DailyReportViewModel vm;
+  final DateTime day;
+
+  @override
+  State<_EmptyDayRow> createState() => _EmptyDayRowState();
+}
+
+class _EmptyDayRowState extends State<_EmptyDayRow> {
+  bool _expanded = false;
+
+  String get _dayKeyStr => DailyReportViewModel.dayKeyOf(widget.day);
+
+  String _headerLabel(String today) {
+    final todayKey = DailyReportViewModel.dayKeyOf(DateTime.now());
+    return _dayKeyStr == todayKey ? '$today · $_dayKeyStr' : _dayKeyStr;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.l10n;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final generating = widget.vm.isGeneratingDay(_dayKeyStr);
+
+    return AnimatedContainer(
+      duration: AppMotion.medium,
+      curve: AppMotion.emphasizedDecel,
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ---- Compact one-line row (tap to expand) ----
+          Semantics(
+            expanded: _expanded,
+            button: true,
+            child: InkWell(
+              onTap: () => setState(() => _expanded = !_expanded),
+              borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppDimens.spacingMd,
+                  vertical: AppDimens.spacingSm,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.event_busy_outlined,
+                      size: 18,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: AppDimens.spacingSm),
+                    Text(
+                      _headerLabel(s.today),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(width: AppDimens.spacingSm),
+                    Expanded(
+                      child: Text(
+                        s.dayNoActivity,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ),
+                    AnimatedRotation(
+                      turns: _expanded ? 0.5 : 0,
+                      duration: AppMotion.short,
+                      child: Icon(
+                        Icons.expand_more,
+                        size: 20,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // ---- Collapsible: the existing Generate action ----
+          AnimatedSize(
+            duration: AppMotion.short,
+            curve: AppMotion.emphasizedDecel,
+            alignment: Alignment.topCenter,
+            child: _expanded
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppDimens.spacingMd,
+                      0,
+                      AppDimens.spacingMd,
+                      AppDimens.spacingMd,
+                    ),
+                    child: _DayReportEmpty(
+                      generating: generating,
+                      onGenerate: () => widget.vm.generateDay(
+                        widget.day,
+                        language: context.l10n.backendLanguage,
+                      ),
+                    ),
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
+        ],
+      ),
     );
   }
 }

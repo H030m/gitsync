@@ -33,6 +33,28 @@ export const deleteAllTasks = onCall({ region: REGION }, async (request) => {
     if (snap.size < BATCH_LIMIT) break;
   }
 
+  // No tasks remain → every member's active workload is 0. Set it deterministically
+  // here rather than relying on the per-doc onTaskDeleted recompute (which fires
+  // async and would race across a 500-doc batch). Best-effort: a counter failure
+  // must not fail the (already completed) clear.
+  try {
+    const members = await db
+      .collection(`apps/gitsync/repos/${repoId}/members`)
+      .get();
+    if (!members.empty) {
+      const batch = db.batch();
+      for (const m of members.docs) {
+        batch.set(m.ref, { activeIssueCount: 0 }, { merge: true });
+      }
+      await batch.commit();
+    }
+  } catch (err) {
+    logger.warn('deleteAllTasks: zeroing member workload failed (best-effort)', {
+      repoId,
+      err: String(err),
+    });
+  }
+
   logger.info('deleteAllTasks: cleared tasks', { repoId, deleted });
   return { deleted };
 });

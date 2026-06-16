@@ -243,11 +243,26 @@ class _AddTodoPageState extends State<AddTodoPage> {
     super.dispose();
   }
 
+  // Leave the add page back to the task board. The board opens this page with
+  // `Navigator.of(context).push(...)` (a raw Navigator route, NOT a go_router
+  // route), so it must be removed with the RAW Navigator — `router.go()` only
+  // changes the location UNDER the pushed page (so it stayed on screen and the
+  // buttons looked dead), and `router.pop()` targets the wrong navigator. Pop
+  // the Navigator; fall back to go() only if there's genuinely nothing to pop.
+  void _leaveToBoard() {
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+    } else {
+      Provider.of<NavigationService>(context, listen: false)
+          .goTasks(widget.repoId);
+    }
+  }
+
   Future<void> _addManual() async {
     final title = _titleCtrl.text.trim();
     if (title.isEmpty || _busy) return;
     final vm = Provider.of<TasksBoardViewModel>(context, listen: false);
-    final nav = Provider.of<NavigationService>(context, listen: false);
     final uid =
         Provider.of<AuthenticationService>(context, listen: false).currentUid;
     setState(() {
@@ -266,7 +281,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(context.l10n.taskAddedWithTitle(title))),
       );
-      nav.goTasks(widget.repoId);
+      _leaveToBoard();
     } catch (_) {
       if (!mounted) return;
       setState(() => _error = context.l10n.couldNotAddTask);
@@ -547,11 +562,7 @@ class _AddTodoPageState extends State<AddTodoPage> {
           ),
         ),
         FilledButton(
-          onPressed: _subtasks.isEmpty
-              ? null
-              : () =>
-                  Provider.of<NavigationService>(context, listen: false)
-                      .goTasks(widget.repoId),
+          onPressed: _subtasks.isEmpty ? null : _leaveToBoard,
           child: Text(s.done),
         ),
       ],
