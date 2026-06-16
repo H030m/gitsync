@@ -239,15 +239,17 @@ void main() {
         .read<IntelRangeViewModel>();
     final now = DateTime.now();
     final yesterday = now.subtract(const Duration(days: 1));
-    // Range = yesterday..yesterday: the fake has no report for it.
-    intel.setRange(DateTimeRange(start: yesterday, end: yesterday));
+    // Range = yesterday..today: today is active (has a report) so the range is
+    // NOT wholly empty; yesterday is a blank day → a compact "No activity" row
+    // (06-16). (A wholly-empty range would instead show the single empty state.)
+    intel.setRange(DateTimeRange(start: yesterday, end: now));
     await tester.pumpAndSettle();
 
-    // A non-today card starts collapsed; expand it via its header.
+    // The blank day's compact row starts collapsed; expand it via its date row.
     await tester.tap(find.text(DailyReportViewModel.dayKeyOf(yesterday)));
     await tester.pumpAndSettle();
 
-    // The expanded card has no report → offers "產生日報".
+    // The expanded compact row reveals the existing "產生日報" action.
     final generate = find.widgetWithText(FilledButton, '產生日報');
     expect(generate, findsOneWidget);
 
