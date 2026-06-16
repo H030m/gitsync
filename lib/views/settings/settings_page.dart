@@ -78,8 +78,19 @@ class SettingsPage extends StatelessWidget {
             ),
           ),
           StaggeredEntry(
-            key: const ValueKey('settings-danger'),
+            key: const ValueKey('settings-snapshot'),
             index: 5,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SectionHeader(s.snapshotSection),
+                _SnapshotCard(repoId: repoId),
+              ],
+            ),
+          ),
+          StaggeredEntry(
+            key: const ValueKey('settings-danger'),
+            index: 6,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -334,6 +345,96 @@ class _AccountCard extends StatelessWidget {
     Provider.of<LocaleNotifier>(context, listen: false).detachUser();
     await Provider.of<AuthenticationService>(context, listen: false).logOut();
     nav.goSignIn();
+  }
+}
+
+// Task snapshot — save the board (tasks + member workload/tags) and restore it
+// later so a demo can be re-run from a known-good state.
+class _SnapshotCard extends StatelessWidget {
+  const _SnapshotCard({required this.repoId});
+  final String repoId;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.l10n;
+    final scheme = Theme.of(context).colorScheme;
+    return SectionCard(
+      padding: EdgeInsets.zero,
+      margin: const EdgeInsets.symmetric(horizontal: AppDimens.spacingMd),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+        child: Column(
+          children: [
+            ListTile(
+              leading: Icon(Icons.save_outlined, color: scheme.primary),
+              title: Text(s.saveSnapshot),
+              subtitle: Text(s.saveSnapshotSubtitle),
+              onTap: () => _save(context),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: Icon(Icons.restore, color: scheme.primary),
+              title: Text(s.restoreSnapshot),
+              subtitle: Text(s.restoreSnapshotSubtitle),
+              onTap: () => _confirmRestore(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _save(BuildContext context) async {
+    final s = context.l10n;
+    final messenger = ScaffoldMessenger.of(context);
+    final functions = Provider.of<FunctionsService>(context, listen: false);
+    try {
+      final r = await functions.saveTaskSnapshot(repoId: repoId);
+      messenger.showSnackBar(
+        SnackBar(content: Text(s.saveSnapshotDone(r.taskCount))),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('${s.saveSnapshotFailed}: $e')),
+      );
+    }
+  }
+
+  Future<void> _confirmRestore(BuildContext context) async {
+    final s = context.l10n;
+    final messenger = ScaffoldMessenger.of(context);
+    final functions = Provider.of<FunctionsService>(context, listen: false);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(s.restoreSnapshotConfirmTitle),
+        content: Text(s.restoreSnapshotConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(s.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(s.restoreSnapshot),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      final r = await functions.restoreTaskSnapshot(repoId: repoId);
+      messenger.showSnackBar(
+        SnackBar(content: Text(s.restoreSnapshotDone(r.restoredTasks))),
+      );
+    } catch (e) {
+      final msg = e.toString().contains('not-found')
+          ? s.restoreSnapshotNone
+          : '${s.restoreSnapshotFailed}: $e';
+      messenger.showSnackBar(SnackBar(content: Text(msg)));
+    }
   }
 }
 

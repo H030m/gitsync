@@ -197,6 +197,64 @@ export function listCompletedTasks(
   return listRangeCompletedTasks(repoId, date, date);
 }
 
+// ---- listOpenTasks ---------------------------------------------------------
+
+/** An open (not-done) task on the board — the real "work left to do". */
+export interface OpenTask {
+  id: string;
+  title: string;
+  /** Raw board status, e.g. 'todo' / 'inprogress' / 'blocked'. */
+  status: string;
+  /** Assignee's GitHub login (or real name), or null when unassigned. Resolved
+   *  from the roster so the agent never has to invent a person's name. */
+  assignee: string | null;
+  dependsOn: string[];
+}
+
+const OPEN_TASK_LIMIT = 200;
+
+/**
+ * Every task on the board whose status is NOT `done` — i.e. the actual backlog
+ * ("what work is there to do"). Assignee userIds are resolved to GitHub logins
+ * via the roster. Best-effort → [].
+ */
+export async function listOpenTasks(repoId: string): Promise<OpenTask[]> {
+  try {
+    const [snap, roster] = await Promise.all([
+      db
+        .collection(`apps/gitsync/repos/${repoId}/tasks`)
+        .limit(OPEN_TASK_LIMIT)
+        .get(),
+      readRoster(repoId),
+    ]);
+    const nameById = new Map<string, string>();
+    for (const m of roster) {
+      nameById.set(m.userId, m.githubLogin || m.name || m.userId);
+    }
+    const open: OpenTask[] = [];
+    for (const d of snap.docs) {
+      const t = d.data() ?? {};
+      const status = (t.status as string | undefined) ?? 'todo';
+      if (status === 'done') continue;
+      const assigneeId = (t.assigneeId as string | undefined) ?? null;
+      open.push({
+        id: d.id,
+        title: (t.title as string | undefined) ?? '',
+        status,
+        assignee: assigneeId ? nameById.get(assigneeId) ?? assigneeId : null,
+        dependsOn: (t.dependsOn as string[] | undefined) ?? [],
+      });
+    }
+    return open;
+  } catch (err) {
+    logger.warn('listOpenTasks failed; returning [] (best-effort)', {
+      repoId,
+      err: String(err),
+    });
+    return [];
+  }
+}
+
 // ---- Discord across a range -------------------------------------------------
 
 const RANGE_DIGEST_LIMIT = 92; // mirrors the Discord backfill cap

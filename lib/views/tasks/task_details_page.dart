@@ -703,7 +703,11 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
                 ),
               ],
 
-              // ---- Handoff doc card ----
+              // ---- Handoff doc card: shown ONLY when the task has prerequisites.
+              //      A root task (no parent / empty dependsOn) has no finished
+              //      prerequisite work to hand off, so the handoff feature is
+              //      hidden entirely for it. ----
+              if (task.dependsOn.isNotEmpty) ...[
               const SizedBox(height: AppDimens.spacingMd),
               SectionCard(
                 child: Column(
@@ -758,6 +762,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
                   ],
                 ),
               ),
+              ],
             ],
           );
         },

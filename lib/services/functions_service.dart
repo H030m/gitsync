@@ -57,6 +57,17 @@ abstract class FunctionsService {
   /// Deletes EVERY task in [repoId] (resets the board, e.g. before a demo).
   /// Returns how many were removed.
   Future<int> deleteAllTasks({required String repoId});
+
+  /// Saves a snapshot of [repoId]'s board (tasks + member workload/tags) so a
+  /// demo can be restored to this exact state later. Overwrites any prior snapshot.
+  Future<({int taskCount, int memberCount})> saveTaskSnapshot({
+    required String repoId,
+  });
+
+  /// Restores the saved snapshot: replaces all tasks and member workload/tags.
+  Future<({int restoredTasks, int restoredMembers})> restoreTaskSnapshot({
+    required String repoId,
+  });
   Future<({String assigneeId, String reasoning})> assignTask({
     required String repoId,
     required String taskId,
@@ -278,6 +289,30 @@ class _LiveFunctionsService implements FunctionsService {
     final res = await _callable('deleteAllTasks').call({'repoId': repoId});
     final data = Map<String, dynamic>.from(res.data as Map);
     return (data['deleted'] as num?)?.toInt() ?? 0;
+  }
+
+  @override
+  Future<({int taskCount, int memberCount})> saveTaskSnapshot({
+    required String repoId,
+  }) async {
+    final res = await _callable('saveTaskSnapshot').call({'repoId': repoId});
+    final data = Map<String, dynamic>.from(res.data as Map);
+    return (
+      taskCount: (data['taskCount'] as num?)?.toInt() ?? 0,
+      memberCount: (data['memberCount'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  @override
+  Future<({int restoredTasks, int restoredMembers})> restoreTaskSnapshot({
+    required String repoId,
+  }) async {
+    final res = await _callable('restoreTaskSnapshot').call({'repoId': repoId});
+    final data = Map<String, dynamic>.from(res.data as Map);
+    return (
+      restoredTasks: (data['restoredTasks'] as num?)?.toInt() ?? 0,
+      restoredMembers: (data['restoredMembers'] as num?)?.toInt() ?? 0,
+    );
   }
 
   @override
