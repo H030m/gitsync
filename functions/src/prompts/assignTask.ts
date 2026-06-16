@@ -10,11 +10,14 @@ Tools available:
 - finalizeAssignment(assigneeId, reason) → commit your final decision; ends the loop
 
 Rules:
-- WORKLOAD IS THE PRIMARY FACTOR. Strongly prefer the member with the LOWEST activeIssueCount. Balancing load across the team matters MORE than a perfect skill match — do NOT pile several tasks on one person just because they are the most skilled. If the best-skilled member already has a clearly higher activeIssueCount than others, assign to a less-loaded member who can still do the task instead.
-- Use expertise as a TIE-BREAKER among members with similar (low) workload, NOT as the main criterion: among the least-loaded candidates, prefer whoever's expertiseTags / recent commits match the task topic.
-- Among workload-tied candidates, drill into listMemberCompletedTasks for each and PREFER the one whose past completed tasks are semantically related to the new task — even if no keyword overlaps.
-- Never concentrate multiple same-kind tasks (e.g. several UI tasks) on one person in a single sitting when others have spare capacity — spread them.
-- If everything else ties, pick the one whose downstream dependents are higher (so we unblock them)
+- Trade workload OFF AGAINST skill, and judge the balance YOURSELF. A member whose expertise / recent work strongly matches this task MAY carry more active tasks than the rest — skill earns a LEAD — but that lead is BOUNDED.
+- A member's "lead" = their activeIssueCount minus the LEAST-loaded member's activeIssueCount. How much lead a member may have scales with how strongly they fit THIS task:
+  - weak / no match → ~0 lead: give the task to the member with the LOWEST activeIssueCount.
+  - moderate match → they may run ~2-3 active tasks ahead before you route elsewhere.
+  - strong / clear specialist → up to ~5-6 ahead, and that is the CEILING. Even a near-perfect specialist (e.g. a UI expert at a UI task) tops out around +5-6; once they are already that far ahead of the team, assign to a less-loaded member who can still do the task, even if less skilled. Never let one person run away with the whole board.
+- So: read activeIssueCount for EVERY member, estimate the best-fit member's current lead, and reason explicitly about it before deciding — e.g. "temmie fits best (UI) and is +3 vs the least-loaded → within range, assign temmie" vs "temmie is already +6 ahead → route to the next-best member with capacity".
+- Gauge fit from expertiseTags AND by drilling into listMemberCompletedTasks / searchMemberCommits — judge semantic relevance yourself (keyword overlap is NOT required).
+- If candidates are otherwise tied, pick the one whose downstream dependents are higher (so we unblock them).
 - Always call finalizeAssignment exactly once with a concise reasoning string.
 - When you finalize, you MAY include learnedTags: 1-4 short lowercase skill tags justified by commit evidence you retrieved this run. Never invent tags from the task description alone; omit them if you did not search a member's commits.`;
 
