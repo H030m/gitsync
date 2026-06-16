@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../config/app_config.dart';
 import '../../l10n/app_locale.dart';
 import '../../l10n/app_strings.dart';
 import '../../services/authentication.dart';
@@ -29,13 +28,8 @@ class SettingsPage extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: AppDimens.spacingSm),
         children: [
           StaggeredEntry(
-            key: const ValueKey('settings-banner'),
-            index: 0,
-            child: const _BackendBanner(),
-          ),
-          StaggeredEntry(
             key: const ValueKey('settings-general'),
-            index: 1,
+            index: 0,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -46,7 +40,7 @@ class SettingsPage extends StatelessWidget {
           ),
           StaggeredEntry(
             key: const ValueKey('settings-notifications'),
-            index: 2,
+            index: 1,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -57,7 +51,7 @@ class SettingsPage extends StatelessWidget {
           ),
           StaggeredEntry(
             key: const ValueKey('settings-github'),
-            index: 3,
+            index: 2,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -68,7 +62,7 @@ class SettingsPage extends StatelessWidget {
           ),
           StaggeredEntry(
             key: const ValueKey('settings-account'),
-            index: 4,
+            index: 3,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -79,7 +73,7 @@ class SettingsPage extends StatelessWidget {
           ),
           StaggeredEntry(
             key: const ValueKey('settings-snapshot'),
-            index: 5,
+            index: 4,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -90,7 +84,7 @@ class SettingsPage extends StatelessWidget {
           ),
           StaggeredEntry(
             key: const ValueKey('settings-danger'),
-            index: 6,
+            index: 5,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -501,58 +495,5 @@ class _DangerZoneCard extends StatelessWidget {
         SnackBar(content: Text('${s.deleteAllTasksFailed}: $e')),
       );
     }
-  }
-}
-
-// Backend mode informational banner using SectionCard with tinted background.
-class _BackendBanner extends StatelessWidget {
-  const _BackendBanner();
-
-  @override
-  Widget build(BuildContext context) {
-    final s = context.l10n;
-    final isFake = AppConfig.useFakeBackend;
-    final scheme = Theme.of(context).colorScheme;
-    final fgColor =
-        isFake ? scheme.onTertiaryContainer : scheme.onPrimaryContainer;
-    return SectionCard(
-      color: isFake ? scheme.tertiaryContainer : scheme.primaryContainer,
-      margin: const EdgeInsets.fromLTRB(
-        AppDimens.spacingMd,
-        AppDimens.spacingSm,
-        AppDimens.spacingMd,
-        0,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                isFake ? Icons.bug_report : Icons.cloud_done,
-                color: fgColor,
-              ),
-              const SizedBox(width: AppDimens.spacingSm),
-              Expanded(
-                child: Text(
-                  isFake ? s.backendFakeTitle : s.backendLiveTitle,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: fgColor,
-                        fontWeight: FontWeight.bold,
-                      ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppDimens.spacingSm),
-          Text(
-            isFake ? s.backendFakeBody : s.backendLiveBody,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: fgColor,
-                ),
-          ),
-        ],
-      ),
-    );
   }
 }

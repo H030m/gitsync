@@ -73,6 +73,18 @@ class _FakeFunctionsService implements FunctionsService {
       throw UnimplementedError();
 
   @override
+  Future<({int taskCount, int memberCount})> saveTaskSnapshot({
+    required String repoId,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<({int restoredTasks, int restoredMembers})> restoreTaskSnapshot({
+    required String repoId,
+  }) =>
+      throw UnimplementedError();
+
+  @override
   Future<({String assigneeId, String reasoning})> assignTask({
     required String repoId,
     required String taskId,

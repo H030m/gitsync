@@ -284,18 +284,6 @@ class AppStrings {
   String get themeSystem => _('System', '系統');
   String get themeLight => _('Light', '淺色');
   String get themeDark => _('Dark', '深色');
-  String get backendFakeTitle =>
-      _('Backend: FAKE (dummy data)', '後端:假資料(FAKE)');
-  String get backendLiveTitle =>
-      _('Backend: LIVE (Firebase)', '後端:正式(Firebase)');
-  String get backendFakeBody => _(
-    'No real Firebase / OpenAI / GitHub calls. Mutations live in memory and reset on restart. To switch: stop the app and re-run with `--dart-define=BACKEND=live`.',
-    '不會呼叫真正的 Firebase / OpenAI / GitHub。所有變更只存在記憶體、重啟即重置。要切換:停止 app 並用 `--dart-define=BACKEND=live` 重跑。',
-  );
-  String get backendLiveBody => _(
-    'Hitting real Firebase project. Be careful with destructive actions.',
-    '連到正式 Firebase 專案,執行破壞性操作請小心。',
-  );
 
   // ---- Daily ----
   String get dailyTitle => _('Daily', '每日彙整');
