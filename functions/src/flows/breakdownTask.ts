@@ -167,17 +167,22 @@ export async function breakdownTaskFlow(
       repoId,
       count: rootTasks.length,
     });
-    await Promise.allSettled(
-      rootTasks.map((s) =>
-        assignTaskFlow({ repoId, taskId: s.id }).catch((err) => {
-          logger.warn('breakdownTaskFlow: auto-assign root failed (best-effort)', {
-            repoId,
-            taskId: s.id,
-            err: String(err),
-          });
-        }),
-      ),
-    );
+    // SEQUENTIAL on purpose: assignTaskFlow reads each member's activeIssueCount
+    // and applyAssignment bumps it in a committed transaction, so the NEXT task
+    // sees the updated load. Assigning in parallel would make every root task
+    // read the same pre-assignment load and pile onto the single best-skilled
+    // member (e.g. all UI tasks → one person). One at a time spreads the work.
+    for (const s of rootTasks) {
+      try {
+        await assignTaskFlow({ repoId, taskId: s.id });
+      } catch (err) {
+        logger.warn('breakdownTaskFlow: auto-assign root failed (best-effort)', {
+          repoId,
+          taskId: s.id,
+          err: String(err),
+        });
+      }
+    }
   }
 
   // Best-effort: record what was broken down so future flows can recall it.
