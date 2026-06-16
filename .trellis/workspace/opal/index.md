@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 18
+- **Total Sessions**: 19
 - **Last Active**: 2026-06-16
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~623 | Active |
+| `journal-1.md` | ~656 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 19 | 2026-06-16 | 移除 Settings 頂端 Backend banner | `b3cf82f` | `feature/remove-settings-backend-banner` |
 | 18 | 2026-06-16 | Daily 範圍全空空狀態 + 空白天收合一行 | `198869f` | `develop` |
 | 17 | 2026-06-16 | Android GitHub token 取得/刷新(web-auth + exchangeGitHubCode CF) | `cd7ce53`, `8db09aa`, `9eacd26` | `feature/android-github-token` |
 | 16 | 2026-06-15 | 每日彙整精簡:移除 count chip/鎖/AI調整/locked + 修 digest 初始範圍 | `91a7968`, `6f130cd`, `e550e92` | `feature/remove-daily-chips-lock` |
