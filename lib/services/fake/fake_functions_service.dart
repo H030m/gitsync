@@ -93,6 +93,22 @@ class FakeFunctionsService implements FunctionsService {
   }
 
   @override
+  Future<({int taskCount, int memberCount})> saveTaskSnapshot({
+    required String repoId,
+  }) async {
+    await Future.delayed(AppConfig.simulatedLatency);
+    return (taskCount: 0, memberCount: 0);
+  }
+
+  @override
+  Future<({int restoredTasks, int restoredMembers})> restoreTaskSnapshot({
+    required String repoId,
+  }) async {
+    await Future.delayed(AppConfig.simulatedLatency);
+    return (restoredTasks: 0, restoredMembers: 0);
+  }
+
+  @override
   Future<({String assigneeId, String reasoning})> assignTask({
     required String repoId,
     required String taskId,
