@@ -33,6 +33,7 @@ import {
   listRangeCommits,
   listRangeCompletedTasks,
   listRangeDigests,
+  listOpenTasks,
   searchPastCommits,
   type DayCommit,
 } from '../tools/dailyIntel';
@@ -151,6 +152,19 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       name: 'listCompletedTasks',
       description: 'List tasks that reached done in the last `days` days.',
       parameters: { type: 'object', properties: { ...DAYS_PARAM }, additionalProperties: false },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'listOpenTasks',
+      description:
+        'List the OPEN tasks on the board — every task whose status is NOT done ' +
+        '(todo / in-progress / blocked), each with its title, status, assignee ' +
+        "(GitHub login or null) and dependsOn. This is the team's actual backlog: " +
+        'use it for "what work is there to do / left", "what is in progress", ' +
+        '"who is working on what right now". Returns [] when the board is empty.',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
     },
   },
   {
@@ -527,11 +541,20 @@ async function runTool(
       });
       return { id: call.id, content: JSON.stringify(ds), label: TRACE_LABELS.getTaskDependents };
     }
+    case 'listOpenTasks': {
+      const open = await listOpenTasks(repoId).catch((err) => {
+        logger.warn('askRepoFlow: listOpenTasks failed (best-effort)', { repoId, err: String(err) });
+        return [];
+      });
+      return { id: call.id, content: JSON.stringify(open), label: TRACE_LABELS.listOpenTasks };
+    }
     case 'readTeamState': {
       const roster = await readTeamState(repoId)
         .then((rs) =>
           rs.map((m) => ({
-            name: m.name,
+            // Fall back to the GitHub login when there is no real name, so the
+            // agent always has a concrete identifier and never invents one.
+            name: m.name || m.githubLogin,
             githubLogin: m.githubLogin,
             // Learned skills (inferred from completed work) + current load, so
             // the agent can answer "who's good at what / who gets the next task".
