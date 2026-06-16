@@ -33,6 +33,7 @@ export type AgentFlow =
 export const TRACE_LABELS = {
   listDayCommits: 'Listing recent commits…',
   listCompletedTasks: 'Listing completed tasks…',
+  listOpenTasks: 'Listing open tasks…',
   listRangeDigests: 'Reading Discord digests…',
   searchPastCommits: 'Searching commit history…',
   searchDiscordMessages: 'Searching Discord…',

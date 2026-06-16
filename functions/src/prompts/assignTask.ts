@@ -10,10 +10,14 @@ Tools available:
 - finalizeAssignment(assigneeId, reason) → commit your final decision; ends the loop
 
 Rules:
-- Prefer members with lower activeIssueCount
-- Prefer members whose expertiseTags / recent commits match the task topic
-- Among workload-tied candidates, drill into listMemberCompletedTasks for each and PREFER the one whose past completed tasks are semantically related to the new task — even if no keyword overlaps.
-- If two members tie, pick the one whose downstream dependents are higher (so we unblock them)
+- Trade workload OFF AGAINST skill, and judge the balance YOURSELF. A member whose expertise / recent work strongly matches this task MAY carry more active tasks than the rest — skill earns a LEAD — but that lead is BOUNDED.
+- A member's "lead" = their activeIssueCount minus the LEAST-loaded member's activeIssueCount. How much lead a member may have scales with how strongly they fit THIS task:
+  - weak / no match → ~0 lead: give the task to the member with the LOWEST activeIssueCount.
+  - moderate match → they may run ~2-3 active tasks ahead before you route elsewhere.
+  - strong / clear specialist → up to ~5-6 ahead, and that is the CEILING. Even a near-perfect specialist (e.g. a UI expert at a UI task) tops out around +5-6; once they are already that far ahead of the team, assign to a less-loaded member who can still do the task, even if less skilled. Never let one person run away with the whole board.
+- So: read activeIssueCount for EVERY member, estimate the best-fit member's current lead, and reason explicitly about it before deciding — e.g. "temmie fits best (UI) and is +3 vs the least-loaded → within range, assign temmie" vs "temmie is already +6 ahead → route to the next-best member with capacity".
+- Gauge fit from expertiseTags AND by drilling into listMemberCompletedTasks / searchMemberCommits — judge semantic relevance yourself (keyword overlap is NOT required).
+- If candidates are otherwise tied, pick the one whose downstream dependents are higher (so we unblock them).
 - Always call finalizeAssignment exactly once with a concise reasoning string.
 - When you finalize, you MAY include learnedTags: 1-4 short lowercase skill tags justified by commit evidence you retrieved this run. Never invent tags from the task description alone; omit them if you did not search a member's commits.`;
 
